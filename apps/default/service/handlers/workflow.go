@@ -1,0 +1,116 @@
+package handlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"github.com/pitabwire/util"
+
+	"github.com/antinvestor/service-trustage/apps/default/service/business"
+	"github.com/antinvestor/service-trustage/pkg/telemetry"
+)
+
+// WorkflowHandler handles workflow management HTTP endpoints.
+// Uses plain HTTP until proto generation is set up.
+type WorkflowHandler struct {
+	workflowBiz business.WorkflowBusiness
+	metrics     *telemetry.Metrics
+}
+
+// NewWorkflowHandler creates a new WorkflowHandler.
+func NewWorkflowHandler(biz business.WorkflowBusiness, metrics *telemetry.Metrics) *WorkflowHandler {
+	return &WorkflowHandler{
+		workflowBiz: biz,
+		metrics:     metrics,
+	}
+}
+
+// CreateWorkflow handles POST /api/v1/workflows.
+func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	log := util.Log(ctx)
+
+	tenantID, partitionID, ok := requireTenant(ctx, w)
+	if !ok {
+		return
+	}
+
+	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerEngine, telemetry.SpanCreateWorkflow)
+	defer func() { telemetry.EndSpan(span, nil) }()
+
+	var body json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	def, err := h.workflowBiz.CreateWorkflow(ctx, tenantID, partitionID, body)
+	if err != nil {
+		log.WithError(err).Error("failed to create workflow")
+		status, msg := httpStatusForError(err)
+		http.Error(w, msg, status)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":      def.ID,
+		"name":    def.Name,
+		"version": def.WorkflowVersion,
+		"status":  def.Status,
+	})
+}
+
+// GetWorkflow handles GET /api/v1/workflows/{id}.
+func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	_, _, ok := requireTenant(ctx, w)
+	if !ok {
+		return
+	}
+
+	id := r.PathValue("id")
+
+	def, err := h.workflowBiz.GetWorkflow(ctx, id)
+	if err != nil {
+		status, msg := httpStatusForError(err)
+		http.Error(w, msg, status)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":      def.ID,
+		"name":    def.Name,
+		"version": def.WorkflowVersion,
+		"status":  def.Status,
+		"dsl":     json.RawMessage(def.DSLBlob),
+	})
+}
+
+// ActivateWorkflow handles POST /api/v1/workflows/{id}/activate.
+func (h *WorkflowHandler) ActivateWorkflow(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	_, _, ok := requireTenant(ctx, w)
+	if !ok {
+		return
+	}
+
+	id := r.PathValue("id")
+
+	if err := h.workflowBiz.ActivateWorkflow(ctx, id); err != nil {
+		status, msg := httpStatusForError(err)
+		http.Error(w, msg, status)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "active"})
+}

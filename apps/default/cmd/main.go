@@ -1,0 +1,256 @@
+package main
+
+import (
+	"context"
+	"net/http"
+	"sync"
+
+	"github.com/pitabwire/frame"
+	"github.com/pitabwire/frame/config"
+	"github.com/pitabwire/frame/datastore"
+	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/util"
+
+	appconfig "github.com/antinvestor/service-trustage/apps/default/config"
+	"github.com/antinvestor/service-trustage/apps/default/service/business"
+	appcache "github.com/antinvestor/service-trustage/apps/default/service/cache"
+	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
+	"github.com/antinvestor/service-trustage/apps/default/service/queues"
+	"github.com/antinvestor/service-trustage/apps/default/service/repository"
+	"github.com/antinvestor/service-trustage/apps/default/service/schedulers"
+	"github.com/antinvestor/service-trustage/connector"
+	"github.com/antinvestor/service-trustage/connector/adapters"
+	"github.com/antinvestor/service-trustage/pkg/telemetry"
+)
+
+func main() { //nolint:funlen // main function wiring
+	ctx := context.Background()
+
+	cfg, err := config.LoadWithOIDC[appconfig.Config](ctx)
+	if err != nil {
+		util.Log(ctx).WithError(err).Fatal("failed to load configuration")
+	}
+
+	if cfg.Name() == "" {
+		cfg.ServiceName = "trustage-api"
+	}
+
+	ctx, svc := frame.NewServiceWithContext(
+		ctx,
+		frame.WithName(cfg.Name()),
+		frame.WithConfig(&cfg),
+		frame.WithRegisterServerOauth2Client(),
+		frame.WithDatastore(),
+	)
+	defer svc.Stop(ctx)
+
+	log := svc.Log(ctx)
+
+	// Database setup.
+	dbManager := svc.DatastoreManager()
+
+	if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
+		log.WithError(migrateErr).Fatal("database migration failed")
+	}
+
+	dbPool := dbManager.GetPool(ctx, datastore.DefaultPoolName)
+
+	// Repositories.
+	defRepo := repository.NewWorkflowDefinitionRepository(dbPool)
+	instanceRepo := repository.NewWorkflowInstanceRepository(dbPool)
+	execRepo := repository.NewWorkflowExecutionRepository(dbPool)
+	schemaRepo := repository.NewSchemaRegistryRepository(dbPool)
+	outputRepo := repository.NewWorkflowOutputRepository(dbPool)
+	auditRepo := repository.NewAuditEventRepository(dbPool)
+	eventLogRepo := repository.NewEventLogRepository(dbPool)
+	triggerRepo := repository.NewTriggerBindingRepository(dbPool)
+	retryPolicyRepo := repository.NewRetryPolicyRepository(dbPool)
+	scheduleRepo := repository.NewScheduleRepository(dbPool)
+
+	// Connector registry.
+	httpClient := svc.HTTPClientManager().Client(ctx)
+
+	registry := connector.NewRegistry()
+
+	if regErr := registry.Register(adapters.NewWebhookAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register webhook adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewHTTPAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register HTTP adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewNotificationSendAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register notification.send adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewNotificationStatusAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register notification.status adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewPaymentInitiateAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register payment.initiate adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewPaymentVerifyAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register payment.verify adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewDataTransformAdapter()); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register data.transform adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewLogEntryAdapter()); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register log.entry adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewFormValidateAdapter()); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register form.validate adapter")
+	}
+
+	if regErr := registry.Register(adapters.NewApprovalRequestAdapter(httpClient)); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register approval.request adapter")
+	}
+
+	// Cache setup (Valkey or in-memory fallback).
+	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL)
+	if cacheErr != nil {
+		log.WithError(cacheErr).Fatal("failed to setup cache")
+	}
+
+	// Business layer.
+	metrics := telemetry.NewMetrics()
+
+	schemaReg := business.NewSchemaRegistry(schemaRepo, rawCache)
+	engine := business.NewStateEngine(
+		instanceRepo,
+		execRepo,
+		outputRepo,
+		auditRepo,
+		defRepo,
+		retryPolicyRepo,
+		schemaReg,
+		metrics,
+		rawCache,
+	)
+	eventRouter := business.NewEventRouter(triggerRepo, defRepo, instanceRepo, auditRepo, engine, metrics)
+	workflowBiz := business.NewWorkflowBusiness(defRepo, schemaReg)
+
+	// Schedulers (background goroutines with coordinated shutdown).
+	// Schedulers process all tenants, so skip tenancy checks on BaseRepository queries.
+	schedulerCtx, schedulerCancel := context.WithCancel(security.SkipTenancyChecksOnClaims(ctx))
+
+	var schedulerWg sync.WaitGroup
+
+	dispatchSched := schedulers.NewDispatchScheduler(execRepo, engine, svc, &cfg, metrics)
+	retrySched := schedulers.NewRetryScheduler(execRepo, instanceRepo, &cfg, metrics)
+	timeoutSched := schedulers.NewTimeoutScheduler(execRepo, instanceRepo, retryPolicyRepo, auditRepo, &cfg, metrics)
+	outboxSched := schedulers.NewOutboxScheduler(eventLogRepo, svc, &cfg, metrics)
+
+	startScheduler := func(name string, startFn func(context.Context)) {
+		schedulerWg.Add(1)
+
+		go func() {
+			defer schedulerWg.Done()
+			log.Info("scheduler starting", "scheduler", name)
+			startFn(schedulerCtx)
+			log.Info("scheduler stopped", "scheduler", name)
+		}()
+	}
+
+	cleanupSched := schedulers.NewCleanupScheduler(eventLogRepo, auditRepo, &cfg)
+	cronSched := schedulers.NewCronScheduler(scheduleRepo, eventLogRepo, &cfg)
+
+	startScheduler("dispatch", dispatchSched.Start)
+	startScheduler("retry", retrySched.Start)
+	startScheduler("timeout", timeoutSched.Start)
+	startScheduler("outbox", outboxSched.Start)
+	startScheduler("cleanup", cleanupSched.Start)
+	startScheduler("cron", cronSched.Start)
+
+	// HTTP handlers.
+	workflowHandler := handlers.NewWorkflowHandler(workflowBiz, metrics)
+	rateLimiter := handlers.NewRateLimiter(rawCache, cfg.EventIngestRateLimit)
+	eventHandler := handlers.NewEventHandler(eventLogRepo, auditRepo, metrics, rateLimiter)
+	formHandler := handlers.NewFormHandler(eventLogRepo, metrics, rateLimiter)
+	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(eventLogRepo, metrics, rateLimiter)
+
+	mux := http.NewServeMux()
+
+	// Workflow management endpoints.
+	mux.HandleFunc("POST /api/v1/workflows", workflowHandler.CreateWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows/{id}", workflowHandler.GetWorkflow)
+	mux.HandleFunc("POST /api/v1/workflows/{id}/activate", workflowHandler.ActivateWorkflow)
+
+	// Event ingestion and timeline endpoints.
+	mux.HandleFunc("POST /api/v1/events", eventHandler.IngestEvent)
+	mux.HandleFunc("GET /api/v1/instances/{id}/timeline", eventHandler.GetInstanceTimeline)
+
+	// Form capture endpoint.
+	mux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)
+
+	// Webhook receive endpoint.
+	mux.HandleFunc("POST /api/v1/webhooks/{webhook_id}", webhookReceiveHandler.ReceiveWebhook)
+
+	// Health checks.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		pool := dbManager.GetPool(r.Context(), datastore.DefaultPoolName)
+		if pool == nil {
+			http.Error(w, "database not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	// Queue workers.
+	executionWorker := queues.NewExecutionWorker(engine, defRepo, registry)
+	eventRouterWorker := queues.NewEventRouterWorker(eventRouter)
+
+	svc.Init(ctx,
+		frame.WithHTTPHandler(handlers.RequestIDMiddleware(handlers.LimitBodySize(mux))),
+
+		// Execution dispatch publisher (schedulers publish here).
+		frame.WithRegisterPublisher(
+			cfg.QueueExecDispatchName,
+			cfg.QueueExecDispatchURL,
+		),
+
+		// Execution worker subscriber (processes dispatched executions).
+		frame.WithRegisterSubscriber(
+			cfg.QueueExecWorkerName,
+			cfg.QueueExecWorkerURL,
+			executionWorker,
+		),
+
+		// Event ingest publisher (outbox scheduler publishes here).
+		frame.WithRegisterPublisher(
+			cfg.QueueEventIngestName,
+			cfg.QueueEventIngestURL,
+		),
+
+		// Event router subscriber (processes ingested events).
+		frame.WithRegisterSubscriber(
+			cfg.QueueEventRouterName,
+			cfg.QueueEventRouterURL,
+			eventRouterWorker,
+		),
+	)
+
+	log.Info("starting trustage orchestrator",
+		"port", cfg.ServerPort,
+	)
+
+	if runErr := svc.Run(ctx, cfg.ServerPort); runErr != nil {
+		log.WithError(runErr).Fatal("could not run service")
+	}
+
+	// Graceful scheduler shutdown.
+	schedulerCancel()
+	schedulerWg.Wait()
+	log.Info("all schedulers stopped")
+}

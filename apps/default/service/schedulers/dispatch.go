@@ -1,0 +1,111 @@
+package schedulers
+
+import (
+	"context"
+	"time"
+
+	"github.com/pitabwire/frame"
+	"github.com/pitabwire/util"
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/antinvestor/service-trustage/apps/default/config"
+	"github.com/antinvestor/service-trustage/apps/default/service/business"
+	"github.com/antinvestor/service-trustage/apps/default/service/repository"
+	"github.com/antinvestor/service-trustage/pkg/telemetry"
+)
+
+// DispatchScheduler picks up pending executions and publishes them to NATS.
+type DispatchScheduler struct {
+	execRepo repository.WorkflowExecutionRepository
+	engine   business.StateEngine
+	svc      *frame.Service
+	cfg      *config.Config
+	metrics  *telemetry.Metrics
+}
+
+// NewDispatchScheduler creates a new DispatchScheduler.
+func NewDispatchScheduler(
+	execRepo repository.WorkflowExecutionRepository,
+	engine business.StateEngine,
+	svc *frame.Service,
+	cfg *config.Config,
+	metrics *telemetry.Metrics,
+) *DispatchScheduler {
+	return &DispatchScheduler{
+		execRepo: execRepo,
+		engine:   engine,
+		svc:      svc,
+		cfg:      cfg,
+		metrics:  metrics,
+	}
+}
+
+// Start begins the dispatch scheduler loop. It blocks until context is cancelled.
+func (s *DispatchScheduler) Start(ctx context.Context) {
+	log := util.Log(ctx)
+	interval := time.Duration(s.cfg.DispatchIntervalSeconds) * time.Second
+
+	log.Info("dispatch scheduler started", "interval_seconds", s.cfg.DispatchIntervalSeconds)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			dispatched := s.RunOnce(ctx)
+			if dispatched > 0 {
+				log.Info("dispatch scheduler completed", "dispatched", dispatched)
+			}
+		case <-ctx.Done():
+			log.Info("dispatch scheduler stopped")
+			return
+		}
+	}
+}
+
+// RunOnce performs a single dispatch sweep.
+func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
+	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, telemetry.SpanSchedulerDispatch)
+	defer telemetry.EndSpan(span, nil)
+
+	log := util.Log(ctx)
+
+	pending, err := s.execRepo.FindPending(ctx, s.cfg.DispatchBatchSize)
+	if err != nil {
+		log.WithError(err).Error("dispatch scheduler: failed to find pending")
+		return 0
+	}
+
+	// Record scheduler lag gauge.
+	s.metrics.SchedulerPendingGauge.Record(ctx, int64(len(pending)))
+
+	dispatched := 0
+
+	for _, exec := range pending {
+		cmd, dispatchErr := s.engine.Dispatch(ctx, exec)
+		if dispatchErr != nil {
+			log.WithError(dispatchErr).Error("dispatch scheduler: dispatch failed",
+				"execution_id", exec.ExecutionID,
+			)
+
+			continue
+		}
+
+		// Publish full ExecutionCommand to NATS (includes raw token for worker commit).
+		publishErr := s.svc.QueueManager().Publish(ctx, s.cfg.QueueExecDispatchName, cmd)
+		if publishErr != nil {
+			log.WithError(publishErr).Error("dispatch scheduler: publish failed",
+				"execution_id", exec.ExecutionID,
+			)
+
+			continue
+		}
+
+		dispatched++
+	}
+
+	span.SetAttributes(attribute.Int("dispatched_count", dispatched))
+
+	return dispatched
+}
