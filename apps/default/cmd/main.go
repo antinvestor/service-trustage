@@ -112,10 +112,11 @@ func main() { //nolint:funlen // main function wiring
 		log.WithError(regErr).Fatal("failed to register approval.request adapter")
 	}
 
-	// Cache setup (Valkey or in-memory fallback).
+	// Cache setup (Valkey with in-memory fallback).
 	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL)
 	if cacheErr != nil {
-		log.WithError(cacheErr).Fatal("failed to setup cache")
+		log.WithError(cacheErr).Warn("cache setup failed, using in-memory fallback")
+		rawCache, _ = appcache.SetupCache("")
 	}
 
 	// Business layer.
