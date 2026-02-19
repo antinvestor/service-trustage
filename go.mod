@@ -3,6 +3,7 @@ module github.com/antinvestor/service-trustage
 go 1.25.2
 
 require (
+	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
 	github.com/pitabwire/frame v1.72.1
 	github.com/pitabwire/util v0.4.0

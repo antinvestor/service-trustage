@@ -1,4 +1,4 @@
-.PHONY: tests format vet docker-setup docker-stop lint build
+.PHONY: tests format vet docker-setup docker-stop lint build baml-gen
 
 tests:
 	go test ./... -v -race -coverprofile=coverage.out
@@ -20,4 +20,7 @@ docker-stop:
 	docker compose down
 
 build:
-	CGO_ENABLED=0 go build -trimpath -o bin/trustage ./apps/default/cmd/main.go
+	go build -trimpath -o bin/trustage ./apps/default/cmd/main.go
+
+baml-gen:
+	baml-cli generate

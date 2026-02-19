@@ -112,6 +112,10 @@ func main() { //nolint:funlen // main function wiring
 		log.WithError(regErr).Fatal("failed to register approval.request adapter")
 	}
 
+	if regErr := registry.Register(adapters.NewAIChatAdapter()); regErr != nil {
+		log.WithError(regErr).Fatal("failed to register ai.chat adapter")
+	}
+
 	// Cache setup (Valkey with in-memory fallback).
 	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL)
 	if cacheErr != nil {
