@@ -7,7 +7,7 @@ require (
 	buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260221113820-30caca229094.1
 	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
-	github.com/pitabwire/frame v1.74.0
+	github.com/pitabwire/frame v1.75.0
 	github.com/pitabwire/util v0.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
