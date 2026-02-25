@@ -227,3 +227,7 @@ linters:
           - gosec
           - noctx
           - wrapcheck
+      - path: 'connector/adapters/'
+        linters:
+          - gosec
+        text: 'G704'

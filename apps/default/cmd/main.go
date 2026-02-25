@@ -69,52 +69,7 @@ func main() { //nolint:funlen // main function wiring
 
 	// Connector registry.
 	httpClient := svc.HTTPClientManager().Client(ctx)
-
-	registry := connector.NewRegistry()
-
-	if regErr := registry.Register(adapters.NewWebhookAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register webhook adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewHTTPAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register HTTP adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewNotificationSendAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register notification.send adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewNotificationStatusAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register notification.status adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewPaymentInitiateAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register payment.initiate adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewPaymentVerifyAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register payment.verify adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewDataTransformAdapter()); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register data.transform adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewLogEntryAdapter()); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register log.entry adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewFormValidateAdapter()); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register form.validate adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewApprovalRequestAdapter(httpClient)); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register approval.request adapter")
-	}
-
-	if regErr := registry.Register(adapters.NewAIChatAdapter()); regErr != nil {
-		log.WithError(regErr).Fatal("failed to register ai.chat adapter")
-	}
+	registry := setupConnectorRegistry(httpClient)
 
 	// Cache setup (Valkey with in-memory fallback).
 	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL)
@@ -258,4 +213,30 @@ func main() { //nolint:funlen // main function wiring
 	schedulerCancel()
 	schedulerWg.Wait()
 	log.Info("all schedulers stopped")
+}
+
+func setupConnectorRegistry(httpClient *http.Client) *connector.Registry {
+	registry := connector.NewRegistry()
+
+	allAdapters := []connector.Adapter{
+		adapters.NewWebhookAdapter(httpClient),
+		adapters.NewHTTPAdapter(httpClient),
+		adapters.NewNotificationSendAdapter(httpClient),
+		adapters.NewNotificationStatusAdapter(httpClient),
+		adapters.NewPaymentInitiateAdapter(httpClient),
+		adapters.NewPaymentVerifyAdapter(httpClient),
+		adapters.NewDataTransformAdapter(),
+		adapters.NewLogEntryAdapter(),
+		adapters.NewFormValidateAdapter(),
+		adapters.NewApprovalRequestAdapter(httpClient),
+		adapters.NewAIChatAdapter(),
+	}
+
+	for _, a := range allAdapters {
+		if regErr := registry.Register(a); regErr != nil {
+			panic("failed to register adapter: " + regErr.Error())
+		}
+	}
+
+	return registry
 }
