@@ -1,14 +1,14 @@
 module github.com/antinvestor/service-trustage
 
-go 1.25.2
+go 1.26
 
 require (
 	buf.build/gen/go/antinvestor/files/connectrpc/go v1.19.1-20260221113820-30caca229094.2
 	buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260221113820-30caca229094.1
 	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
-	github.com/pitabwire/frame v1.73.0
-	github.com/pitabwire/util v0.5.0
+	github.com/pitabwire/frame v1.74.0
+	github.com/pitabwire/util v0.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.40.0
