@@ -14,10 +14,7 @@ ARG BUILDTIME
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY ./apps/default ./apps/default
-COPY ./dsl ./dsl
-COPY ./connector ./connector
-COPY ./pkg ./pkg
+COPY ./apps/queue ./apps/queue
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
@@ -26,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
          -X github.com/pitabwire/frame/version.Version=${VERSION} \
          -X github.com/pitabwire/frame/version.Commit=${REVISION} \
          -X github.com/pitabwire/frame/version.Date=${BUILDTIME}" \
-     -o /app/binary ./apps/default/cmd/main.go
+     -o /app/binary ./apps/queue/cmd/main.go
 
 # ---------- Final ----------
 FROM cgr.dev/chainguard/static:latest
@@ -41,7 +38,7 @@ ARG REPOSITORY
 ARG VERSION
 ARG REVISION
 ARG BUILDTIME
-LABEL org.opencontainers.image.title="service-trustage"
+LABEL org.opencontainers.image.title="service-trustage-queue"
 LABEL org.opencontainers.image.version=$VERSION
 LABEL org.opencontainers.image.revision=$REVISION
 LABEL org.opencontainers.image.created=$BUILDTIME
@@ -49,7 +46,6 @@ LABEL org.opencontainers.image.source=$REPOSITORY
 
 WORKDIR /
 
-COPY --from=builder /app/binary /default
-COPY --from=builder /app/apps/default/migrations /migrations
+COPY --from=builder /app/binary /queue
 
-ENTRYPOINT ["/default"]
+ENTRYPOINT ["/queue"]
