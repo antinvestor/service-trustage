@@ -9,7 +9,7 @@ require (
 	github.com/google/cel-go v0.27.0
 	github.com/pitabwire/frame v1.74.0
 	github.com/pitabwire/util v0.6.0
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/metric v1.40.0
