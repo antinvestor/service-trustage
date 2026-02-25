@@ -26,8 +26,6 @@ func NewEventRouterWorker(router business.EventRouter) queue.SubscribeWorker {
 
 // Handle processes a single NATS message from the event stream.
 func (w *EventRouterWorker) Handle(ctx context.Context, _ map[string]string, message []byte) error {
-	// Workers process events across all tenants; skip tenancy checks on BaseRepository queries.
-	ctx = security.SkipTenancyChecksOnClaims(ctx)
 	log := util.Log(ctx)
 
 	var event events.IngestedEventMessage
@@ -41,6 +39,13 @@ func (w *EventRouterWorker) Handle(ctx context.Context, _ map[string]string, mes
 		"event_type", event.EventType,
 		"tenant_id", event.TenantID,
 	)
+
+	claims := &security.AuthenticationClaims{
+		TenantID:    event.TenantID,
+		PartitionID: event.PartitionID,
+	}
+	claims.Subject = "system:event_router_worker"
+	ctx = claims.ClaimsToContext(ctx)
 
 	created, err := w.router.RouteEvent(ctx, &event)
 	if err != nil {

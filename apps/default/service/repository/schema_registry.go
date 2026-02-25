@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
+	"gorm.io/gorm/clause"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -14,41 +16,45 @@ type SchemaRegistryRepository interface {
 	Store(ctx context.Context, schema *models.WorkflowStateSchema) error
 	Lookup(
 		ctx context.Context,
-		tenantID, workflowName string,
+		workflowName string,
 		version int,
 		state string,
 		schemaType models.SchemaType,
 	) (*models.WorkflowStateSchema, error)
-	LookupByHash(ctx context.Context, tenantID, hash string) (*models.WorkflowStateSchema, error)
+	LookupByHash(ctx context.Context, hash string) (*models.WorkflowStateSchema, error)
 }
 
 type schemaRegistryRepository struct {
-	pool pool.Pool
+	datastore.BaseRepository[*models.WorkflowStateSchema]
 }
 
 // NewSchemaRegistryRepository creates a new SchemaRegistryRepository.
 func NewSchemaRegistryRepository(dbPool pool.Pool) SchemaRegistryRepository {
-	return &schemaRegistryRepository{pool: dbPool}
+	ctx := context.Background()
+	return &schemaRegistryRepository{
+		BaseRepository: datastore.NewBaseRepository[*models.WorkflowStateSchema](
+			ctx,
+			dbPool,
+			nil,
+			func() *models.WorkflowStateSchema { return &models.WorkflowStateSchema{} },
+		),
+	}
 }
 
 // Store upserts a schema (immutable by hash — if the hash already exists, it's a no-op).
 func (r *schemaRegistryRepository) Store(ctx context.Context, schema *models.WorkflowStateSchema) error {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
-	result := db.Exec(
-		`INSERT INTO workflow_state_schemas (id, tenant_id, partition_id, workflow_name, workflow_version, state, schema_type, schema_hash, schema_blob, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-		 ON CONFLICT (tenant_id, workflow_name, workflow_version, state, schema_type) DO NOTHING`,
-		schema.ID,
-		schema.TenantID,
-		schema.PartitionID,
-		schema.WorkflowName,
-		schema.WorkflowVersion,
-		schema.State,
-		schema.SchemaType,
-		schema.SchemaHash,
-		schema.SchemaBlob,
-	)
+	result := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"},
+			{Name: "workflow_name"},
+			{Name: "workflow_version"},
+			{Name: "state"},
+			{Name: "schema_type"},
+		},
+		DoNothing: true,
+	}).Create(schema)
 
 	if result.Error != nil {
 		return fmt.Errorf("store schema: %w", result.Error)
@@ -59,18 +65,18 @@ func (r *schemaRegistryRepository) Store(ctx context.Context, schema *models.Wor
 
 func (r *schemaRegistryRepository) Lookup(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 	schemaType models.SchemaType,
 ) (*models.WorkflowStateSchema, error) {
-	db := r.pool.DB(ctx, true)
+	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var schema models.WorkflowStateSchema
 
 	result := db.Where(
-		"tenant_id = ? AND workflow_name = ? AND workflow_version = ? AND state = ? AND schema_type = ?",
-		tenantID, workflowName, version, state, schemaType,
+		"workflow_name = ? AND workflow_version = ? AND state = ? AND schema_type = ?",
+		workflowName, version, state, schemaType,
 	).First(&schema)
 
 	if result.Error != nil {
@@ -82,13 +88,13 @@ func (r *schemaRegistryRepository) Lookup(
 
 func (r *schemaRegistryRepository) LookupByHash(
 	ctx context.Context,
-	tenantID, hash string,
+	hash string,
 ) (*models.WorkflowStateSchema, error) {
-	db := r.pool.DB(ctx, true)
+	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var schema models.WorkflowStateSchema
 
-	result := db.Where("tenant_id = ? AND schema_hash = ?", tenantID, hash).First(&schema)
+	result := db.Where("schema_hash = ?", hash).First(&schema)
 	if result.Error != nil {
 		return nil, fmt.Errorf("lookup schema by hash: %w", result.Error)
 	}

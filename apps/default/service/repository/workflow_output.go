@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -12,39 +13,40 @@ import (
 // WorkflowOutputRepository manages workflow state output persistence.
 type WorkflowOutputRepository interface {
 	Store(ctx context.Context, output *models.WorkflowStateOutput) error
-	GetByExecution(ctx context.Context, tenantID, executionID string) (*models.WorkflowStateOutput, error)
-	GetByInstanceAndState(ctx context.Context, tenantID, instanceID, state string) (*models.WorkflowStateOutput, error)
+	GetByExecution(ctx context.Context, executionID string) (*models.WorkflowStateOutput, error)
+	GetByInstanceAndState(ctx context.Context, instanceID, state string) (*models.WorkflowStateOutput, error)
 }
 
 type workflowOutputRepository struct {
-	pool pool.Pool
+	datastore.BaseRepository[*models.WorkflowStateOutput]
 }
 
 // NewWorkflowOutputRepository creates a new WorkflowOutputRepository.
 func NewWorkflowOutputRepository(dbPool pool.Pool) WorkflowOutputRepository {
-	return &workflowOutputRepository{pool: dbPool}
+	ctx := context.Background()
+	return &workflowOutputRepository{
+		BaseRepository: datastore.NewBaseRepository[*models.WorkflowStateOutput](
+			ctx,
+			dbPool,
+			nil,
+			func() *models.WorkflowStateOutput { return &models.WorkflowStateOutput{} },
+		),
+	}
 }
 
 func (r *workflowOutputRepository) Store(ctx context.Context, output *models.WorkflowStateOutput) error {
-	db := r.pool.DB(ctx, false)
-
-	result := db.Create(output)
-	if result.Error != nil {
-		return fmt.Errorf("store output: %w", result.Error)
-	}
-
-	return nil
+	return r.BaseRepository.Create(ctx, output)
 }
 
 func (r *workflowOutputRepository) GetByExecution(
 	ctx context.Context,
-	tenantID, executionID string,
+	executionID string,
 ) (*models.WorkflowStateOutput, error) {
-	db := r.pool.DB(ctx, true)
+	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var output models.WorkflowStateOutput
 
-	result := db.Where("tenant_id = ? AND execution_id = ?", tenantID, executionID).First(&output)
+	result := db.Where("execution_id = ? AND deleted_at IS NULL", executionID).First(&output)
 	if result.Error != nil {
 		return nil, fmt.Errorf("get output by execution: %w", result.Error)
 	}
@@ -54,13 +56,13 @@ func (r *workflowOutputRepository) GetByExecution(
 
 func (r *workflowOutputRepository) GetByInstanceAndState(
 	ctx context.Context,
-	tenantID, instanceID, state string,
+	instanceID, state string,
 ) (*models.WorkflowStateOutput, error) {
-	db := r.pool.DB(ctx, true)
+	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var output models.WorkflowStateOutput
 
-	result := db.Where("tenant_id = ? AND instance_id = ? AND state = ?", tenantID, instanceID, state).
+	result := db.Where("instance_id = ? AND state = ? AND deleted_at IS NULL", instanceID, state).
 		Order("created_at DESC").
 		First(&output)
 

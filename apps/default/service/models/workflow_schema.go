@@ -1,8 +1,6 @@
 package models
 
-import (
-	"time"
-)
+import "github.com/pitabwire/frame/data"
 
 // SchemaType enumerates schema types.
 type SchemaType string
@@ -14,17 +12,15 @@ const (
 )
 
 // WorkflowStateSchema stores immutable JSON Schema documents for state contracts.
-type WorkflowStateSchema struct {
-	ID              string     `gorm:"column:id;primaryKey"`
-	TenantID        string     `gorm:"column:tenant_id;not null"`
-	PartitionID     string     `gorm:"column:partition_id;not null"`
+type WorkflowStateSchema struct { //nolint:recvcheck // TableName() must be value receiver for GORM
+	data.BaseModel `gorm:"embedded"`
+
 	WorkflowName    string     `gorm:"column:workflow_name;not null"`
 	WorkflowVersion int        `gorm:"column:workflow_version;not null"`
 	State           string     `gorm:"column:state;not null"`
 	SchemaType      SchemaType `gorm:"column:schema_type;not null"`
 	SchemaHash      string     `gorm:"column:schema_hash;not null"`
 	SchemaBlob      string     `gorm:"column:schema_blob;type:jsonb;not null"`
-	CreatedAt       time.Time  `gorm:"column:created_at;autoCreateTime"`
 }
 
 // TableName returns the database table name.

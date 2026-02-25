@@ -16,11 +16,10 @@ import (
 type WorkflowBusiness interface {
 	CreateWorkflow(
 		ctx context.Context,
-		tenantID, partitionID string,
 		dslBlob json.RawMessage,
 	) (*models.WorkflowDefinition, error)
 	GetWorkflow(ctx context.Context, id string) (*models.WorkflowDefinition, error)
-	ListWorkflows(ctx context.Context, tenantID, name string) ([]*models.WorkflowDefinition, error)
+	ListWorkflows(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
 	ActivateWorkflow(ctx context.Context, id string) error
 }
 
@@ -43,7 +42,6 @@ func NewWorkflowBusiness(
 // CreateWorkflow parses and validates a DSL document, registers schemas, and persists the definition.
 func (b *workflowBusiness) CreateWorkflow(
 	ctx context.Context,
-	tenantID, partitionID string,
 	dslBlob json.RawMessage,
 ) (*models.WorkflowDefinition, error) {
 	log := util.Log(ctx)
@@ -72,15 +70,12 @@ func (b *workflowBusiness) CreateWorkflow(
 		DSLBlob:         string(dslBlob),
 	}
 
-	def.TenantID = tenantID
-	def.PartitionID = partitionID
-
 	if spec.Timeout.Duration > 0 {
 		def.TimeoutSeconds = int64(spec.Timeout.Duration.Seconds())
 	}
 
 	// Register schemas for each step that has a call action.
-	if regErr := b.registerStepSchemas(ctx, tenantID, partitionID, spec); regErr != nil {
+	if regErr := b.registerStepSchemas(ctx, spec); regErr != nil {
 		return nil, fmt.Errorf("register schemas: %w", regErr)
 	}
 
@@ -100,7 +95,6 @@ func (b *workflowBusiness) CreateWorkflow(
 // for call steps that define them via their adapter schemas.
 func (b *workflowBusiness) registerStepSchemas(
 	ctx context.Context,
-	tenantID, partitionID string,
 	spec *dsl.WorkflowSpec,
 ) error {
 	for _, step := range dsl.CollectAllSteps(spec) {
@@ -111,7 +105,7 @@ func (b *workflowBusiness) registerStepSchemas(
 		// Register a default input schema for each call step.
 		inputSchema := json.RawMessage(`{"type": "object"}`)
 		if _, err := b.schemaReg.RegisterSchema(
-			ctx, tenantID, partitionID, spec.Name, 1, step.ID,
+			ctx, spec.Name, 1, step.ID,
 			models.SchemaTypeInput, inputSchema,
 		); err != nil {
 			return fmt.Errorf("register input schema for step %s: %w", step.ID, err)
@@ -120,7 +114,7 @@ func (b *workflowBusiness) registerStepSchemas(
 		// Register a default output schema for each call step.
 		outputSchema := json.RawMessage(`{"type": "object"}`)
 		if _, err := b.schemaReg.RegisterSchema(
-			ctx, tenantID, partitionID, spec.Name, 1, step.ID,
+			ctx, spec.Name, 1, step.ID,
 			models.SchemaTypeOutput, outputSchema,
 		); err != nil {
 			return fmt.Errorf("register output schema for step %s: %w", step.ID, err)
@@ -137,7 +131,7 @@ func (b *workflowBusiness) registerStepSchemas(
 			"required": ["class", "code", "message"]
 		}`)
 		if _, err := b.schemaReg.RegisterSchema(
-			ctx, tenantID, partitionID, spec.Name, 1, step.ID,
+			ctx, spec.Name, 1, step.ID,
 			models.SchemaTypeError, errorSchema,
 		); err != nil {
 			return fmt.Errorf("register error schema for step %s: %w", step.ID, err)
@@ -158,9 +152,10 @@ func (b *workflowBusiness) GetWorkflow(ctx context.Context, id string) (*models.
 
 func (b *workflowBusiness) ListWorkflows(
 	ctx context.Context,
-	tenantID, name string,
+	name string,
+	limit int,
 ) ([]*models.WorkflowDefinition, error) {
-	return b.defRepo.ListActiveByName(ctx, tenantID, name)
+	return b.defRepo.ListActiveByName(ctx, name, limit)
 }
 
 func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {

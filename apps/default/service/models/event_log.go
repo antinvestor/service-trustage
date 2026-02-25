@@ -12,7 +12,7 @@ type EventLog struct {
 
 	EventType      string     `gorm:"column:event_type;not null"`
 	Source         string     `gorm:"column:source"`
-	IdempotencyKey string     `gorm:"column:idempotency_key;uniqueIndex:idx_event_log_idempotency"`
+	IdempotencyKey string     `gorm:"column:idempotency_key"`
 	Payload        string     `gorm:"column:payload;type:jsonb;not null"`
 	Published      bool       `gorm:"column:published;not null;default:false"`
 	PublishedAt    *time.Time `gorm:"column:published_at"`

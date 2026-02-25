@@ -16,13 +16,14 @@ import (
 type WorkflowInstanceRepository interface {
 	Create(ctx context.Context, inst *models.WorkflowInstance) error
 	GetByID(ctx context.Context, id string) (*models.WorkflowInstance, error)
+	List(ctx context.Context, status, workflowName string, limit int) ([]*models.WorkflowInstance, error)
 	CASTransition(
 		ctx context.Context,
-		instanceID, tenantID, expectedState string,
+		instanceID, expectedState string,
 		expectedRevision int64,
 		newState string,
 	) error
-	UpdateStatus(ctx context.Context, instanceID, tenantID string, status models.WorkflowInstanceStatus) error
+	UpdateStatus(ctx context.Context, instanceID string, status models.WorkflowInstanceStatus) error
 }
 
 type workflowInstanceRepository struct {
@@ -51,11 +52,43 @@ func (r *workflowInstanceRepository) GetByID(ctx context.Context, id string) (*m
 	return r.BaseRepository.GetByID(ctx, id)
 }
 
+func (r *workflowInstanceRepository) List(
+	ctx context.Context,
+	status, workflowName string,
+	limit int,
+) ([]*models.WorkflowInstance, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+
+	query := db.Where("deleted_at IS NULL")
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if workflowName != "" {
+		query = query.Where("workflow_name = ?", workflowName)
+	}
+
+	var instances []*models.WorkflowInstance
+	result := query.Order("created_at DESC").Limit(limit).Find(&instances)
+	if result.Error != nil {
+		return nil, fmt.Errorf("list instances: %w", result.Error)
+	}
+
+	return instances, nil
+}
+
 // CASTransition performs a Compare-And-Swap state transition.
 // Returns nil on success, error if zero rows affected (stale) or DB error.
 func (r *workflowInstanceRepository) CASTransition(
 	ctx context.Context,
-	instanceID, tenantID, expectedState string,
+	instanceID, expectedState string,
 	expectedRevision int64,
 	newState string,
 ) error {
@@ -64,8 +97,8 @@ func (r *workflowInstanceRepository) CASTransition(
 	result := db.Exec(
 		`UPDATE workflow_instances
 		 SET current_state = ?, revision = revision + 1, modified_at = ?
-		 WHERE id = ? AND tenant_id = ? AND current_state = ? AND revision = ? AND status = 'running'`,
-		newState, time.Now(), instanceID, tenantID, expectedState, expectedRevision,
+		 WHERE id = ? AND current_state = ? AND revision = ? AND status = 'running'`,
+		newState, time.Now(), instanceID, expectedState, expectedRevision,
 	)
 
 	if result.Error != nil {
@@ -81,7 +114,7 @@ func (r *workflowInstanceRepository) CASTransition(
 
 func (r *workflowInstanceRepository) UpdateStatus(
 	ctx context.Context,
-	instanceID, tenantID string,
+	instanceID string,
 	status models.WorkflowInstanceStatus,
 ) error {
 	db := r.BaseRepository.Pool().DB(ctx, false)
@@ -98,7 +131,7 @@ func (r *workflowInstanceRepository) UpdateStatus(
 	}
 
 	result := db.Model(&models.WorkflowInstance{}).
-		Where("id = ? AND tenant_id = ?", instanceID, tenantID).
+		Where("id = ? AND deleted_at IS NULL", instanceID).
 		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update instance status: %w", result.Error)

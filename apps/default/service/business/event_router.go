@@ -77,7 +77,7 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 
 	log := util.Log(ctx)
 
-	bindings, err := r.triggerRepo.FindByEventType(ctx, event.TenantID, event.EventType)
+	bindings, err := r.triggerRepo.FindByEventType(ctx, event.EventType)
 	if err != nil {
 		routeErr = fmt.Errorf("find triggers: %w", err)
 		return 0, routeErr
@@ -128,7 +128,7 @@ func (r *eventRouter) createInstance(
 ) error {
 	// Load workflow definition to get initial state.
 	def, err := r.defRepo.GetByNameAndVersion(
-		ctx, event.TenantID, binding.WorkflowName, binding.WorkflowVersion,
+		ctx, binding.WorkflowName, binding.WorkflowVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("load workflow: %w", err)
@@ -157,19 +157,12 @@ func (r *eventRouter) createInstance(
 		StartedAt:       &now,
 	}
 
-	// Set tenant and partition from event.
-	instance.TenantID = event.TenantID
-	instance.PartitionID = def.PartitionID
-
 	if err = r.instanceRepo.Create(ctx, instance); err != nil {
 		return fmt.Errorf("create instance: %w", err)
 	}
 
 	// Audit event.
 	_ = r.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		ID:          util.IDString(),
-		TenantID:    event.TenantID,
-		PartitionID: def.PartitionID,
 		InstanceID:  instance.ID,
 		EventType:   events.EventInstanceCreated,
 		State:       initialStep.ID,

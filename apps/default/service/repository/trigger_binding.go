@@ -13,7 +13,7 @@ import (
 // TriggerBindingRepository manages trigger binding persistence.
 type TriggerBindingRepository interface {
 	Create(ctx context.Context, binding *models.TriggerBinding) error
-	FindByEventType(ctx context.Context, tenantID, eventType string) ([]*models.TriggerBinding, error)
+	FindByEventType(ctx context.Context, eventType string) ([]*models.TriggerBinding, error)
 }
 
 type triggerBindingRepository struct {
@@ -40,15 +40,15 @@ func (r *triggerBindingRepository) Create(ctx context.Context, binding *models.T
 
 func (r *triggerBindingRepository) FindByEventType(
 	ctx context.Context,
-	tenantID, eventType string,
+	eventType string,
 ) ([]*models.TriggerBinding, error) {
 	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var bindings []*models.TriggerBinding
 
 	result := db.Where(
-		"tenant_id = ? AND event_type = ? AND active = true AND deleted_at IS NULL",
-		tenantID, eventType,
+		"event_type = ? AND active = true AND deleted_at IS NULL",
+		eventType,
 	).Find(&bindings)
 
 	if result.Error != nil {

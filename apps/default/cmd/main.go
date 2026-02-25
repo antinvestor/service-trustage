@@ -12,6 +12,7 @@ import (
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/default/config"
+	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	appcache "github.com/antinvestor/service-trustage/apps/default/service/cache"
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
@@ -96,6 +97,10 @@ func main() { //nolint:funlen // main function wiring
 	eventRouter := business.NewEventRouter(triggerRepo, defRepo, instanceRepo, auditRepo, engine, metrics)
 	workflowBiz := business.NewWorkflowBusiness(defRepo, schemaReg)
 
+	sm := svc.SecurityManager()
+	authorizer := sm.GetAuthorizer(ctx)
+	authzMiddleware := authz.NewMiddleware(authorizer)
+
 	// Schedulers (background goroutines with coordinated shutdown).
 	// Schedulers process all tenants, so skip tenancy checks on BaseRepository queries.
 	schedulerCtx, schedulerCancel := context.WithCancel(security.SkipTenancyChecksOnClaims(ctx))
@@ -129,11 +134,13 @@ func main() { //nolint:funlen // main function wiring
 	startScheduler("cron", cronSched.Start)
 
 	// HTTP handlers.
-	workflowHandler := handlers.NewWorkflowHandler(workflowBiz, metrics)
+	workflowHandler := handlers.NewWorkflowHandler(workflowBiz, authzMiddleware, metrics)
 	rateLimiter := handlers.NewRateLimiter(rawCache, cfg.EventIngestRateLimit)
-	eventHandler := handlers.NewEventHandler(eventLogRepo, auditRepo, metrics, rateLimiter)
-	formHandler := handlers.NewFormHandler(eventLogRepo, metrics, rateLimiter)
-	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(eventLogRepo, metrics, rateLimiter)
+	eventHandler := handlers.NewEventHandler(eventLogRepo, auditRepo, authzMiddleware, metrics, rateLimiter)
+	formHandler := handlers.NewFormHandler(eventLogRepo, authzMiddleware, metrics, rateLimiter)
+	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(eventLogRepo, authzMiddleware, metrics, rateLimiter)
+	instanceHandler := handlers.NewInstanceHandler(instanceRepo, execRepo, auditRepo, authzMiddleware)
+	executionHandler := handlers.NewExecutionHandler(execRepo, instanceRepo, outputRepo, auditRepo, authzMiddleware)
 
 	mux := http.NewServeMux()
 
@@ -141,10 +148,20 @@ func main() { //nolint:funlen // main function wiring
 	mux.HandleFunc("POST /api/v1/workflows", workflowHandler.CreateWorkflow)
 	mux.HandleFunc("GET /api/v1/workflows/{id}", workflowHandler.GetWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/{id}/activate", workflowHandler.ActivateWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows", workflowHandler.ListWorkflows)
 
 	// Event ingestion and timeline endpoints.
 	mux.HandleFunc("POST /api/v1/events", eventHandler.IngestEvent)
 	mux.HandleFunc("GET /api/v1/instances/{id}/timeline", eventHandler.GetInstanceTimeline)
+
+	// Instance endpoints.
+	mux.HandleFunc("GET /api/v1/instances", instanceHandler.List)
+	mux.HandleFunc("POST /api/v1/instances/{id}/retry", instanceHandler.Retry)
+
+	// Execution endpoints.
+	mux.HandleFunc("GET /api/v1/executions", executionHandler.List)
+	mux.HandleFunc("GET /api/v1/executions/{id}", executionHandler.Get)
+	mux.HandleFunc("POST /api/v1/executions/{id}/retry", executionHandler.Retry)
 
 	// Form capture endpoint.
 	mux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)

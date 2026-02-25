@@ -14,8 +14,8 @@ import (
 type WorkflowDefinitionRepository interface {
 	Create(ctx context.Context, def *models.WorkflowDefinition) error
 	GetByID(ctx context.Context, id string) (*models.WorkflowDefinition, error)
-	GetByNameAndVersion(ctx context.Context, tenantID, name string, version int) (*models.WorkflowDefinition, error)
-	ListActiveByName(ctx context.Context, tenantID, name string) ([]*models.WorkflowDefinition, error)
+	GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error)
+	ListActiveByName(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
 	Update(ctx context.Context, def *models.WorkflowDefinition) error
 }
 
@@ -47,7 +47,7 @@ func (r *workflowDefinitionRepository) GetByID(ctx context.Context, id string) (
 
 func (r *workflowDefinitionRepository) GetByNameAndVersion(
 	ctx context.Context,
-	tenantID, name string,
+	name string,
 	version int,
 ) (*models.WorkflowDefinition, error) {
 	db := r.BaseRepository.Pool().DB(ctx, true)
@@ -55,8 +55,8 @@ func (r *workflowDefinitionRepository) GetByNameAndVersion(
 	var def models.WorkflowDefinition
 
 	result := db.Where(
-		"tenant_id = ? AND name = ? AND workflow_version = ? AND deleted_at IS NULL",
-		tenantID, name, version,
+		"name = ? AND workflow_version = ? AND deleted_at IS NULL",
+		name, version,
 	).First(&def)
 
 	if result.Error != nil {
@@ -68,16 +68,26 @@ func (r *workflowDefinitionRepository) GetByNameAndVersion(
 
 func (r *workflowDefinitionRepository) ListActiveByName(
 	ctx context.Context,
-	tenantID, name string,
+	name string,
+	limit int,
 ) ([]*models.WorkflowDefinition, error) {
 	db := r.BaseRepository.Pool().DB(ctx, true)
 
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+
 	var defs []*models.WorkflowDefinition
 
-	result := db.Where(
-		"tenant_id = ? AND name = ? AND status = ? AND deleted_at IS NULL",
-		tenantID, name, models.WorkflowStatusActive,
-	).Order("workflow_version DESC").Find(&defs)
+	query := db.Where("status = ? AND deleted_at IS NULL", models.WorkflowStatusActive)
+	if name != "" {
+		query = query.Where("name = ?", name)
+	}
+
+	result := query.Order("workflow_version DESC").Limit(limit).Find(&defs)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("list active workflows: %w", result.Error)

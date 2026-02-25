@@ -15,13 +15,13 @@ import (
 // EventLogRepository manages event log persistence for the outbox pattern.
 type EventLogRepository interface {
 	Create(ctx context.Context, event *models.EventLog) error
-	FindByIdempotencyKey(ctx context.Context, tenantID, key string) (*models.EventLog, error)
+	FindByIdempotencyKey(ctx context.Context, key string) (*models.EventLog, error)
 	FindUnpublished(ctx context.Context, limit int) ([]*models.EventLog, error)
 	MarkPublished(ctx context.Context, id string) error
 	// FindAndProcessUnpublished atomically finds unpublished events and processes each one
 	// within a single transaction, ensuring the FOR UPDATE SKIP LOCKED lock is held.
 	FindAndProcessUnpublished(ctx context.Context, limit int, fn func(event *models.EventLog) error) (int, error)
-	// DeletePublishedBefore hard-deletes published events older than the given time.
+	// DeletePublishedBefore soft-deletes published events older than the given time.
 	DeletePublishedBefore(ctx context.Context, before time.Time, limit int) (int64, error)
 }
 
@@ -52,13 +52,13 @@ func (r *eventLogRepository) Create(ctx context.Context, event *models.EventLog)
 // FindByIdempotencyKey returns an existing event with the given idempotency key, or nil if not found.
 func (r *eventLogRepository) FindByIdempotencyKey(
 	ctx context.Context,
-	tenantID, key string,
+	key string,
 ) (*models.EventLog, error) {
 	db := r.pool.DB(ctx, true)
 
 	var event models.EventLog
 
-	result := db.Where("tenant_id = ? AND idempotency_key = ?", tenantID, key).First(&event)
+	result := db.Where("idempotency_key = ? AND deleted_at IS NULL", key).First(&event)
 	if result.Error != nil {
 		return nil, fmt.Errorf("find by idempotency key: %w", result.Error)
 	}
@@ -106,7 +106,7 @@ func (r *eventLogRepository) MarkPublished(ctx context.Context, id string) error
 	return nil
 }
 
-// DeletePublishedBefore hard-deletes published events older than the given time.
+// DeletePublishedBefore soft-deletes published events older than the given time.
 func (r *eventLogRepository) DeletePublishedBefore(
 	ctx context.Context,
 	before time.Time,
@@ -115,11 +115,13 @@ func (r *eventLogRepository) DeletePublishedBefore(
 	db := r.pool.DB(ctx, false)
 
 	result := db.Exec(
-		`DELETE FROM event_log WHERE id IN (
-			SELECT id FROM event_log
-			WHERE published = true AND published_at < ?
-			LIMIT ?
-		)`, before, limit,
+		`UPDATE event_log
+		 SET deleted_at = NOW()
+		 WHERE id IN (
+		 	SELECT id FROM event_log
+		 	WHERE published = true AND published_at < ? AND deleted_at IS NULL
+		 	LIMIT ?
+		 )`, before, limit,
 	)
 	if result.Error != nil {
 		return 0, fmt.Errorf("delete published events: %w", result.Error)

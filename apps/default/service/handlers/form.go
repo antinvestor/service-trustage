@@ -7,6 +7,7 @@ import (
 
 	"github.com/pitabwire/util"
 
+	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
@@ -16,6 +17,7 @@ import (
 // Single purpose: accept form data and create workflow-triggering events.
 type FormHandler struct {
 	eventRepo   repository.EventLogRepository
+	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
 }
@@ -23,11 +25,13 @@ type FormHandler struct {
 // NewFormHandler creates a new FormHandler.
 func NewFormHandler(
 	eventRepo repository.EventLogRepository,
+	authzMiddleware authz.Middleware,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
 ) *FormHandler {
 	return &FormHandler{
 		eventRepo:   eventRepo,
+		authz:       authzMiddleware,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
@@ -46,13 +50,19 @@ func (h *FormHandler) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := util.Log(ctx)
 
-	tenantID, partitionID, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
 	}
 
+	if h.authz != nil {
+		if err := h.authz.CanIngestEvent(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+
 	// Rate limit per tenant.
-	if h.rateLimiter != nil && !h.rateLimiter.Allow(ctx, tenantID) {
+	if h.rateLimiter != nil && !h.rateLimiter.Allow(ctx) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -76,7 +86,7 @@ func (h *FormHandler) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 	// Check idempotency.
 	if req.IdempotencyKey != "" {
-		existing, _ := h.eventRepo.FindByIdempotencyKey(ctx, tenantID, req.IdempotencyKey)
+		existing, _ := h.eventRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
 		if existing != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
@@ -108,9 +118,6 @@ func (h *FormHandler) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: req.IdempotencyKey,
 		Payload:        string(payloadBytes),
 	}
-
-	eventLog.TenantID = tenantID
-	eventLog.PartitionID = partitionID
 
 	if err := h.eventRepo.Create(ctx, eventLog); err != nil {
 		log.WithError(err).Error("failed to store form submission")

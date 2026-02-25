@@ -38,9 +38,10 @@ CREATE TABLE IF NOT EXISTS workflow_instances (
 
 -- workflow_state_executions: each attempt to execute a state
 CREATE TABLE IF NOT EXISTS workflow_state_executions (
-    execution_id    VARCHAR(50) PRIMARY KEY,
+    id              VARCHAR(50) PRIMARY KEY,
     tenant_id       VARCHAR(50) NOT NULL,
     partition_id    VARCHAR(50) NOT NULL,
+    access_id       VARCHAR(50),
     instance_id     VARCHAR(50) NOT NULL REFERENCES workflow_instances(id),
     state           VARCHAR(255) NOT NULL,
     state_version   INT NOT NULL DEFAULT 1,
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS workflow_state_executions (
     status          VARCHAR(30) NOT NULL DEFAULT 'pending',
     execution_token VARCHAR(64) NOT NULL,
     input_schema_hash VARCHAR(64) NOT NULL,
+    input_payload   JSONB,
     output_schema_hash VARCHAR(64),
     error_class     VARCHAR(30),
     error_message   TEXT,
@@ -55,7 +57,10 @@ CREATE TABLE IF NOT EXISTS workflow_state_executions (
     trace_id        VARCHAR(64),
     started_at      TIMESTAMPTZ,
     finished_at     TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    modified_at     TIMESTAMPTZ DEFAULT NOW(),
+    version         BIGINT NOT NULL DEFAULT 0,
+    deleted_at      TIMESTAMPTZ
 );
 
 -- workflow_state_schemas: immutable JSON Schema documents
@@ -63,13 +68,17 @@ CREATE TABLE IF NOT EXISTS workflow_state_schemas (
     id              VARCHAR(50) PRIMARY KEY,
     tenant_id       VARCHAR(50) NOT NULL,
     partition_id    VARCHAR(50) NOT NULL,
+    access_id       VARCHAR(50),
     workflow_name   VARCHAR(255) NOT NULL,
     workflow_version INT NOT NULL,
     state           VARCHAR(255) NOT NULL,
     schema_type     VARCHAR(10) NOT NULL,
     schema_hash     VARCHAR(64) NOT NULL,
     schema_blob     JSONB NOT NULL,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    modified_at     TIMESTAMPTZ DEFAULT NOW(),
+    version         BIGINT NOT NULL DEFAULT 0,
+    deleted_at      TIMESTAMPTZ
 );
 
 -- workflow_state_mappings: data mapping expressions between states
@@ -92,12 +101,16 @@ CREATE TABLE IF NOT EXISTS workflow_state_outputs (
     id              VARCHAR(50) PRIMARY KEY,
     tenant_id       VARCHAR(50) NOT NULL,
     partition_id    VARCHAR(50) NOT NULL,
+    access_id       VARCHAR(50),
     execution_id    VARCHAR(50) NOT NULL,
     instance_id     VARCHAR(50) NOT NULL,
     state           VARCHAR(255) NOT NULL,
     schema_hash     VARCHAR(64) NOT NULL,
     payload         JSONB NOT NULL,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    modified_at     TIMESTAMPTZ DEFAULT NOW(),
+    version         BIGINT NOT NULL DEFAULT 0,
+    deleted_at      TIMESTAMPTZ
 );
 
 -- workflow_retry_policies: retry configuration per state
@@ -123,6 +136,7 @@ CREATE TABLE IF NOT EXISTS workflow_audit_events (
     id              VARCHAR(50) PRIMARY KEY,
     tenant_id       VARCHAR(50) NOT NULL,
     partition_id    VARCHAR(50) NOT NULL,
+    access_id       VARCHAR(50),
     instance_id     VARCHAR(50) NOT NULL,
     execution_id    VARCHAR(50),
     event_type      VARCHAR(50) NOT NULL,
@@ -131,7 +145,10 @@ CREATE TABLE IF NOT EXISTS workflow_audit_events (
     to_state        VARCHAR(255),
     payload         JSONB DEFAULT '{}',
     trace_id        VARCHAR(64),
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    modified_at     TIMESTAMPTZ DEFAULT NOW(),
+    version         BIGINT NOT NULL DEFAULT 0,
+    deleted_at      TIMESTAMPTZ
 );
 
 -- event_log: outbox pattern for event publishing
@@ -139,6 +156,7 @@ CREATE TABLE IF NOT EXISTS event_log (
     id              VARCHAR(50) PRIMARY KEY,
     tenant_id       VARCHAR(50) NOT NULL,
     partition_id    VARCHAR(50) NOT NULL,
+    access_id       VARCHAR(50),
     event_type      VARCHAR(100) NOT NULL,
     source          VARCHAR(255),
     payload         JSONB NOT NULL,
@@ -146,6 +164,7 @@ CREATE TABLE IF NOT EXISTS event_log (
     published_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     modified_at     TIMESTAMPTZ DEFAULT NOW(),
+    version         BIGINT NOT NULL DEFAULT 0,
     deleted_at      TIMESTAMPTZ
 );
 

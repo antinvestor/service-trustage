@@ -75,6 +75,7 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 
 		// Event log - outbox pattern.
 		"CREATE INDEX IF NOT EXISTS idx_el_unpublished ON event_log(published, created_at) WHERE published = false AND deleted_at IS NULL",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_el_idempotency_tenant ON event_log(tenant_id, partition_id, idempotency_key) WHERE idempotency_key IS NOT NULL AND deleted_at IS NULL",
 
 		// Trigger bindings.
 		"CREATE INDEX IF NOT EXISTS idx_tb_event ON trigger_bindings(tenant_id, event_type) WHERE active = true AND deleted_at IS NULL",

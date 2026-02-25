@@ -46,41 +46,17 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ErrMissingTenantID is returned when the tenant ID is missing from the request context.
-var ErrMissingTenantID = errors.New("missing tenant_id: authentication required")
+// ErrMissingAuth is returned when auth claims are missing from the request context.
+var ErrMissingAuth = errors.New("missing authentication claims")
 
-// GetTenantID extracts the tenant ID from OIDC claims.
-func GetTenantID(ctx context.Context) string {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil {
-		return ""
+// requireAuth validates auth claims exist and writes an error response if missing.
+func requireAuth(ctx context.Context, w http.ResponseWriter) bool {
+	if security.ClaimsFromContext(ctx) == nil {
+		http.Error(w, ErrMissingAuth.Error(), http.StatusUnauthorized)
+		return false
 	}
 
-	return claims.GetTenantID()
-}
-
-// GetPartitionID extracts the partition ID from OIDC claims.
-func GetPartitionID(ctx context.Context) string {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil {
-		return ""
-	}
-
-	return claims.GetPartitionID()
-}
-
-// requireTenant validates tenant_id is non-empty and writes an error response if missing.
-// Returns the tenantID and true if valid, or empty string and false if missing.
-func requireTenant(ctx context.Context, w http.ResponseWriter) (string, string, bool) {
-	tenantID := GetTenantID(ctx)
-	if tenantID == "" {
-		http.Error(w, ErrMissingTenantID.Error(), http.StatusUnauthorized)
-		return "", "", false
-	}
-
-	partitionID := GetPartitionID(ctx)
-
-	return tenantID, partitionID, true
+	return true
 }
 
 // httpStatusForError maps a business error to an HTTP status code and safe message.

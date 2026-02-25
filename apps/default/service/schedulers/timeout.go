@@ -91,13 +91,13 @@ func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 
 	for _, exec := range overdue {
 		// Mark current execution as timed out.
-		updateErr := s.execRepo.UpdateStatus(ctx, exec.ExecutionID, models.ExecStatusTimedOut, map[string]any{
+		updateErr := s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusTimedOut, map[string]any{
 			"error_class":   "retryable",
 			"error_message": "execution timed out",
 		})
 		if updateErr != nil {
 			log.WithError(updateErr).Error("timeout scheduler: mark timed out failed",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 			)
 			continue
 		}
@@ -105,23 +105,20 @@ func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 		// Attempt to schedule a retry.
 		if retried := s.scheduleRetryIfAllowed(ctx, exec); retried {
 			log.Info("timeout scheduler: retry scheduled",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 				"attempt", exec.Attempt,
 			)
 		} else {
 			// No retry possible — mark as fatal and fail the instance.
-			_ = s.execRepo.UpdateStatus(ctx, exec.ExecutionID, models.ExecStatusFatal, map[string]any{
+			_ = s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusFatal, map[string]any{
 				"error_class":   "retryable",
 				"error_message": "execution timed out, retries exhausted",
 			})
-			_ = s.instanceRepo.UpdateStatus(ctx, exec.InstanceID, exec.TenantID, models.InstanceStatusFailed)
+			_ = s.instanceRepo.UpdateStatus(ctx, exec.InstanceID, models.InstanceStatusFailed)
 
 			_ = s.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-				ID:          util.IDString(),
-				TenantID:    exec.TenantID,
-				PartitionID: exec.PartitionID,
 				InstanceID:  exec.InstanceID,
-				ExecutionID: exec.ExecutionID,
+				ExecutionID: exec.ID,
 				EventType:   events.EventStateFailed,
 				State:       exec.State,
 			})
@@ -148,13 +145,13 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 	instance, err := s.instanceRepo.GetByID(ctx, exec.InstanceID)
 	if err != nil {
 		log.WithError(err).Error("timeout scheduler: load instance failed",
-			"execution_id", exec.ExecutionID,
+			"execution_id", exec.ID,
 		)
 		return false
 	}
 
 	policy, policyErr := s.retryPolicyRepo.Lookup(
-		ctx, exec.TenantID, instance.WorkflowName, instance.WorkflowVersion, exec.State,
+		ctx, instance.WorkflowName, instance.WorkflowVersion, exec.State,
 	)
 	if policyErr != nil {
 		return false // no retry policy
@@ -185,9 +182,6 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 	}
 
 	newExec := &models.WorkflowStateExecution{
-		ExecutionID:     util.IDString(),
-		TenantID:        exec.TenantID,
-		PartitionID:     exec.PartitionID,
 		InstanceID:      exec.InstanceID,
 		State:           exec.State,
 		StateVersion:    exec.StateVersion,
@@ -195,23 +189,21 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 		Status:          models.ExecStatusPending,
 		ExecutionToken:  cryptoutil.HashToken(rawToken),
 		InputSchemaHash: exec.InputSchemaHash,
+		InputPayload:    exec.InputPayload,
 		TraceID:         exec.TraceID,
 		NextRetryAt:     &nextRetry,
 	}
 
 	if createErr := s.execRepo.Create(ctx, newExec); createErr != nil {
 		log.WithError(createErr).Error("timeout scheduler: create retry execution failed",
-			"execution_id", exec.ExecutionID,
+			"execution_id", exec.ID,
 		)
 		return false
 	}
 
 	_ = s.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		ID:          util.IDString(),
-		TenantID:    exec.TenantID,
-		PartitionID: exec.PartitionID,
 		InstanceID:  exec.InstanceID,
-		ExecutionID: newExec.ExecutionID,
+		ExecutionID: newExec.ID,
 		EventType:   events.EventStateRetried,
 		State:       exec.State,
 	})

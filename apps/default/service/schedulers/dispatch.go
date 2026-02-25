@@ -86,7 +86,7 @@ func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
 		cmd, dispatchErr := s.engine.Dispatch(ctx, exec)
 		if dispatchErr != nil {
 			log.WithError(dispatchErr).Error("dispatch scheduler: dispatch failed",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 			)
 
 			continue
@@ -96,7 +96,7 @@ func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
 		publishErr := s.svc.QueueManager().Publish(ctx, s.cfg.QueueExecDispatchName, cmd)
 		if publishErr != nil {
 			log.WithError(publishErr).Error("dispatch scheduler: publish failed",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 			)
 
 			continue

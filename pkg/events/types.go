@@ -41,9 +41,10 @@ type ExecutionMessage struct {
 
 // IngestedEventMessage is the message published to the event ingestion stream.
 type IngestedEventMessage struct {
-	EventID   string         `json:"event_id"`
-	TenantID  string         `json:"tenant_id"`
-	EventType string         `json:"event_type"`
-	Source    string         `json:"source"`
-	Payload   map[string]any `json:"payload"`
+	EventID     string         `json:"event_id"`
+	TenantID    string         `json:"tenant_id"`
+	PartitionID string         `json:"partition_id"`
+	EventType   string         `json:"event_type"`
+	Source      string         `json:"source"`
+	Payload     map[string]any `json:"payload"`
 }

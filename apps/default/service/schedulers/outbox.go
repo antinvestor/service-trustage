@@ -82,11 +82,12 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 			}
 
 			msg := &events.IngestedEventMessage{
-				EventID:   event.ID,
-				TenantID:  event.TenantID,
-				EventType: event.EventType,
-				Source:    event.Source,
-				Payload:   payload,
+				EventID:     event.ID,
+				TenantID:    event.TenantID,
+				PartitionID: event.PartitionID,
+				EventType:   event.EventType,
+				Source:      event.Source,
+				Payload:     payload,
 			}
 
 			// Publish to NATS event stream.

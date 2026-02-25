@@ -85,28 +85,28 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 		instance, instanceErr := s.instanceRepo.GetByID(ctx, exec.InstanceID)
 		if instanceErr != nil {
 			log.WithError(instanceErr).Error("retry scheduler: load instance failed",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 			)
 			// Mark stale so we don't retry this execution again.
-			_ = s.execRepo.MarkStale(ctx, exec.ExecutionID)
+			_ = s.execRepo.MarkStale(ctx, exec.ID)
 
 			continue
 		}
 
 		if instance.Status != models.InstanceStatusRunning {
 			log.Info("retry scheduler: skipping retry for non-running instance",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 				"instance_status", instance.Status,
 			)
-			_ = s.execRepo.MarkStale(ctx, exec.ExecutionID)
+			_ = s.execRepo.MarkStale(ctx, exec.ID)
 
 			continue
 		}
 
 		// Mark old execution as stale.
-		if staleErr := s.execRepo.MarkStale(ctx, exec.ExecutionID); staleErr != nil {
+		if staleErr := s.execRepo.MarkStale(ctx, exec.ID); staleErr != nil {
 			log.WithError(staleErr).Error("retry scheduler: mark stale failed",
-				"execution_id", exec.ExecutionID,
+				"execution_id", exec.ID,
 			)
 
 			continue
@@ -120,9 +120,6 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 		}
 
 		newExec := &models.WorkflowStateExecution{
-			ExecutionID:     util.IDString(),
-			TenantID:        exec.TenantID,
-			PartitionID:     exec.PartitionID,
 			InstanceID:      exec.InstanceID,
 			State:           exec.State,
 			StateVersion:    exec.StateVersion,
@@ -130,6 +127,7 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 			Status:          models.ExecStatusPending,
 			ExecutionToken:  cryptoutil.HashToken(rawToken),
 			InputSchemaHash: exec.InputSchemaHash,
+			InputPayload:    exec.InputPayload,
 			TraceID:         exec.TraceID,
 		}
 

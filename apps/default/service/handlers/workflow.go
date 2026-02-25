@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/pitabwire/util"
 
+	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
+	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
 )
 
@@ -15,13 +18,15 @@ import (
 // Uses plain HTTP until proto generation is set up.
 type WorkflowHandler struct {
 	workflowBiz business.WorkflowBusiness
+	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 }
 
 // NewWorkflowHandler creates a new WorkflowHandler.
-func NewWorkflowHandler(biz business.WorkflowBusiness, metrics *telemetry.Metrics) *WorkflowHandler {
+func NewWorkflowHandler(biz business.WorkflowBusiness, authzMiddleware authz.Middleware, metrics *telemetry.Metrics) *WorkflowHandler {
 	return &WorkflowHandler{
 		workflowBiz: biz,
+		authz:       authzMiddleware,
 		metrics:     metrics,
 	}
 }
@@ -31,9 +36,15 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	ctx := r.Context()
 	log := util.Log(ctx)
 
-	tenantID, partitionID, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
+	}
+
+	if h.authz != nil {
+		if err := h.authz.CanManageWorkflow(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 	}
 
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerEngine, telemetry.SpanCreateWorkflow)
@@ -45,7 +56,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	def, err := h.workflowBiz.CreateWorkflow(ctx, tenantID, partitionID, body)
+	def, err := h.workflowBiz.CreateWorkflow(ctx, body)
 	if err != nil {
 		log.WithError(err).Error("failed to create workflow")
 		status, msg := httpStatusForError(err)
@@ -68,9 +79,15 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	_, _, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
+	}
+
+	if h.authz != nil {
+		if err := h.authz.CanViewWorkflow(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 	}
 
 	id := r.PathValue("id")
@@ -79,7 +96,6 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
-
 		return
 	}
 
@@ -93,13 +109,64 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListWorkflows handles GET /api/v1/workflows.
+func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if h.authz != nil {
+		if err := h.authz.CanViewWorkflow(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+
+	status := r.URL.Query().Get("status")
+	if status != "" && status != string(models.WorkflowStatusActive) {
+		http.Error(w, "unsupported status filter", http.StatusBadRequest)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	defs, err := h.workflowBiz.ListWorkflows(ctx, name, limit)
+	if err != nil {
+		status, msg := httpStatusForError(err)
+		http.Error(w, msg, status)
+		return
+	}
+
+	items := make([]map[string]any, 0, len(defs))
+	for _, def := range defs {
+		items = append(items, map[string]any{
+			"id":      def.ID,
+			"name":    def.Name,
+			"version": def.WorkflowVersion,
+			"status":  def.Status,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+}
+
 // ActivateWorkflow handles POST /api/v1/workflows/{id}/activate.
 func (h *WorkflowHandler) ActivateWorkflow(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	_, _, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
+	}
+
+	if h.authz != nil {
+		if err := h.authz.CanManageWorkflow(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 	}
 
 	id := r.PathValue("id")
@@ -107,7 +174,6 @@ func (h *WorkflowHandler) ActivateWorkflow(w http.ResponseWriter, r *http.Reques
 	if err := h.workflowBiz.ActivateWorkflow(ctx, id); err != nil {
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
-
 		return
 	}
 

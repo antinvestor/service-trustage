@@ -15,7 +15,7 @@ type RetryPolicyRepository interface {
 	Store(ctx context.Context, policy *models.WorkflowRetryPolicy) error
 	Lookup(
 		ctx context.Context,
-		tenantID, workflowName string,
+		workflowName string,
 		version int,
 		state string,
 	) (*models.WorkflowRetryPolicy, error)
@@ -45,7 +45,7 @@ func (r *retryPolicyRepository) Store(ctx context.Context, policy *models.Workfl
 
 func (r *retryPolicyRepository) Lookup(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 ) (*models.WorkflowRetryPolicy, error) {
@@ -54,8 +54,8 @@ func (r *retryPolicyRepository) Lookup(
 	var policy models.WorkflowRetryPolicy
 
 	result := db.Where(
-		"tenant_id = ? AND workflow_name = ? AND workflow_version = ? AND state = ? AND deleted_at IS NULL",
-		tenantID, workflowName, version, state,
+		"workflow_name = ? AND workflow_version = ? AND state = ? AND deleted_at IS NULL",
+		workflowName, version, state,
 	).First(&policy)
 
 	if result.Error != nil {

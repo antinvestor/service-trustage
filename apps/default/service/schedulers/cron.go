@@ -123,9 +123,7 @@ func (s *CronScheduler) fireSchedule(
 		IdempotencyKey: sched.ID + ":" + now.Format(time.RFC3339),
 		Payload:        string(payloadBytes),
 	}
-
-	eventLog.TenantID = sched.TenantID
-	eventLog.PartitionID = sched.PartitionID
+	eventLog.CopyPartitionInfo(&sched.BaseModel)
 
 	if err := s.eventRepo.Create(ctx, eventLog); err != nil {
 		return err

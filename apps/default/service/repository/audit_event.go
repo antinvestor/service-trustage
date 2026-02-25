@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -13,46 +14,50 @@ import (
 // AuditEventRepository manages append-only audit event persistence.
 type AuditEventRepository interface {
 	Append(ctx context.Context, event *models.WorkflowAuditEvent) error
-	ListByInstance(ctx context.Context, tenantID, instanceID string) ([]*models.WorkflowAuditEvent, error)
-	// DeleteBefore hard-deletes audit events older than the given time.
+	ListByInstance(ctx context.Context, instanceID string) ([]*models.WorkflowAuditEvent, error)
+	// DeleteBefore soft-deletes audit events older than the given time.
 	DeleteBefore(ctx context.Context, before time.Time, limit int) (int64, error)
 }
 
 type auditEventRepository struct {
-	pool pool.Pool
+	datastore.BaseRepository[*models.WorkflowAuditEvent]
 }
 
 // NewAuditEventRepository creates a new AuditEventRepository.
 func NewAuditEventRepository(dbPool pool.Pool) AuditEventRepository {
-	return &auditEventRepository{pool: dbPool}
+	ctx := context.Background()
+	return &auditEventRepository{
+		BaseRepository: datastore.NewBaseRepository[*models.WorkflowAuditEvent](
+			ctx,
+			dbPool,
+			nil,
+			func() *models.WorkflowAuditEvent { return &models.WorkflowAuditEvent{} },
+		),
+	}
 }
 
 // Append inserts a single audit event (insert-only, never update).
 func (r *auditEventRepository) Append(ctx context.Context, event *models.WorkflowAuditEvent) error {
-	db := r.pool.DB(ctx, false)
-
-	result := db.Create(event)
-	if result.Error != nil {
-		return fmt.Errorf("append audit event: %w", result.Error)
-	}
-
-	return nil
+	return r.BaseRepository.Create(ctx, event)
 }
 
-// DeleteBefore hard-deletes audit events older than the given time.
+// DeleteBefore soft-deletes audit events older than the given time.
 func (r *auditEventRepository) DeleteBefore(
 	ctx context.Context,
 	before time.Time,
 	limit int,
 ) (int64, error) {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	result := db.Exec(
-		`DELETE FROM workflow_audit_events WHERE id IN (
-			SELECT id FROM workflow_audit_events
-			WHERE created_at < ?
-			LIMIT ?
-		)`, before, limit,
+		`UPDATE workflow_audit_events
+		 SET deleted_at = NOW()
+		 WHERE id IN (
+		 	SELECT id FROM workflow_audit_events
+		 	WHERE created_at < ? AND deleted_at IS NULL
+		 	LIMIT ?
+		 )`,
+		before, limit,
 	)
 	if result.Error != nil {
 		return 0, fmt.Errorf("delete old audit events: %w", result.Error)
@@ -63,13 +68,13 @@ func (r *auditEventRepository) DeleteBefore(
 
 func (r *auditEventRepository) ListByInstance(
 	ctx context.Context,
-	tenantID, instanceID string,
+	instanceID string,
 ) ([]*models.WorkflowAuditEvent, error) {
-	db := r.pool.DB(ctx, true)
+	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var events []*models.WorkflowAuditEvent
 
-	result := db.Where("tenant_id = ? AND instance_id = ?", tenantID, instanceID).
+	result := db.Where("instance_id = ? AND deleted_at IS NULL", instanceID).
 		Order("created_at ASC").
 		Find(&events)
 

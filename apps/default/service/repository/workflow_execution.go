@@ -6,16 +6,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
+
 // WorkflowExecutionRepository manages workflow state execution persistence.
 type WorkflowExecutionRepository interface {
 	Create(ctx context.Context, exec *models.WorkflowStateExecution) error
 	GetByID(ctx context.Context, executionID string) (*models.WorkflowStateExecution, error)
+	List(ctx context.Context, status, instanceID string, limit int) ([]*models.WorkflowStateExecution, error)
+	GetLatestByInstance(ctx context.Context, instanceID string) (*models.WorkflowStateExecution, error)
 	FindPending(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	FindRetryDue(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	FindTimedOut(ctx context.Context, timeoutSeconds int, limit int) ([]*models.WorkflowStateExecution, error)
@@ -27,41 +31,81 @@ type WorkflowExecutionRepository interface {
 }
 
 type workflowExecutionRepository struct {
-	pool pool.Pool
+	datastore.BaseRepository[*models.WorkflowStateExecution]
 }
 
-// NewWorkflowExecutionRepository creates a new repository for executions (custom PK, raw pool).
+// NewWorkflowExecutionRepository creates a new repository for executions.
 func NewWorkflowExecutionRepository(dbPool pool.Pool) WorkflowExecutionRepository {
-	return &workflowExecutionRepository{pool: dbPool}
+	ctx := context.Background()
+	return &workflowExecutionRepository{
+		BaseRepository: datastore.NewBaseRepository[*models.WorkflowStateExecution](
+			ctx,
+			dbPool,
+			nil,
+			func() *models.WorkflowStateExecution { return &models.WorkflowStateExecution{} },
+		),
+	}
 }
 
 // Pool returns the underlying database pool for transaction support.
 func (r *workflowExecutionRepository) Pool() pool.Pool {
-	return r.pool
+	return r.BaseRepository.Pool()
 }
 
 func (r *workflowExecutionRepository) Create(ctx context.Context, exec *models.WorkflowStateExecution) error {
-	db := r.pool.DB(ctx, false)
-
-	result := db.Create(exec)
-	if result.Error != nil {
-		return fmt.Errorf("create execution: %w", result.Error)
-	}
-
-	return nil
+	return r.BaseRepository.Create(ctx, exec)
 }
 
 func (r *workflowExecutionRepository) GetByID(
 	ctx context.Context,
 	executionID string,
 ) (*models.WorkflowStateExecution, error) {
-	db := r.pool.DB(ctx, true)
+	return r.BaseRepository.GetByID(ctx, executionID)
+}
+
+func (r *workflowExecutionRepository) List(
+	ctx context.Context,
+	status, instanceID string,
+	limit int,
+) ([]*models.WorkflowStateExecution, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
+
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+
+	query := db.Where("deleted_at IS NULL")
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if instanceID != "" {
+		query = query.Where("instance_id = ?", instanceID)
+	}
+
+	var execs []*models.WorkflowStateExecution
+	result := query.Order("created_at DESC").Limit(limit).Find(&execs)
+	if result.Error != nil {
+		return nil, fmt.Errorf("list executions: %w", result.Error)
+	}
+
+	return execs, nil
+}
+
+func (r *workflowExecutionRepository) GetLatestByInstance(
+	ctx context.Context,
+	instanceID string,
+) (*models.WorkflowStateExecution, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var exec models.WorkflowStateExecution
-
-	result := db.Where("execution_id = ?", executionID).First(&exec)
+	result := db.Where("instance_id = ? AND deleted_at IS NULL", instanceID).
+		Order("created_at DESC").
+		First(&exec)
 	if result.Error != nil {
-		return nil, fmt.Errorf("get execution: %w", result.Error)
+		return nil, fmt.Errorf("get latest execution: %w", result.Error)
 	}
 
 	return &exec, nil
@@ -72,13 +116,13 @@ func (r *workflowExecutionRepository) FindPending(
 	ctx context.Context,
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	var execs []*models.WorkflowStateExecution
 
 	result := db.Raw(
 		`SELECT * FROM workflow_state_executions
-		 WHERE status = 'pending'
+		 WHERE status = 'pending' AND deleted_at IS NULL
 		 ORDER BY created_at
 		 FOR UPDATE SKIP LOCKED
 		 LIMIT ?`, limit,
@@ -96,13 +140,13 @@ func (r *workflowExecutionRepository) FindRetryDue(
 	ctx context.Context,
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	var execs []*models.WorkflowStateExecution
 
 	result := db.Raw(
 		`SELECT * FROM workflow_state_executions
-		 WHERE status = 'retry_scheduled' AND next_retry_at <= NOW()
+		 WHERE status = 'retry_scheduled' AND next_retry_at <= NOW() AND deleted_at IS NULL
 		 ORDER BY next_retry_at
 		 FOR UPDATE SKIP LOCKED
 		 LIMIT ?`, limit,
@@ -121,15 +165,17 @@ func (r *workflowExecutionRepository) FindTimedOut(
 	timeoutSeconds int,
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	var execs []*models.WorkflowStateExecution
 
 	result := db.Raw(
 		`SELECT * FROM workflow_state_executions
 		 WHERE status = 'dispatched'
-		   AND created_at < NOW() - INTERVAL '1 second' * ?
-		 ORDER BY created_at
+		   AND started_at IS NOT NULL
+		   AND started_at < NOW() - INTERVAL '1 second' * ?
+		   AND deleted_at IS NULL
+		 ORDER BY started_at
 		 FOR UPDATE SKIP LOCKED
 		 LIMIT ?`, timeoutSeconds, limit,
 	).Scan(&execs)
@@ -146,14 +192,14 @@ func (r *workflowExecutionRepository) VerifyAndConsumeToken(
 	ctx context.Context,
 	executionID, tokenHash string,
 ) (*models.WorkflowStateExecution, error) {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	var exec models.WorkflowStateExecution
 
 	// SELECT FOR UPDATE to lock the row.
 	result := db.Raw(
 		`SELECT * FROM workflow_state_executions
-		 WHERE execution_id = ? AND execution_token = ? AND status = 'dispatched'
+		 WHERE id = ? AND execution_token = ? AND status = 'dispatched' AND deleted_at IS NULL
 		 FOR UPDATE`, executionID, tokenHash,
 	).Scan(&exec)
 
@@ -167,7 +213,7 @@ func (r *workflowExecutionRepository) VerifyAndConsumeToken(
 
 	// Atomically consume the token by clearing it.
 	consumeResult := db.Exec(
-		`UPDATE workflow_state_executions SET execution_token = '' WHERE execution_id = ?`,
+		`UPDATE workflow_state_executions SET execution_token = '' WHERE id = ? AND deleted_at IS NULL`,
 		executionID,
 	)
 
@@ -187,7 +233,7 @@ func (r *workflowExecutionRepository) VerifyAndConsumeTokenTx(
 
 	result := tx.Raw(
 		`SELECT * FROM workflow_state_executions
-		 WHERE execution_id = ? AND execution_token = ? AND status = 'dispatched'
+		 WHERE id = ? AND execution_token = ? AND status = 'dispatched' AND deleted_at IS NULL
 		 FOR UPDATE`, executionID, tokenHash,
 	).Scan(&exec)
 
@@ -200,7 +246,7 @@ func (r *workflowExecutionRepository) VerifyAndConsumeTokenTx(
 	}
 
 	consumeResult := tx.Exec(
-		`UPDATE workflow_state_executions SET execution_token = '' WHERE execution_id = ?`,
+		`UPDATE workflow_state_executions SET execution_token = '' WHERE id = ? AND deleted_at IS NULL`,
 		executionID,
 	)
 
@@ -217,7 +263,7 @@ func (r *workflowExecutionRepository) UpdateStatus(
 	status models.ExecutionStatus,
 	fields map[string]any,
 ) error {
-	db := r.pool.DB(ctx, false)
+	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	updates := map[string]any{
 		"status": string(status),
@@ -233,7 +279,7 @@ func (r *workflowExecutionRepository) UpdateStatus(
 	}
 
 	result := db.Model(&models.WorkflowStateExecution{}).
-		Where("execution_id = ?", executionID).
+		Where("id = ? AND deleted_at IS NULL", executionID).
 		Updates(updates)
 
 	if result.Error != nil {

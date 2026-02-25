@@ -7,6 +7,7 @@ import (
 
 	"github.com/pitabwire/util"
 
+	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
@@ -16,6 +17,7 @@ import (
 // Single purpose: accept external webhook payloads and create workflow-triggering events.
 type WebhookReceiveHandler struct {
 	eventRepo   repository.EventLogRepository
+	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
 }
@@ -23,11 +25,13 @@ type WebhookReceiveHandler struct {
 // NewWebhookReceiveHandler creates a new WebhookReceiveHandler.
 func NewWebhookReceiveHandler(
 	eventRepo repository.EventLogRepository,
+	authzMiddleware authz.Middleware,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
 ) *WebhookReceiveHandler {
 	return &WebhookReceiveHandler{
 		eventRepo:   eventRepo,
+		authz:       authzMiddleware,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
@@ -39,13 +43,19 @@ func (h *WebhookReceiveHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Re
 	ctx := r.Context()
 	log := util.Log(ctx)
 
-	tenantID, partitionID, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
 	}
 
+	if h.authz != nil {
+		if err := h.authz.CanIngestEvent(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+
 	// Rate limit per tenant.
-	if h.rateLimiter != nil && !h.rateLimiter.Allow(ctx, tenantID) {
+	if h.rateLimiter != nil && !h.rateLimiter.Allow(ctx) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -80,9 +90,6 @@ func (h *WebhookReceiveHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Re
 		IdempotencyKey: idempotencyKey,
 		Payload:        string(payloadBytes),
 	}
-
-	eventLog.TenantID = tenantID
-	eventLog.PartitionID = partitionID
 
 	if err := h.eventRepo.Create(ctx, eventLog); err != nil {
 		log.WithError(err).Error("failed to store webhook event")

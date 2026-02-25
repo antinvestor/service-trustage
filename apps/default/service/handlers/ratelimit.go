@@ -6,44 +6,48 @@ import (
 	"time"
 
 	framecache "github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/ratelimiter"
+	"github.com/pitabwire/frame/security"
 )
 
-// rateLimitWindow is the sliding window duration for rate limiting.
-const rateLimitWindow = 1 * time.Minute
-
-// RateLimiter enforces per-tenant rate limits using Valkey atomic counters.
+// RateLimiter enforces per-tenant rate limits using Frame's cache-backed window limiter.
 type RateLimiter struct {
-	cache     framecache.RawCache
-	maxPerWin int
+	limiter *ratelimiter.WindowLimiter
 }
 
 // NewRateLimiter creates a new rate limiter.
-// If cache is nil, rate limiting is disabled (all requests allowed).
+// If cache is nil or maxPerWindow <= 0, rate limiting is disabled.
 func NewRateLimiter(cache framecache.RawCache, maxPerWindow int) *RateLimiter {
-	return &RateLimiter{cache: cache, maxPerWin: maxPerWindow}
+	if cache == nil || maxPerWindow <= 0 {
+		return &RateLimiter{limiter: nil}
+	}
+
+	cfg := ratelimiter.DefaultWindowConfig()
+	cfg.WindowDuration = time.Minute
+	cfg.MaxPerWindow = maxPerWindow
+	cfg.KeyPrefix = "trustage:events"
+	cfg.FailOpen = true
+
+	limiter, err := ratelimiter.NewWindowLimiter(cache, cfg)
+	if err != nil {
+		return &RateLimiter{limiter: nil}
+	}
+
+	return &RateLimiter{limiter: limiter}
 }
 
-// Allow checks whether a request from the given tenant should be allowed.
+// Allow checks whether a request from the current tenant should be allowed.
 // Returns true if allowed, false if rate-limited.
-func (rl *RateLimiter) Allow(ctx context.Context, tenantID string) bool {
-	if rl.cache == nil || rl.maxPerWin <= 0 {
+func (rl *RateLimiter) Allow(ctx context.Context) bool {
+	if rl == nil || rl.limiter == nil {
 		return true
 	}
 
-	// Use a time-bucketed key so counters auto-expire each window.
-	bucket := time.Now().Unix() / int64(rateLimitWindow.Seconds())
-	key := fmt.Sprintf("rl:event:%s:%d", tenantID, bucket)
-
-	count, err := rl.cache.Increment(ctx, key, 1)
-	if err != nil {
-		// On cache failure, allow the request (fail-open).
-		return true
+	claims := security.ClaimsFromContext(ctx)
+	if claims == nil {
+		return rl.limiter.Allow(ctx, "unknown")
 	}
 
-	// Set TTL on the first increment so the key expires after the window.
-	if count == 1 {
-		_ = rl.cache.Set(ctx, key, []byte("1"), rateLimitWindow+time.Second)
-	}
-
-	return count <= int64(rl.maxPerWin)
+	key := fmt.Sprintf("%s:%s", claims.GetTenantID(), claims.GetPartitionID())
+	return rl.limiter.Allow(ctx, key)
 }

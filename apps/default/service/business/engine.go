@@ -11,6 +11,7 @@ import (
 	"time"
 
 	framecache "github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -38,7 +39,6 @@ var dslCache = cacheutil.NewBoundedCache[*dsl.WorkflowSpec](maxDSLCacheSize) //n
 type ExecutionCommand struct {
 	ExecutionID     string          `json:"execution_id"`
 	InstanceID      string          `json:"instance_id"`
-	TenantID        string          `json:"tenant_id"`
 	Workflow        string          `json:"workflow"`
 	WorkflowVersion int             `json:"workflow_version"`
 	State           string          `json:"state"`
@@ -68,7 +68,7 @@ type CommitError struct {
 // WorkflowDefinitionLoader loads workflow definitions by name and version.
 // Used by the execution worker to load DSL without importing the repository package.
 type WorkflowDefinitionLoader interface {
-	GetByNameAndVersion(ctx context.Context, tenantID, name string, version int) (*models.WorkflowDefinition, error)
+	GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error)
 }
 
 // StateEngine handles dispatch and commit of state executions.
@@ -136,7 +136,7 @@ func (e *stateEngine) CreateInitialExecution(
 
 	// Validate input against schema.
 	schemaHash, err := e.schemaReg.ValidateInput(
-		ctx, instance.TenantID, instance.WorkflowName,
+		ctx, instance.WorkflowName,
 		instance.WorkflowVersion, instance.CurrentState, inputPayload,
 	)
 	if err != nil {
@@ -155,18 +155,14 @@ func (e *stateEngine) CreateInitialExecution(
 	}
 
 	tokenHash := cryptoutil.HashToken(rawToken)
-	executionID := util.IDString()
-
 	exec := &models.WorkflowStateExecution{
-		ExecutionID:     executionID,
-		TenantID:        instance.TenantID,
-		PartitionID:     instance.PartitionID,
 		InstanceID:      instance.ID,
 		State:           instance.CurrentState,
 		Attempt:         1,
 		Status:          models.ExecStatusPending,
 		ExecutionToken:  tokenHash,
 		InputSchemaHash: schemaHash,
+		InputPayload:    string(inputPayload),
 	}
 
 	if createErr := e.execRepo.Create(ctx, exec); createErr != nil {
@@ -175,19 +171,15 @@ func (e *stateEngine) CreateInitialExecution(
 
 	// Audit event.
 	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		ID:          util.IDString(),
-		TenantID:    instance.TenantID,
-		PartitionID: instance.PartitionID,
 		InstanceID:  instance.ID,
-		ExecutionID: executionID,
+		ExecutionID: exec.ID,
 		EventType:   events.EventStateDispatched,
 		State:       instance.CurrentState,
 	})
 
 	return &ExecutionCommand{
-		ExecutionID:     executionID,
+		ExecutionID:     exec.ID,
 		InstanceID:      instance.ID,
-		TenantID:        instance.TenantID,
 		Workflow:        instance.WorkflowName,
 		WorkflowVersion: instance.WorkflowVersion,
 		State:           instance.CurrentState,
@@ -230,7 +222,7 @@ func (e *stateEngine) Dispatch(
 	now := time.Now()
 	tokenHash := cryptoutil.HashToken(rawToken)
 
-	err := e.execRepo.UpdateStatus(ctx, execution.ExecutionID, models.ExecStatusDispatched, map[string]any{
+	err := e.execRepo.UpdateStatus(ctx, execution.ID, models.ExecStatusDispatched, map[string]any{
 		"started_at":      now,
 		"execution_token": tokenHash,
 	})
@@ -238,14 +230,19 @@ func (e *stateEngine) Dispatch(
 		return nil, fmt.Errorf("mark dispatched: %w", err)
 	}
 
+	var inputPayload json.RawMessage
+	if execution.InputPayload != "" {
+		inputPayload = json.RawMessage(execution.InputPayload)
+	}
+
 	return &ExecutionCommand{
-		ExecutionID:     execution.ExecutionID,
+		ExecutionID:     execution.ID,
 		InstanceID:      execution.InstanceID,
-		TenantID:        execution.TenantID,
 		Workflow:        instance.WorkflowName,
 		WorkflowVersion: instance.WorkflowVersion,
 		State:           execution.State,
 		Attempt:         execution.Attempt,
+		InputPayload:    inputPayload,
 		InputSchemaHash: execution.InputSchemaHash,
 		ExecutionToken:  rawToken,
 		TraceID:         execution.TraceID,
@@ -295,7 +292,7 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 	}
 
 	// Load and parse workflow DSL (cached to avoid re-parsing on every commit).
-	spec, err := e.loadSpec(ctx, instance.TenantID, instance.WorkflowName, instance.WorkflowVersion)
+	spec, err := e.loadSpec(ctx, instance.WorkflowName, instance.WorkflowVersion)
 	if err != nil {
 		commitErr = err
 		return commitErr
@@ -303,7 +300,7 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 
 	// Validate output against schema before entering the transaction.
 	if validateErr := e.schemaReg.ValidateOutput(
-		ctx, exec.TenantID, instance.WorkflowName,
+		ctx, instance.WorkflowName,
 		instance.WorkflowVersion, exec.State, req.Output,
 	); validateErr != nil {
 		_ = e.execRepo.UpdateStatus(ctx, req.ExecutionID, models.ExecStatusInvalidOutputContract, nil)
@@ -350,14 +347,12 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		}
 
 		// Store validated output with correct output schema hash.
+		outputSchemaHash := computeOutputSchemaHash(req.Output)
 		if storeErr := tx.Create(&models.WorkflowStateOutput{
-			ID:          util.IDString(),
-			TenantID:    exec.TenantID,
-			PartitionID: exec.PartitionID,
 			ExecutionID: req.ExecutionID,
 			InstanceID:  exec.InstanceID,
 			State:       exec.State,
-			SchemaHash:  computeOutputSchemaHash(req.Output),
+			SchemaHash:  outputSchemaHash,
 			Payload:     string(req.Output),
 		}).Error; storeErr != nil {
 			return fmt.Errorf("store output: %w", storeErr)
@@ -366,10 +361,11 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		// Mark execution as completed.
 		now := time.Now()
 		if updateErr := tx.Model(&models.WorkflowStateExecution{}).
-			Where("execution_id = ?", req.ExecutionID).
+			Where("id = ?", req.ExecutionID).
 			Updates(map[string]any{
-				"status":      string(models.ExecStatusCompleted),
-				"finished_at": now,
+				"status":             string(models.ExecStatusCompleted),
+				"finished_at":        now,
+				"output_schema_hash": outputSchemaHash,
 			}).Error; updateErr != nil {
 			return fmt.Errorf("mark completed: %w", updateErr)
 		}
@@ -379,9 +375,9 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 			result := tx.Exec(
 				`UPDATE workflow_instances
 				 SET status = ?, revision = revision + 1, modified_at = ?, finished_at = ?
-				 WHERE id = ? AND tenant_id = ? AND current_state = ? AND status = 'running'`,
+				 WHERE id = ? AND current_state = ? AND status = 'running'`,
 				string(models.InstanceStatusCompleted), now, now,
-				exec.InstanceID, exec.TenantID, exec.State,
+				exec.InstanceID, exec.State,
 			)
 
 			if result.Error != nil {
@@ -395,9 +391,9 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		casResult := tx.Exec(
 			`UPDATE workflow_instances
 			 SET current_state = ?, revision = revision + 1, modified_at = ?
-			 WHERE id = ? AND tenant_id = ? AND current_state = ? AND revision = ? AND status = 'running'`,
+			 WHERE id = ? AND current_state = ? AND revision = ? AND status = 'running'`,
 			nextStep.ID, now,
-			exec.InstanceID, exec.TenantID, exec.State, instance.Revision,
+			exec.InstanceID, exec.State, instance.Revision,
 		)
 
 		if casResult.Error != nil {
@@ -419,7 +415,7 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		if mappedInput != nil {
 			var schemaErr error
 			nextInputSchemaHash, schemaErr = e.schemaReg.ValidateInput(
-				ctx, exec.TenantID, instance.WorkflowName,
+				ctx, instance.WorkflowName,
 				instance.WorkflowVersion, nextStep.ID, mappedInput,
 			)
 			if schemaErr != nil {
@@ -434,15 +430,13 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		}
 
 		nextExec := &models.WorkflowStateExecution{
-			ExecutionID:     util.IDString(),
-			TenantID:        exec.TenantID,
-			PartitionID:     exec.PartitionID,
 			InstanceID:      exec.InstanceID,
 			State:           nextStep.ID,
 			Attempt:         1,
 			Status:          models.ExecStatusPending,
 			ExecutionToken:  cryptoutil.HashToken(rawToken),
 			InputSchemaHash: nextInputSchemaHash,
+			InputPayload:    string(mappedInput),
 			TraceID:         exec.TraceID,
 		}
 
@@ -452,9 +446,6 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 
 		// Audit: transition committed.
 		_ = tx.Create(&models.WorkflowAuditEvent{
-			ID:          util.IDString(),
-			TenantID:    exec.TenantID,
-			PartitionID: exec.PartitionID,
 			InstanceID:  exec.InstanceID,
 			ExecutionID: req.ExecutionID,
 			EventType:   events.EventTransitionCommitted,
@@ -473,9 +464,6 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 
 	// Audit: completion event (outside tx, best-effort).
 	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		ID:          util.IDString(),
-		TenantID:    exec.TenantID,
-		PartitionID: exec.PartitionID,
 		InstanceID:  exec.InstanceID,
 		ExecutionID: req.ExecutionID,
 		EventType:   events.EventStateCompleted,
@@ -565,7 +553,7 @@ func (e *stateEngine) commitError(
 	// Validate error payload against registered error schema (best-effort).
 	errorPayload, _ := json.Marshal(req.Error)
 	if validateErr := e.schemaReg.ValidateError(
-		ctx, exec.TenantID, instance.WorkflowName,
+		ctx, instance.WorkflowName,
 		instance.WorkflowVersion, exec.State, errorPayload,
 	); validateErr != nil {
 		log.WithError(validateErr).Warn("error payload failed schema validation",
@@ -605,12 +593,9 @@ func (e *stateEngine) commitError(
 	}
 
 	// Mark workflow instance as failed.
-	_ = e.instanceRepo.UpdateStatus(ctx, exec.InstanceID, exec.TenantID, models.InstanceStatusFailed)
+	_ = e.instanceRepo.UpdateStatus(ctx, exec.InstanceID, models.InstanceStatusFailed)
 
 	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		ID:          util.IDString(),
-		TenantID:    exec.TenantID,
-		PartitionID: exec.PartitionID,
 		InstanceID:  exec.InstanceID,
 		ExecutionID: req.ExecutionID,
 		EventType:   events.EventStateFailed,
@@ -629,7 +614,7 @@ func (e *stateEngine) scheduleRetryIfAllowed(
 	req *CommitRequest,
 ) (bool, error) {
 	policy, err := e.retryPolicyRepo.Lookup(
-		ctx, exec.TenantID, instance.WorkflowName, instance.WorkflowVersion, exec.State,
+		ctx, instance.WorkflowName, instance.WorkflowVersion, exec.State,
 	)
 	if err != nil {
 		// No retry policy found — not retryable.
@@ -658,9 +643,6 @@ func (e *stateEngine) scheduleRetryIfAllowed(
 	))
 
 	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		ID:          util.IDString(),
-		TenantID:    exec.TenantID,
-		PartitionID: exec.PartitionID,
 		InstanceID:  exec.InstanceID,
 		ExecutionID: req.ExecutionID,
 		EventType:   events.EventStateRetried,
@@ -674,9 +656,10 @@ func (e *stateEngine) scheduleRetryIfAllowed(
 // Check order: in-process compiled cache → Valkey DSL blob cache → database.
 func (e *stateEngine) loadSpec(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 ) (*dsl.WorkflowSpec, error) {
+	tenantID := tenantFromContext(ctx)
 	cacheKey := fmt.Sprintf("dsl:%s:%s:%d", tenantID, workflowName, version)
 
 	// L1: in-process parsed spec cache.
@@ -697,7 +680,7 @@ func (e *stateEngine) loadSpec(
 	}
 
 	// L3: database.
-	def, err := e.defRepo.GetByNameAndVersion(ctx, tenantID, workflowName, version)
+	def, err := e.defRepo.GetByNameAndVersion(ctx, workflowName, version)
 	if err != nil {
 		return nil, fmt.Errorf("load workflow definition: %w", err)
 	}
@@ -718,6 +701,20 @@ func (e *stateEngine) loadSpec(
 }
 
 const exponentialBase = 2
+
+func tenantFromContext(ctx context.Context) string {
+	claims := security.ClaimsFromContext(ctx)
+	if claims == nil {
+		return "unknown"
+	}
+
+	tenantID := claims.GetTenantID()
+	if tenantID == "" {
+		return "unknown"
+	}
+
+	return tenantID
+}
 
 // computeRetryTime calculates the next retry time using the configured backoff strategy
 // with full jitter to prevent thundering herd.

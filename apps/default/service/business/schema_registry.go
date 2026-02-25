@@ -10,7 +10,7 @@ import (
 	"time"
 
 	framecache "github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/util"
+	"github.com/pitabwire/frame/security"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -34,7 +34,7 @@ var schemaCache = cacheutil.NewBoundedCache[*jsonschema.Schema](maxSchemaCacheSi
 type SchemaRegistry interface {
 	RegisterSchema(
 		ctx context.Context,
-		tenantID, partitionID, workflowName string,
+		workflowName string,
 		version int,
 		state string,
 		schemaType models.SchemaType,
@@ -42,21 +42,21 @@ type SchemaRegistry interface {
 	) (string, error)
 	ValidateInput(
 		ctx context.Context,
-		tenantID, workflowName string,
+		workflowName string,
 		version int,
 		state string,
 		data json.RawMessage,
 	) (string, error)
 	ValidateOutput(
 		ctx context.Context,
-		tenantID, workflowName string,
+		workflowName string,
 		version int,
 		state string,
 		data json.RawMessage,
 	) error
 	ValidateError(
 		ctx context.Context,
-		tenantID, workflowName string,
+		workflowName string,
 		version int,
 		state string,
 		data json.RawMessage,
@@ -77,7 +77,7 @@ func NewSchemaRegistry(repo repository.SchemaRegistryRepository, cache framecach
 
 func (sr *schemaRegistry) RegisterSchema(
 	ctx context.Context,
-	tenantID, partitionID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 	schemaType models.SchemaType,
@@ -86,9 +86,6 @@ func (sr *schemaRegistry) RegisterSchema(
 	hash := computeSchemaHash(schemaBlob)
 
 	schema := &models.WorkflowStateSchema{
-		ID:              util.IDString(),
-		TenantID:        tenantID,
-		PartitionID:     partitionID,
 		WorkflowName:    workflowName,
 		WorkflowVersion: version,
 		State:           state,
@@ -106,12 +103,12 @@ func (sr *schemaRegistry) RegisterSchema(
 
 func (sr *schemaRegistry) ValidateInput(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 	data json.RawMessage,
 ) (string, error) {
-	schema, err := sr.lookupSchema(ctx, tenantID, workflowName, version, state, models.SchemaTypeInput)
+	schema, err := sr.lookupSchema(ctx, workflowName, version, state, models.SchemaTypeInput)
 	if err != nil {
 		return "", fmt.Errorf("%w: input schema for %s/%s: %w", ErrSchemaNotFound, workflowName, state, err)
 	}
@@ -125,12 +122,12 @@ func (sr *schemaRegistry) ValidateInput(
 
 func (sr *schemaRegistry) ValidateOutput(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 	data json.RawMessage,
 ) error {
-	schema, err := sr.lookupSchema(ctx, tenantID, workflowName, version, state, models.SchemaTypeOutput)
+	schema, err := sr.lookupSchema(ctx, workflowName, version, state, models.SchemaTypeOutput)
 	if err != nil {
 		return fmt.Errorf("%w: output schema for %s/%s: %w", ErrSchemaNotFound, workflowName, state, err)
 	}
@@ -144,12 +141,12 @@ func (sr *schemaRegistry) ValidateOutput(
 
 func (sr *schemaRegistry) ValidateError(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 	data json.RawMessage,
 ) error {
-	schema, err := sr.lookupSchema(ctx, tenantID, workflowName, version, state, models.SchemaTypeError)
+	schema, err := sr.lookupSchema(ctx, workflowName, version, state, models.SchemaTypeError)
 	if err != nil {
 		// Error schema is optional — if not registered, skip validation.
 		return nil //nolint:nilerr // missing error schema is not a validation failure
@@ -176,11 +173,12 @@ type cachedSchema struct {
 // lookupSchema fetches a schema, checking Valkey first (if configured) before falling back to the database.
 func (sr *schemaRegistry) lookupSchema(
 	ctx context.Context,
-	tenantID, workflowName string,
+	workflowName string,
 	version int,
 	state string,
 	schemaType models.SchemaType,
 ) (*models.WorkflowStateSchema, error) {
+	tenantID := tenantFromContext(ctx)
 	key := schemaCacheKey(tenantID, workflowName, version, state, schemaType)
 
 	// Try Valkey cache first.
@@ -198,7 +196,7 @@ func (sr *schemaRegistry) lookupSchema(
 	}
 
 	// Fall back to database.
-	schema, err := sr.repo.Lookup(ctx, tenantID, workflowName, version, state, schemaType)
+	schema, err := sr.repo.Lookup(ctx, workflowName, version, state, schemaType)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +210,20 @@ func (sr *schemaRegistry) lookupSchema(
 	}
 
 	return schema, nil
+}
+
+func tenantFromContext(ctx context.Context) string {
+	claims := security.ClaimsFromContext(ctx)
+	if claims == nil {
+		return "unknown"
+	}
+
+	tenantID := claims.GetTenantID()
+	if tenantID == "" {
+		return "unknown"
+	}
+
+	return tenantID
 }
 
 func computeSchemaHash(blob json.RawMessage) string {

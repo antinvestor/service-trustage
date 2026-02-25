@@ -8,6 +8,7 @@ import (
 
 	"github.com/pitabwire/util"
 
+	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
@@ -17,6 +18,7 @@ import (
 type EventHandler struct {
 	eventRepo   repository.EventLogRepository
 	auditRepo   repository.AuditEventRepository
+	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
 }
@@ -25,12 +27,14 @@ type EventHandler struct {
 func NewEventHandler(
 	eventRepo repository.EventLogRepository,
 	auditRepo repository.AuditEventRepository,
+	authzMiddleware authz.Middleware,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
 ) *EventHandler {
 	return &EventHandler{
 		eventRepo:   eventRepo,
 		auditRepo:   auditRepo,
+		authz:       authzMiddleware,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
@@ -49,13 +53,19 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := util.Log(ctx)
 
-	tenantID, partitionID, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
 	}
 
+	if h.authz != nil {
+		if err := h.authz.CanIngestEvent(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+
 	// Rate limit per tenant.
-	if h.rateLimiter != nil && !h.rateLimiter.Allow(ctx, tenantID) {
+	if h.rateLimiter != nil && !h.rateLimiter.Allow(ctx) {
 		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
@@ -73,7 +83,7 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 
 	// If an idempotency key is provided, check for duplicate.
 	if req.IdempotencyKey != "" {
-		existing, _ := h.eventRepo.FindByIdempotencyKey(ctx, tenantID, req.IdempotencyKey)
+		existing, _ := h.eventRepo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
 		if existing != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
@@ -95,9 +105,6 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: req.IdempotencyKey,
 		Payload:        string(payloadBytes),
 	}
-
-	eventLog.TenantID = tenantID
-	eventLog.PartitionID = partitionID
 
 	if err := h.eventRepo.Create(ctx, eventLog); err != nil {
 		log.WithError(err).Error("failed to store event")
@@ -122,14 +129,20 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 func (h *EventHandler) GetInstanceTimeline(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	tenantID, _, ok := requireTenant(ctx, w)
-	if !ok {
+	if !requireAuth(ctx, w) {
 		return
+	}
+
+	if h.authz != nil {
+		if err := h.authz.CanViewInstance(ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 	}
 
 	instanceID := r.PathValue("id")
 
-	auditEvents, err := h.auditRepo.ListByInstance(ctx, tenantID, instanceID)
+	auditEvents, err := h.auditRepo.ListByInstance(ctx, instanceID)
 	if err != nil {
 		http.Error(w, "failed to fetch timeline", http.StatusInternalServerError)
 		return

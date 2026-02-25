@@ -61,7 +61,7 @@ func (w *ExecutionWorker) Handle(ctx context.Context, _ map[string]string, messa
 	)
 
 	// Load workflow definition.
-	def, err := w.defRepo.GetByNameAndVersion(ctx, cmd.TenantID, cmd.Workflow, cmd.WorkflowVersion)
+	def, err := w.defRepo.GetByNameAndVersion(ctx, cmd.Workflow, cmd.WorkflowVersion)
 	if err != nil {
 		handleErr = fmt.Errorf("load workflow definition: %w", err)
 		w.commitError(ctx, &cmd, "fatal", "definition_not_found", handleErr.Error())
@@ -130,7 +130,7 @@ func (w *ExecutionWorker) executeCallStep(
 		Metadata: map[string]string{
 			"execution_id": cmd.ExecutionID,
 			"instance_id":  cmd.InstanceID,
-			"tenant_id":    cmd.TenantID,
+			"tenant_id":    tenantID,
 			"state":        cmd.State,
 		},
 		IdempotencyKey: idempotencyKey,
