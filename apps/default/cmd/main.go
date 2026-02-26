@@ -8,6 +8,7 @@ import (
 	"github.com/pitabwire/frame"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
+	"github.com/pitabwire/frame/datastore/pool"
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 
@@ -41,7 +42,10 @@ func main() { //nolint:funlen // main function wiring
 		frame.WithName(cfg.Name()),
 		frame.WithConfig(&cfg),
 		frame.WithRegisterServerOauth2Client(),
-		frame.WithDatastore(),
+		frame.WithDatastore(
+			pool.WithPreferSimpleProtocol(true),
+			pool.WithPreparedStatements(false),
+		),
 	)
 	defer svc.Stop(ctx)
 
