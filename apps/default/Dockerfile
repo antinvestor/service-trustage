@@ -34,9 +34,9 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
      -o /app/binary ./apps/default/cmd/main.go
 
 # ---------- Final ----------
-# BAML downloads a native shared library at runtime which depends on libgcc_s.
-# Use a minimal Wolfi base so we can install runtime deps.
-FROM cgr.dev/chainguard/wolfi-base:latest
+# BAML downloads a native shared library built for glibc (x86_64-unknown-linux-gnu).
+# Use a minimal glibc image and install libgcc for runtime compatibility.
+FROM cgr.dev/chainguard/glibc-dynamic:latest
 
 LABEL maintainer="Antinvestor <dev@antinvestor.com>"
 
