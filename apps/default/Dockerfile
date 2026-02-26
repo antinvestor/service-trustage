@@ -23,10 +23,10 @@ COPY ./dsl ./dsl
 COPY ./connector ./connector
 COPY ./pkg ./pkg
 
-# BAML requires CGO; statically link with external linker for portable binary.
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+# BAML requires CGO; build a dynamically-linked binary for glibc runtime.
+RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
-     -ldflags="-s -w -extldflags '-static' \
+     -ldflags="-s -w \
          -X github.com/pitabwire/frame/version.Repository=${REPOSITORY} \
          -X github.com/pitabwire/frame/version.Version=${VERSION} \
          -X github.com/pitabwire/frame/version.Commit=${REVISION} \
@@ -41,7 +41,7 @@ FROM debian:bookworm-slim
 LABEL maintainer="Antinvestor <dev@antinvestor.com>"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 \
+    && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /home/nonroot/.cache/baml \
