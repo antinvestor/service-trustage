@@ -1,8 +1,6 @@
-package tests
+package tests_test
 
 import (
-	"errors"
-
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -42,5 +40,5 @@ func (s *DefaultServiceSuite) TestWorkflowBusiness_CreateAndActivate() {
 	// Activating again should fail.
 	err = s.workflowBusiness().ActivateWorkflow(ctx, def.ID)
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrInvalidWorkflowStatus))
+	s.ErrorIs(err, business.ErrInvalidWorkflowStatus)
 }

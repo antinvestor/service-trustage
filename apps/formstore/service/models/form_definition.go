@@ -3,7 +3,7 @@ package models
 import "github.com/pitabwire/frame/data"
 
 // FormDefinition is an optional schema definition per form type.
-type FormDefinition struct { //nolint:recvcheck // TableName() must be value receiver for GORM
+type FormDefinition struct {
 	data.BaseModel `gorm:"embedded"`
 
 	FormID      string `gorm:"column:form_id;not null"`

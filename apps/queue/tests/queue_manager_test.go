@@ -1,7 +1,6 @@
-package tests
+package tests_test
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -56,7 +55,7 @@ func (s *QueueSuite) TestEnqueue_CapacityEnforcement() {
 	item3 := &models.QueueItem{QueueID: queue.ID, Priority: 1}
 	err := s.manager.Enqueue(ctx, item3)
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrQueueFull), "third enqueue should fail with ErrQueueFull")
+	s.ErrorIs(err, business.ErrQueueFull, "third enqueue should fail with ErrQueueFull")
 }
 
 func (s *QueueSuite) TestEnqueue_InvalidQueue() {
@@ -64,7 +63,7 @@ func (s *QueueSuite) TestEnqueue_InvalidQueue() {
 	item := &models.QueueItem{QueueID: "nonexistent-id", Priority: 1}
 	err := s.manager.Enqueue(ctx, item)
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrQueueNotFound))
+	s.ErrorIs(err, business.ErrQueueNotFound)
 }
 
 // --- CallNext tests ---
@@ -168,7 +167,7 @@ func (s *QueueSuite) TestCallNext_ConcurrentCounters() {
 
 	// All calls should succeed.
 	for i, err := range callErrors {
-		s.NoErrorf(err, "counter %d should succeed", i)
+		s.Require().NoErrorf(err, "counter %d should succeed", i)
 	}
 
 	// All called items should be unique (no double-serving).
@@ -187,7 +186,7 @@ func (s *QueueSuite) TestCallNext_EmptyQueue() {
 
 	_, err := s.manager.CallNext(ctx, counter.ID)
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrNoWaitingItems))
+	s.ErrorIs(err, business.ErrNoWaitingItems)
 }
 
 func (s *QueueSuite) TestCallNext_CounterBusy() {
@@ -208,7 +207,7 @@ func (s *QueueSuite) TestCallNext_CounterBusy() {
 	// Counter is now busy - should fail.
 	_, err = s.manager.CallNext(ctx, counter.ID)
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrCounterBusy))
+	s.ErrorIs(err, business.ErrCounterBusy)
 }
 
 // --- State transition tests ---
@@ -368,7 +367,7 @@ func (s *QueueSuite) TestCounter_InvalidTransitions() {
 	// Counter starts closed. Cannot pause from closed.
 	err := s.manager.PauseCounter(ctx, counter.ID)
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrInvalidTransition))
+	s.Require().ErrorIs(err, business.ErrInvalidTransition)
 
 	// Open the counter.
 	s.Require().NoError(s.manager.OpenCounter(ctx, counter.ID, "staff-1"))

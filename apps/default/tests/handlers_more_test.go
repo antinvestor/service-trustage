@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"bytes"
@@ -684,7 +684,7 @@ func (s *DefaultServiceSuite) TestEventHandler_RateLimiter_UnknownClaims() {
 
 func (s *DefaultServiceSuite) TestInstanceHandler_List_Limit() {
 	ctx := s.tenantCtx()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		inst := &models.WorkflowInstance{
 			WorkflowName:    "wf",
 			WorkflowVersion: 1,
@@ -714,7 +714,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_List_Limit() {
 	}
 	s.Require().NoError(s.instanceRepo.Create(ctx, instance))
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		exec := &models.WorkflowStateExecution{
 			InstanceID:     instance.ID,
 			State:          "step",
@@ -838,7 +838,12 @@ func (s *DefaultServiceSuite) TestEventHandler_Ingest_Idempotency() {
 	metrics := telemetry.NewMetrics()
 	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
 
-	body := map[string]any{"event_type": "user.created", "source": "api", "idempotency_key": "dup", "payload": map[string]any{"id": "1"}}
+	body := map[string]any{
+		"event_type":      "user.created",
+		"source":          "api",
+		"idempotency_key": "dup",
+		"payload":         map[string]any{"id": "1"},
+	}
 	payload, _ := json.Marshal(body)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader(payload))
@@ -936,7 +941,11 @@ func (s *DefaultServiceSuite) TestFormHandler_ErrorsAndIdempotency() {
 	h.SubmitForm(invalidW, invalidReq)
 	s.Equal(http.StatusBadRequest, invalidW.Code)
 
-	fieldsReq := httptest.NewRequest(http.MethodPost, "/api/v1/forms/form-1/submit", bytes.NewReader([]byte(`{"fields":{}}`)))
+	fieldsReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/forms/form-1/submit",
+		bytes.NewReader([]byte(`{"fields":{}}`)),
+	)
 	fieldsReq.SetPathValue("form_id", "form-1")
 	fieldsReq = fieldsReq.WithContext(ctx)
 	fieldsW := httptest.NewRecorder()

@@ -38,7 +38,7 @@ func (h *FormDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Active      *bool           `json:"active"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -154,7 +154,7 @@ func (h *FormDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Active      *bool           `json:"active"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -175,9 +175,9 @@ func (h *FormDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		def.Active = *req.Active
 	}
 
-	if err := h.biz.UpdateDefinition(ctx, def); err != nil {
-		log.WithError(err).Error("failed to update form definition")
-		status, msg := httpStatusForError(err)
+	if updateErr := h.biz.UpdateDefinition(ctx, def); updateErr != nil {
+		log.WithError(updateErr).Error("failed to update form definition")
+		status, msg := httpStatusForError(updateErr)
 		http.Error(w, msg, status)
 
 		return

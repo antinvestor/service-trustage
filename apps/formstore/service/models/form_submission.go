@@ -32,7 +32,7 @@ func (s FormSubmissionStatus) ValidateStatus() error {
 }
 
 // FormSubmission stores submitted form data with file references.
-type FormSubmission struct { //nolint:recvcheck // TableName() must be value receiver for GORM
+type FormSubmission struct {
 	data.BaseModel `gorm:"embedded"`
 
 	FormID         string               `gorm:"column:form_id;not null"`

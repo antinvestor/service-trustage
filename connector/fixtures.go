@@ -7,9 +7,16 @@ type AdapterFixture struct {
 	Credentials map[string]string
 }
 
+const (
+	fixturePaymentAmount   = 42.5
+	fixtureTransformAmount = 15
+)
+
 // AdapterFixtures provides minimal valid payloads for each supported adapter type.
 // These are intentionally small and deterministic so tests and tooling can validate
 // adapter input expectations across the codebase.
+//
+//nolint:gochecknoglobals // adapter fixtures are static test data
 var AdapterFixtures = map[string]AdapterFixture{
 	"ai.chat": {
 		Input: map[string]any{
@@ -59,7 +66,7 @@ var AdapterFixtures = map[string]AdapterFixture{
 	},
 	"payment.initiate": {
 		Input: map[string]any{
-			"amount":    42.5,
+			"amount":    fixturePaymentAmount,
 			"currency":  "USD",
 			"recipient": "+1555000111",
 			"reference": "ref-001",
@@ -79,7 +86,7 @@ var AdapterFixtures = map[string]AdapterFixture{
 	},
 	"data.transform": {
 		Input: map[string]any{
-			"source":     map[string]any{"amount": 15},
+			"source":     map[string]any{"amount": fixtureTransformAmount},
 			"expression": "payload.amount > 10",
 		},
 		Config: map[string]any{},

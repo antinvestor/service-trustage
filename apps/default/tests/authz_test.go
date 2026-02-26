@@ -1,8 +1,7 @@
-package tests
+package tests_test
 
 import (
 	"context"
-	"errors"
 
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/frame/security/authorizer"
@@ -35,7 +34,12 @@ func (f *fakeAuthorizer) DeleteTuples(_ context.Context, _ []security.RelationTu
 func (f *fakeAuthorizer) ListRelations(_ context.Context, _ security.ObjectRef) ([]security.RelationTuple, error) {
 	return nil, nil
 }
-func (f *fakeAuthorizer) ListSubjectRelations(_ context.Context, _ security.SubjectRef, _ string) ([]security.RelationTuple, error) {
+
+func (f *fakeAuthorizer) ListSubjectRelations(
+	_ context.Context,
+	_ security.SubjectRef,
+	_ string,
+) ([]security.RelationTuple, error) {
 	return nil, nil
 }
 func (f *fakeAuthorizer) Expand(_ context.Context, _ security.ObjectRef, _ string) ([]security.SubjectRef, error) {
@@ -63,7 +67,7 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_AllowsAndDenies() {
 	mw = authz.NewMiddleware(denyClient)
 	err = mw.CanViewWorkflow(ctx)
 	s.Require().Error(err)
-	s.True(errors.Is(err, authorizer.ErrPermissionDenied))
+	s.ErrorIs(err, authorizer.ErrPermissionDenied)
 }
 
 func (s *DefaultServiceSuite) TestAuthzMiddleware_InvalidClaims() {
@@ -73,7 +77,7 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_InvalidClaims() {
 	// Missing claims should fail with invalid subject.
 	err := mw.CanViewWorkflow(context.Background())
 	s.Require().Error(err)
-	s.True(errors.Is(err, authorizer.ErrInvalidSubject))
+	s.Require().ErrorIs(err, authorizer.ErrInvalidSubject)
 
 	// Missing tenant should fail with invalid object.
 	claims := &security.AuthenticationClaims{}
@@ -82,5 +86,5 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_InvalidClaims() {
 
 	err = mw.CanViewWorkflow(ctx)
 	s.Require().Error(err)
-	s.True(errors.Is(err, authorizer.ErrInvalidObject))
+	s.Require().ErrorIs(err, authorizer.ErrInvalidObject)
 }

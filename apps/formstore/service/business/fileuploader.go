@@ -36,23 +36,20 @@ func NewFileUploader(uploadFn func(filename, contentType string, data []byte) (s
 // ProcessFields walks JSON data, detects file fields, uploads them, and replaces
 // the field values with file references. Returns the processed data and file count.
 func (u *FileUploader) ProcessFields(data map[string]any) (map[string]any, int, error) {
-	fileCount := 0
-
 	result, count, err := u.walkAndReplace(data)
 	if err != nil {
 		return nil, 0, err
 	}
-
-	fileCount = count
 
 	resultMap, ok := result.(map[string]any)
 	if !ok {
 		return data, 0, nil
 	}
 
-	return resultMap, fileCount, nil
+	return resultMap, count, nil
 }
 
+//nolint:gocognit // recursive traversal requires branching by type
 func (u *FileUploader) walkAndReplace(value any) (any, int, error) {
 	totalFiles := 0
 
@@ -148,8 +145,9 @@ func (u *FileUploader) processExplicitFile(obj map[string]any) (map[string]any, 
 
 func (u *FileUploader) processDataURI(uri string) (map[string]any, error) {
 	// Parse "data:image/jpeg;base64,/9j/4AAQ..."
-	parts := strings.SplitN(uri, ",", 2)
-	if len(parts) != 2 {
+	const dataURIParts = 2
+	parts := strings.SplitN(uri, ",", dataURIParts)
+	if len(parts) != dataURIParts {
 		return nil, fmt.Errorf("%w: malformed data URI", ErrInvalidFormData)
 	}
 

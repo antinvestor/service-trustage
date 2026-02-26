@@ -116,8 +116,8 @@ func (m *queueManager) DeleteQueue(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: %w", ErrQueueNotFound, err)
 	}
 
-	if err := m.defRepo.SoftDelete(ctx, def); err != nil {
-		return fmt.Errorf("delete queue: %w", err)
+	if deleteErr := m.defRepo.SoftDelete(ctx, def); deleteErr != nil {
+		return fmt.Errorf("delete queue: %w", deleteErr)
 	}
 
 	return nil
@@ -125,6 +125,7 @@ func (m *queueManager) DeleteQueue(ctx context.Context, id string) error {
 
 // --- Queue items ---
 
+//nolint:gocognit // enqueue flow handles multiple transitions and validations
 func (m *queueManager) Enqueue(ctx context.Context, item *models.QueueItem) error {
 	log := util.Log(ctx)
 	start := time.Now()
@@ -252,8 +253,8 @@ func (m *queueManager) CancelItem(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: %w", ErrQueueItemNotFound, err)
 	}
 
-	if err := item.TransitionTo(models.ItemStatusCancelled); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := item.TransitionTo(models.ItemStatusCancelled); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
 	// Atomically update item + free counter in a single transaction.
@@ -296,8 +297,8 @@ func (m *queueManager) NoShowItem(ctx context.Context, id string) error {
 
 	counterIDToFree := item.CounterID
 
-	if err := item.TransitionTo(models.ItemStatusNoShow); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := item.TransitionTo(models.ItemStatusNoShow); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
 	item.CounterID = ""
@@ -343,8 +344,8 @@ func (m *queueManager) RequeueItem(ctx context.Context, id string) error {
 		return ErrItemNotNoShow
 	}
 
-	if err := item.TransitionTo(models.ItemStatusWaiting); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := item.TransitionTo(models.ItemStatusWaiting); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
 	item.CounterID = ""
@@ -352,8 +353,8 @@ func (m *queueManager) RequeueItem(ctx context.Context, id string) error {
 	item.CalledAt = nil
 	item.JoinedAt = time.Now()
 
-	if err := m.itemRepo.Update(ctx, item); err != nil {
-		return fmt.Errorf("update item: %w", err)
+	if updateErr := m.itemRepo.Update(ctx, item); updateErr != nil {
+		return fmt.Errorf("update item: %w", updateErr)
 	}
 
 	m.stats.InvalidateCache(ctx, item.QueueID)
@@ -373,8 +374,8 @@ func (m *queueManager) TransferItem(ctx context.Context, id, newQueueID string) 
 	}
 
 	// Validate target queue exists.
-	if _, err := m.defRepo.GetByID(ctx, newQueueID); err != nil {
-		return fmt.Errorf("%w: target queue: %w", ErrQueueNotFound, err)
+	if _, lookupErr := m.defRepo.GetByID(ctx, newQueueID); lookupErr != nil {
+		return fmt.Errorf("%w: target queue: %w", ErrQueueNotFound, lookupErr)
 	}
 
 	counterIDToFree := item.CounterID
@@ -464,14 +465,14 @@ func (m *queueManager) OpenCounter(ctx context.Context, id, staffID string) erro
 		return fmt.Errorf("%w: %w", ErrCounterNotFound, err)
 	}
 
-	if err := counter.TransitionTo(models.CounterStatusOpen); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := counter.TransitionTo(models.CounterStatusOpen); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
 	counter.ServedBy = staffID
 
-	if err := m.counterRepo.Update(ctx, counter); err != nil {
-		return fmt.Errorf("update counter: %w", err)
+	if updateErr := m.counterRepo.Update(ctx, counter); updateErr != nil {
+		return fmt.Errorf("update counter: %w", updateErr)
 	}
 
 	m.stats.InvalidateCache(ctx, counter.QueueID)
@@ -485,8 +486,8 @@ func (m *queueManager) CloseCounter(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: %w", ErrCounterNotFound, err)
 	}
 
-	if err := counter.TransitionTo(models.CounterStatusClosed); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := counter.TransitionTo(models.CounterStatusClosed); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
 	itemIDToRequeue := counter.CurrentItemID
@@ -532,12 +533,12 @@ func (m *queueManager) PauseCounter(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: %w", ErrCounterNotFound, err)
 	}
 
-	if err := counter.TransitionTo(models.CounterStatusPaused); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := counter.TransitionTo(models.CounterStatusPaused); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
-	if err := m.counterRepo.Update(ctx, counter); err != nil {
-		return fmt.Errorf("update counter: %w", err)
+	if updateErr := m.counterRepo.Update(ctx, counter); updateErr != nil {
+		return fmt.Errorf("update counter: %w", updateErr)
 	}
 
 	m.stats.InvalidateCache(ctx, counter.QueueID)
@@ -547,6 +548,8 @@ func (m *queueManager) PauseCounter(ctx context.Context, id string) error {
 
 // CallNext atomically finds and assigns the next waiting item to the counter.
 // Uses a database transaction to ensure item and counter updates are atomic.
+//
+//nolint:funlen // call-next logic is intentionally explicit for correctness
 func (m *queueManager) CallNext(ctx context.Context, counterID string) (*models.QueueItem, error) {
 	log := util.Log(ctx)
 	start := time.Now()
@@ -676,8 +679,8 @@ func (m *queueManager) BeginService(ctx context.Context, counterID string) error
 	now := time.Now()
 	item.ServiceStart = &now
 
-	if err := m.itemRepo.Update(ctx, item); err != nil {
-		return fmt.Errorf("update item: %w", err)
+	if updateErr := m.itemRepo.Update(ctx, item); updateErr != nil {
+		return fmt.Errorf("update item: %w", updateErr)
 	}
 
 	return nil
@@ -701,8 +704,8 @@ func (m *queueManager) CompleteService(ctx context.Context, counterID string) er
 		return fmt.Errorf("%w: %w", ErrQueueItemNotFound, err)
 	}
 
-	if err := item.TransitionTo(models.ItemStatusCompleted); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidTransition, err)
+	if transitionErr := item.TransitionTo(models.ItemStatusCompleted); transitionErr != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTransition, transitionErr)
 	}
 
 	now := time.Now()
@@ -763,8 +766,10 @@ func tenantMetricAttributes(ctx context.Context) metric.MeasurementOption {
 	return metric.WithAttributes(attribute.String("tenant_id", tenantID))
 }
 
+const ticketNoRandomLen = 8
+
 // generateTicketNo creates a short human-readable ticket number.
 // Uses 8 random alphanumeric characters for collision resistance.
 func generateTicketNo() string {
-	return fmt.Sprintf("T-%s", util.RandomAlphaNumericString(8))
+	return fmt.Sprintf("T-%s", util.RandomAlphaNumericString(ticketNoRandomLen))
 }

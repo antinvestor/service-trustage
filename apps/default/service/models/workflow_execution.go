@@ -24,7 +24,7 @@ const (
 )
 
 // WorkflowStateExecution tracks each attempt to execute a state.
-type WorkflowStateExecution struct { //nolint:recvcheck // TableName() must be value receiver for GORM
+type WorkflowStateExecution struct {
 	data.BaseModel `gorm:"embedded"`
 
 	InstanceID       string          `gorm:"column:instance_id;not null"`

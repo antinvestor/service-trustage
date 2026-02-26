@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"context"
@@ -24,6 +24,7 @@ const (
 	testPartitionID = "test-partition-001"
 )
 
+//nolint:gochecknoglobals // test fixture tables shared across tests
 var truncateTables = []string{
 	"event_log",
 	"workflow_audit_events",
@@ -153,16 +154,6 @@ func (s *DefaultServiceSuite) tenantCtx() context.Context {
 	return claims.ClaimsToContext(context.Background())
 }
 
-func (s *DefaultServiceSuite) systemCtx() context.Context {
-	claims := &security.AuthenticationClaims{
-		TenantID:    testTenantID,
-		PartitionID: testPartitionID,
-	}
-	claims.Subject = "system:test"
-
-	return claims.ClaimsToContext(context.Background())
-}
-
 func (s *DefaultServiceSuite) schemaRegistry() business.SchemaRegistry {
 	return business.NewSchemaRegistry(s.schemaRepo, s.cache)
 }
@@ -203,7 +194,11 @@ func (s *DefaultServiceSuite) createWorkflow(ctx context.Context, dslBlob string
 	return def
 }
 
-func (s *DefaultServiceSuite) createTrigger(ctx context.Context, eventType string, def *models.WorkflowDefinition) *models.TriggerBinding {
+func (s *DefaultServiceSuite) createTrigger(
+	ctx context.Context,
+	eventType string,
+	def *models.WorkflowDefinition,
+) *models.TriggerBinding {
 	binding := &models.TriggerBinding{
 		EventType:       eventType,
 		WorkflowName:    def.Name,

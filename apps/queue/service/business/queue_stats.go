@@ -125,7 +125,8 @@ func (s *queueStatsService) computeStats(ctx context.Context, queueID string) (*
 		return nil, fmt.Errorf("count serving: %w", err)
 	}
 
-	todayStart := time.Now().Truncate(24 * time.Hour)
+	const hoursPerDay = 24
+	todayStart := time.Now().Truncate(hoursPerDay * time.Hour)
 
 	stats.AvgWaitMinutes, err = s.itemRepo.AvgWaitMinutes(ctx, queueID, todayStart)
 	if err != nil {

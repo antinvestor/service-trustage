@@ -1,4 +1,4 @@
-package adapters
+package adapters_test
 
 import (
 	"encoding/json"
@@ -6,23 +6,24 @@ import (
 	"testing"
 
 	"github.com/antinvestor/service-trustage/connector"
+	"github.com/antinvestor/service-trustage/connector/adapters"
 )
 
 func TestAdapterFixtures_ValidateAll(t *testing.T) {
 	registry := connector.NewRegistry()
 	client := &http.Client{}
 	adapters := []connector.Adapter{
-		NewWebhookAdapter(client),
-		NewHTTPAdapter(client),
-		NewNotificationSendAdapter(client),
-		NewNotificationStatusAdapter(client),
-		NewPaymentInitiateAdapter(client),
-		NewPaymentVerifyAdapter(client),
-		NewDataTransformAdapter(),
-		NewLogEntryAdapter(),
-		NewFormValidateAdapter(),
-		NewApprovalRequestAdapter(client),
-		NewAIChatAdapter(),
+		adapters.NewWebhookAdapter(client),
+		adapters.NewHTTPAdapter(client),
+		adapters.NewNotificationSendAdapter(client),
+		adapters.NewNotificationStatusAdapter(client),
+		adapters.NewPaymentInitiateAdapter(client),
+		adapters.NewPaymentVerifyAdapter(client),
+		adapters.NewDataTransformAdapter(),
+		adapters.NewLogEntryAdapter(),
+		adapters.NewFormValidateAdapter(),
+		adapters.NewApprovalRequestAdapter(client),
+		adapters.NewAIChatAdapter(),
 	}
 
 	for _, a := range adapters {
@@ -65,17 +66,52 @@ func TestAdapters_ValidateMissingRequiredFields(t *testing.T) {
 		input   map[string]any
 		config  map[string]any
 	}{
-		{"webhook missing url", NewWebhookAdapter(client), map[string]any{}, map[string]any{}},
-		{"http missing url", NewHTTPAdapter(client), map[string]any{"method": "GET"}, map[string]any{}},
-		{"notification missing recipient", NewNotificationSendAdapter(client), map[string]any{"channel": "email", "body": "x"}, map[string]any{}},
-		{"notification status missing id", NewNotificationStatusAdapter(client), map[string]any{}, map[string]any{}},
-		{"payment initiate missing amount", NewPaymentInitiateAdapter(client), map[string]any{"currency": "USD", "recipient": "x", "reference": "r"}, map[string]any{}},
-		{"payment verify missing id", NewPaymentVerifyAdapter(client), map[string]any{}, map[string]any{}},
-		{"transform missing source", NewDataTransformAdapter(), map[string]any{"expression": "payload.x"}, map[string]any{}},
-		{"log missing level", NewLogEntryAdapter(), map[string]any{"message": "x"}, map[string]any{}},
-		{"form validate missing fields", NewFormValidateAdapter(), map[string]any{"required_fields": []any{"a"}}, map[string]any{}},
-		{"approval missing approver", NewApprovalRequestAdapter(client), map[string]any{"title": "x"}, map[string]any{}},
-		{"ai chat missing messages", NewAIChatAdapter(), map[string]any{}, map[string]any{"provider": "openai", "model": "gpt-4o"}},
+		{"webhook missing url", adapters.NewWebhookAdapter(client), map[string]any{}, map[string]any{}},
+		{"http missing url", adapters.NewHTTPAdapter(client), map[string]any{"method": "GET"}, map[string]any{}},
+		{
+			"notification missing recipient",
+			adapters.NewNotificationSendAdapter(client),
+			map[string]any{"channel": "email", "body": "x"},
+			map[string]any{},
+		},
+		{
+			"notification status missing id",
+			adapters.NewNotificationStatusAdapter(client),
+			map[string]any{},
+			map[string]any{},
+		},
+		{
+			"payment initiate missing amount",
+			adapters.NewPaymentInitiateAdapter(client),
+			map[string]any{"currency": "USD", "recipient": "x", "reference": "r"},
+			map[string]any{},
+		},
+		{"payment verify missing id", adapters.NewPaymentVerifyAdapter(client), map[string]any{}, map[string]any{}},
+		{
+			"transform missing source",
+			adapters.NewDataTransformAdapter(),
+			map[string]any{"expression": "payload.x"},
+			map[string]any{},
+		},
+		{"log missing level", adapters.NewLogEntryAdapter(), map[string]any{"message": "x"}, map[string]any{}},
+		{
+			"form validate missing fields",
+			adapters.NewFormValidateAdapter(),
+			map[string]any{"required_fields": []any{"a"}},
+			map[string]any{},
+		},
+		{
+			"approval missing approver",
+			adapters.NewApprovalRequestAdapter(client),
+			map[string]any{"title": "x"},
+			map[string]any{},
+		},
+		{
+			"ai chat missing messages",
+			adapters.NewAIChatAdapter(),
+			map[string]any{},
+			map[string]any{"provider": "openai", "model": "gpt-4o"},
+		},
 	}
 
 	for _, c := range cases {

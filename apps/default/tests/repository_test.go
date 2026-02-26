@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"time"
@@ -31,7 +31,7 @@ func (s *DefaultServiceSuite) TestEventLogRepository_Lifecycle() {
 
 	processed := 0
 	unscopedCtx := security.SkipTenancyChecksOnClaims(ctx)
-	count, err := s.eventRepo.FindAndProcessUnpublished(unscopedCtx, 10, func(e *models.EventLog) error {
+	count, err := s.eventRepo.FindAndProcessUnpublished(unscopedCtx, 10, func(_ *models.EventLog) error {
 		processed++
 		return nil
 	})
@@ -60,7 +60,7 @@ func (s *DefaultServiceSuite) TestAuditRepository_DeleteBefore() {
 
 	events, err := s.auditRepo.ListByInstance(ctx, "inst-1")
 	s.Require().NoError(err)
-	s.Len(events, 0)
+	s.Empty(events)
 }
 
 func (s *DefaultServiceSuite) TestWorkflowExecutionRepository_VerifyAndConsumeToken() {
@@ -82,34 +82,34 @@ func (s *DefaultServiceSuite) TestWorkflowExecutionRepository_VerifyAndConsumeTo
 
 	execAfter, err := s.execRepo.GetByID(ctx, exec.ID)
 	s.Require().NoError(err)
-	s.Equal("", execAfter.ExecutionToken)
+	s.Empty(execAfter.ExecutionToken)
 }
 
 func (s *DefaultServiceSuite) TestWorkflowExecutionRepository_FindPendingRetryTimedOut() {
 	ctx := s.tenantCtx()
 
 	pending := &models.WorkflowStateExecution{
-		InstanceID: "inst-1",
-		State:      "step-a",
-		Attempt:    1,
-		Status:     models.ExecStatusPending,
+		InstanceID:   "inst-1",
+		State:        "step-a",
+		Attempt:      1,
+		Status:       models.ExecStatusPending,
 		InputPayload: "{}",
 	}
 	retryDue := &models.WorkflowStateExecution{
-		InstanceID: "inst-2",
-		State:      "step-b",
-		Attempt:    1,
-		Status:     models.ExecStatusRetryScheduled,
+		InstanceID:   "inst-2",
+		State:        "step-b",
+		Attempt:      1,
+		Status:       models.ExecStatusRetryScheduled,
 		InputPayload: "{}",
-		NextRetryAt: func() *time.Time { t := time.Now().Add(-time.Minute); return &t }(),
+		NextRetryAt:  func() *time.Time { t := time.Now().Add(-time.Minute); return &t }(),
 	}
 	timedOut := &models.WorkflowStateExecution{
-		InstanceID: "inst-3",
-		State:      "step-c",
-		Attempt:    1,
-		Status:     models.ExecStatusDispatched,
+		InstanceID:   "inst-3",
+		State:        "step-c",
+		Attempt:      1,
+		Status:       models.ExecStatusDispatched,
 		InputPayload: "{}",
-		StartedAt:  func() *time.Time { t := time.Now().Add(-2 * time.Minute); return &t }(),
+		StartedAt:    func() *time.Time { t := time.Now().Add(-2 * time.Minute); return &t }(),
 	}
 
 	s.Require().NoError(s.execRepo.Create(ctx, pending))

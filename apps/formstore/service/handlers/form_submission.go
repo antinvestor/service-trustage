@@ -45,7 +45,7 @@ func (h *FormSubmissionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		Metadata       json.RawMessage `json:"metadata"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -156,7 +156,7 @@ func (h *FormSubmissionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Metadata json.RawMessage `json:"metadata"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -173,9 +173,9 @@ func (h *FormSubmissionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		sub.Metadata = string(req.Metadata)
 	}
 
-	if err := h.biz.UpdateSubmission(ctx, sub); err != nil {
-		log.WithError(err).Error("failed to update form submission")
-		status, msg := httpStatusForError(err)
+	if updateErr := h.biz.UpdateSubmission(ctx, sub); updateErr != nil {
+		log.WithError(updateErr).Error("failed to update form submission")
+		status, msg := httpStatusForError(updateErr)
 		http.Error(w, msg, status)
 
 		return

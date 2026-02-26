@@ -1,8 +1,9 @@
-package tests
+package tests_test
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/pitabwire/frame/queue"
@@ -22,22 +23,28 @@ type fakeQueueManager struct {
 	published []publishedMessage
 }
 
-func (f *fakeQueueManager) AddPublisher(ctx context.Context, reference string, queueURL string) error {
+var errQueueNotUsed = errors.New("queue manager not used in test")
+
+func (f *fakeQueueManager) AddPublisher(_ context.Context, _ string, _ string) error {
 	return nil
 }
-func (f *fakeQueueManager) GetPublisher(reference string) (queue.Publisher, error) { return nil, nil }
-func (f *fakeQueueManager) DiscardPublisher(ctx context.Context, reference string) error { return nil }
-func (f *fakeQueueManager) AddSubscriber(ctx context.Context, reference string, queueURL string, handlers ...queue.SubscribeWorker) error {
+func (f *fakeQueueManager) GetPublisher(_ string) (queue.Publisher, error) {
+	return nil, errQueueNotUsed
+}
+func (f *fakeQueueManager) DiscardPublisher(_ context.Context, _ string) error { return nil }
+func (f *fakeQueueManager) AddSubscriber(_ context.Context, _ string, _ string, _ ...queue.SubscribeWorker) error {
 	return nil
 }
-func (f *fakeQueueManager) DiscardSubscriber(ctx context.Context, reference string) error { return nil }
-func (f *fakeQueueManager) GetSubscriber(reference string) (queue.Subscriber, error) { return nil, nil }
-func (f *fakeQueueManager) Publish(ctx context.Context, reference string, payload any, headers ...map[string]string) error {
+func (f *fakeQueueManager) DiscardSubscriber(_ context.Context, _ string) error { return nil }
+func (f *fakeQueueManager) GetSubscriber(_ string) (queue.Subscriber, error) {
+	return nil, errQueueNotUsed
+}
+func (f *fakeQueueManager) Publish(_ context.Context, reference string, payload any, _ ...map[string]string) error {
 	f.published = append(f.published, publishedMessage{ref: reference, payload: payload})
 	return nil
 }
-func (f *fakeQueueManager) Init(ctx context.Context) error { return nil }
-func (f *fakeQueueManager) Close(ctx context.Context) error { return nil }
+func (f *fakeQueueManager) Init(_ context.Context) error  { return nil }
+func (f *fakeQueueManager) Close(_ context.Context) error { return nil }
 
 func (s *DefaultServiceSuite) TestDispatchScheduler_RunOnce() {
 	ctx := context.Background()

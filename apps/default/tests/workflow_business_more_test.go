@@ -1,8 +1,6 @@
-package tests
+package tests_test
 
 import (
-	"errors"
-
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -10,7 +8,12 @@ import (
 func (s *DefaultServiceSuite) TestWorkflowBusiness_GetAndList() {
 	ctx := s.tenantCtx()
 
-	def := &models.WorkflowDefinition{Name: "wf", WorkflowVersion: 1, Status: models.WorkflowStatusActive, DSLBlob: "{}"}
+	def := &models.WorkflowDefinition{
+		Name:            "wf",
+		WorkflowVersion: 1,
+		Status:          models.WorkflowStatusActive,
+		DSLBlob:         "{}",
+	}
 	s.Require().NoError(s.defRepo.Create(ctx, def))
 
 	biz := s.workflowBusiness()
@@ -29,5 +32,5 @@ func (s *DefaultServiceSuite) TestWorkflowBusiness_Get_NotFound() {
 
 	_, err := biz.GetWorkflow(ctx, "missing")
 	s.Require().Error(err)
-	s.True(errors.Is(err, business.ErrWorkflowNotFound))
+	s.ErrorIs(err, business.ErrWorkflowNotFound)
 }

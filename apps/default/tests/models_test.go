@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import "github.com/antinvestor/service-trustage/apps/default/service/models"
 

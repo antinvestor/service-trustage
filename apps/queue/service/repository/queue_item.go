@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -27,7 +28,12 @@ type QueueItemRepository interface {
 	CountWaitingForUpdate(ctx context.Context, queueID string) (int64, error)
 	AvgWaitMinutes(ctx context.Context, queueID string, since time.Time) (float64, error)
 	LongestWaitMinutes(ctx context.Context, queueID string) (float64, error)
-	CountByStatusSince(ctx context.Context, queueID string, status models.QueueItemStatus, since time.Time) (int64, error)
+	CountByStatusSince(
+		ctx context.Context,
+		queueID string,
+		status models.QueueItemStatus,
+		since time.Time,
+	) (int64, error)
 }
 
 type queueItemRepository struct {
@@ -98,7 +104,7 @@ func (r *queueItemRepository) FindNextWaiting(
 	}
 
 	if item.ID == "" {
-		return nil, fmt.Errorf("find next waiting item: no rows found")
+		return nil, errors.New("find next waiting item: no rows found")
 	}
 
 	return &item, nil

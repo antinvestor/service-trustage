@@ -3,7 +3,7 @@ package models
 import "github.com/pitabwire/frame/data"
 
 // QueueDefinition represents a named queue with configuration.
-type QueueDefinition struct { //nolint:recvcheck // TableName() must be value receiver for GORM
+type QueueDefinition struct {
 	data.BaseModel `gorm:"embedded"`
 
 	Name           string `gorm:"column:name;not null"`

@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"context"
@@ -16,10 +16,30 @@ import (
 func (s *DefaultServiceSuite) TestWorkflowDefinitionRepository_ListActiveByName() {
 	ctx := s.tenantCtx()
 
-	def1 := &models.WorkflowDefinition{Name: "wf", WorkflowVersion: 1, Status: models.WorkflowStatusActive, DSLBlob: "{}"}
-	def2 := &models.WorkflowDefinition{Name: "wf", WorkflowVersion: 2, Status: models.WorkflowStatusActive, DSLBlob: "{}"}
-	def3 := &models.WorkflowDefinition{Name: "wf", WorkflowVersion: 3, Status: models.WorkflowStatusDraft, DSLBlob: "{}"}
-	def4 := &models.WorkflowDefinition{Name: "other", WorkflowVersion: 1, Status: models.WorkflowStatusActive, DSLBlob: "{}"}
+	def1 := &models.WorkflowDefinition{
+		Name:            "wf",
+		WorkflowVersion: 1,
+		Status:          models.WorkflowStatusActive,
+		DSLBlob:         "{}",
+	}
+	def2 := &models.WorkflowDefinition{
+		Name:            "wf",
+		WorkflowVersion: 2,
+		Status:          models.WorkflowStatusActive,
+		DSLBlob:         "{}",
+	}
+	def3 := &models.WorkflowDefinition{
+		Name:            "wf",
+		WorkflowVersion: 3,
+		Status:          models.WorkflowStatusDraft,
+		DSLBlob:         "{}",
+	}
+	def4 := &models.WorkflowDefinition{
+		Name:            "other",
+		WorkflowVersion: 1,
+		Status:          models.WorkflowStatusActive,
+		DSLBlob:         "{}",
+	}
 
 	s.Require().NoError(s.defRepo.Create(ctx, def1))
 	s.Require().NoError(s.defRepo.Create(ctx, def2))
@@ -35,7 +55,12 @@ func (s *DefaultServiceSuite) TestWorkflowDefinitionRepository_ListActiveByName(
 
 func (s *DefaultServiceSuite) TestWorkflowDefinitionRepository_GetByNameAndVersion() {
 	ctx := s.tenantCtx()
-	def := &models.WorkflowDefinition{Name: "wf", WorkflowVersion: 1, Status: models.WorkflowStatusActive, DSLBlob: "{}"}
+	def := &models.WorkflowDefinition{
+		Name:            "wf",
+		WorkflowVersion: 1,
+		Status:          models.WorkflowStatusActive,
+		DSLBlob:         "{}",
+	}
 	s.Require().NoError(s.defRepo.Create(ctx, def))
 
 	found, err := s.defRepo.GetByNameAndVersion(ctx, "wf", 1)
@@ -45,7 +70,13 @@ func (s *DefaultServiceSuite) TestWorkflowDefinitionRepository_GetByNameAndVersi
 
 func (s *DefaultServiceSuite) TestWorkflowInstanceRepository_CASTransition() {
 	ctx := s.tenantCtx()
-	inst := &models.WorkflowInstance{WorkflowName: "wf", WorkflowVersion: 1, CurrentState: "a", Status: models.InstanceStatusRunning, Revision: 1}
+	inst := &models.WorkflowInstance{
+		WorkflowName:    "wf",
+		WorkflowVersion: 1,
+		CurrentState:    "a",
+		Status:          models.InstanceStatusRunning,
+		Revision:        1,
+	}
 	s.Require().NoError(s.instanceRepo.Create(ctx, inst))
 
 	err := s.instanceRepo.CASTransition(ctx, inst.ID, "a", 1, "b")
@@ -61,7 +92,13 @@ func (s *DefaultServiceSuite) TestWorkflowInstanceRepository_CASTransition() {
 
 func (s *DefaultServiceSuite) TestWorkflowInstanceRepository_UpdateStatus() {
 	ctx := s.tenantCtx()
-	inst := &models.WorkflowInstance{WorkflowName: "wf", WorkflowVersion: 1, CurrentState: "a", Status: models.InstanceStatusRunning, Revision: 1}
+	inst := &models.WorkflowInstance{
+		WorkflowName:    "wf",
+		WorkflowVersion: 1,
+		CurrentState:    "a",
+		Status:          models.InstanceStatusRunning,
+		Revision:        1,
+	}
 	inst.ID = util.IDString()
 	inst.TenantID = testTenantID
 	inst.PartitionID = testPartitionID
@@ -82,7 +119,13 @@ func (s *DefaultServiceSuite) TestWorkflowInstanceRepository_UpdateStatus() {
 
 func (s *DefaultServiceSuite) TestWorkflowOutputRepository_Getters() {
 	ctx := s.tenantCtx()
-	out := &models.WorkflowStateOutput{ExecutionID: "exec-1", InstanceID: "inst-1", State: "step", SchemaHash: "hash", Payload: "{}"}
+	out := &models.WorkflowStateOutput{
+		ExecutionID: "exec-1",
+		InstanceID:  "inst-1",
+		State:       "step",
+		SchemaHash:  "hash",
+		Payload:     "{}",
+	}
 	s.Require().NoError(s.outputRepo.Store(ctx, out))
 
 	byExec, err := s.outputRepo.GetByExecution(ctx, "exec-1")
@@ -167,7 +210,11 @@ func (s *DefaultServiceSuite) TestEventLogRepository_DeletePublishedBefore() {
 		oldTime, event.ID,
 	)
 
-	deleted, err := s.eventRepo.DeletePublishedBefore(security.SkipTenancyChecksOnClaims(ctx), time.Now().Add(-time.Hour), 10)
+	deleted, err := s.eventRepo.DeletePublishedBefore(
+		security.SkipTenancyChecksOnClaims(ctx),
+		time.Now().Add(-time.Hour),
+		10,
+	)
 	s.Require().NoError(err)
 	s.Equal(int64(1), deleted)
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -211,7 +212,6 @@ func (sr *schemaRegistry) lookupSchema(
 	return schema, nil
 }
 
-
 func computeSchemaHash(blob json.RawMessage) string {
 	hash := sha256.Sum256(blob)
 	return hex.EncodeToString(hash[:])
@@ -220,7 +220,7 @@ func computeSchemaHash(blob json.RawMessage) string {
 func validateAgainstSchema(schemaBlob json.RawMessage, data json.RawMessage) error {
 	normalized := strings.TrimSpace(string(schemaBlob))
 	if normalized == "" {
-		return fmt.Errorf("schema blob is empty")
+		return errors.New("schema blob is empty")
 	}
 
 	// Handle double-encoded JSON (jsonb stored as a JSON string).

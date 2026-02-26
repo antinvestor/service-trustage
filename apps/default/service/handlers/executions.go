@@ -65,18 +65,18 @@ func (h *ExecutionHandler) List(w http.ResponseWriter, r *http.Request) {
 	resp := make([]map[string]any, 0, len(items))
 	for _, exec := range items {
 		resp = append(resp, map[string]any{
-			"execution_id":    exec.ID,
-			"instance_id":     exec.InstanceID,
-			"state":           exec.State,
-			"attempt":         exec.Attempt,
-			"status":          exec.Status,
-			"error_class":     exec.ErrorClass,
-			"error_message":   exec.ErrorMessage,
-			"next_retry_at":   exec.NextRetryAt,
-			"started_at":      exec.StartedAt,
-			"finished_at":     exec.FinishedAt,
-			"created_at":      exec.CreatedAt,
-			"trace_id":        exec.TraceID,
+			"execution_id":      exec.ID,
+			"instance_id":       exec.InstanceID,
+			"state":             exec.State,
+			"attempt":           exec.Attempt,
+			"status":            exec.Status,
+			"error_class":       exec.ErrorClass,
+			"error_message":     exec.ErrorMessage,
+			"next_retry_at":     exec.NextRetryAt,
+			"started_at":        exec.StartedAt,
+			"finished_at":       exec.FinishedAt,
+			"created_at":        exec.CreatedAt,
+			"trace_id":          exec.TraceID,
 			"input_schema_hash": exec.InputSchemaHash,
 		})
 	}
@@ -119,7 +119,7 @@ func (h *ExecutionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var output any
 	if includeOutput {
 		if out, outErr := h.outputRepo.GetByExecution(ctx, executionID); outErr == nil && out != nil {
-			if err := json.Unmarshal([]byte(out.Payload), &output); err != nil {
+			if unmarshalErr := json.Unmarshal([]byte(out.Payload), &output); unmarshalErr != nil {
 				output = out.Payload
 			}
 		}
@@ -127,28 +127,28 @@ func (h *ExecutionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	var inputPayload any
 	if exec.InputPayload != "" {
-		if err := json.Unmarshal([]byte(exec.InputPayload), &inputPayload); err != nil {
+		if unmarshalErr := json.Unmarshal([]byte(exec.InputPayload), &inputPayload); unmarshalErr != nil {
 			inputPayload = exec.InputPayload
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"execution_id":    exec.ID,
-		"instance_id":     exec.InstanceID,
-		"state":           exec.State,
-		"attempt":         exec.Attempt,
-		"status":          exec.Status,
-		"error_class":     exec.ErrorClass,
-		"error_message":   exec.ErrorMessage,
-		"next_retry_at":   exec.NextRetryAt,
-		"started_at":      exec.StartedAt,
-		"finished_at":     exec.FinishedAt,
-		"created_at":      exec.CreatedAt,
-		"trace_id":        exec.TraceID,
-		"input_payload":   inputPayload,
+		"execution_id":      exec.ID,
+		"instance_id":       exec.InstanceID,
+		"state":             exec.State,
+		"attempt":           exec.Attempt,
+		"status":            exec.Status,
+		"error_class":       exec.ErrorClass,
+		"error_message":     exec.ErrorMessage,
+		"next_retry_at":     exec.NextRetryAt,
+		"started_at":        exec.StartedAt,
+		"finished_at":       exec.FinishedAt,
+		"created_at":        exec.CreatedAt,
+		"trace_id":          exec.TraceID,
+		"input_payload":     inputPayload,
 		"input_schema_hash": exec.InputSchemaHash,
-		"output":          output,
+		"output":            output,
 	})
 }
 

@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 
 type allowAllAuthz struct{}
 
-func (a allowAllAuthz) CanIngestEvent(_ context.Context) error  { return nil }
+func (a allowAllAuthz) CanIngestEvent(_ context.Context) error    { return nil }
 func (a allowAllAuthz) CanManageWorkflow(_ context.Context) error { return nil }
 func (a allowAllAuthz) CanViewWorkflow(_ context.Context) error   { return nil }
 func (a allowAllAuthz) CanViewInstance(_ context.Context) error   { return nil }

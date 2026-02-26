@@ -13,7 +13,6 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
-
 // WorkflowExecutionRepository manages workflow state execution persistence.
 type WorkflowExecutionRepository interface {
 	Create(ctx context.Context, exec *models.WorkflowStateExecution) error

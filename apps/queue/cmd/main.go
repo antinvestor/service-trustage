@@ -16,6 +16,7 @@ import (
 	"github.com/antinvestor/service-trustage/apps/queue/service/repository"
 )
 
+//nolint:funlen // wiring and dependency setup is intentionally verbose
 func main() {
 	ctx := context.Background()
 

@@ -13,12 +13,18 @@ import (
 	"github.com/antinvestor/service-trustage/pkg/events"
 )
 
+//nolint:gochecknoglobals // execution status map is static and shared across handlers
 var retryableStatuses = map[models.ExecutionStatus]bool{
+	models.ExecStatusPending:               false,
+	models.ExecStatusDispatched:            false,
+	models.ExecStatusRunning:               false,
+	models.ExecStatusCompleted:             false,
 	models.ExecStatusFailed:                true,
 	models.ExecStatusFatal:                 true,
 	models.ExecStatusTimedOut:              true,
 	models.ExecStatusInvalidInputContract:  true,
 	models.ExecStatusInvalidOutputContract: true,
+	models.ExecStatusStale:                 false,
 	models.ExecStatusRetryScheduled:        true,
 }
 

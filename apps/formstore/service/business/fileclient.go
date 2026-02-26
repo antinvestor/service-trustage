@@ -14,7 +14,9 @@ const uploadChunkSize = 64 * 1024
 
 // NewFileUploadFunc creates a file upload function using the files service client.
 // The returned function uploads a file via client-streaming RPC and returns the MXC URI.
-func NewFileUploadFunc(client filesv1connect.FilesServiceClient) func(filename, contentType string, data []byte) (string, error) {
+func NewFileUploadFunc(
+	client filesv1connect.FilesServiceClient,
+) func(filename, contentType string, data []byte) (string, error) {
 	return func(filename, contentType string, data []byte) (string, error) {
 		ctx := context.Background()
 		stream := client.UploadContent(ctx)

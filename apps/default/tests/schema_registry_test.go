@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"encoding/json"
@@ -51,7 +51,7 @@ func TestJsonSchemaCompilerSimple(t *testing.T) {
 		t.Fatalf("add resource failed: %v", err)
 	}
 
-	if _, err := compiler.Compile("schema.json"); err != nil {
-		t.Fatalf("compile failed: %v", err)
+	if _, compileErr := compiler.Compile("schema.json"); compileErr != nil {
+		t.Fatalf("compile failed: %v", compileErr)
 	}
 }

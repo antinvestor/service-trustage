@@ -1,8 +1,10 @@
+//nolint:testpackage // tests need access to unexported types
 package queues
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
@@ -15,15 +17,21 @@ type stubEngine struct {
 	commits []*business.CommitRequest
 }
 
-func (s *stubEngine) CreateInitialExecution(ctx context.Context, instance *models.WorkflowInstance, inputPayload json.RawMessage) (*business.ExecutionCommand, error) {
-	return nil, nil
+var errNotUsed = errors.New("not used in this test")
+
+func (s *stubEngine) CreateInitialExecution(
+	_ context.Context,
+	_ *models.WorkflowInstance,
+	_ json.RawMessage,
+) (*business.ExecutionCommand, error) {
+	return nil, errNotUsed
 }
 
-func (s *stubEngine) Dispatch(ctx context.Context, execution *models.WorkflowStateExecution) (*business.ExecutionCommand, error) {
-	return nil, nil
+func (s *stubEngine) Dispatch(_ context.Context, _ *models.WorkflowStateExecution) (*business.ExecutionCommand, error) {
+	return nil, errNotUsed
 }
 
-func (s *stubEngine) Commit(ctx context.Context, req *business.CommitRequest) error {
+func (s *stubEngine) Commit(_ context.Context, req *business.CommitRequest) error {
 	s.commits = append(s.commits, req)
 	return nil
 }
@@ -32,19 +40,23 @@ type stubDefRepo struct {
 	dsl string
 }
 
-func (s *stubDefRepo) GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error) {
+func (s *stubDefRepo) GetByNameAndVersion(_ context.Context, _ string, _ int) (*models.WorkflowDefinition, error) {
 	return &models.WorkflowDefinition{DSLBlob: s.dsl}, nil
 }
 
 type stubAdapter struct{}
 
-func (a stubAdapter) Type() string { return "test.adapter" }
-func (a stubAdapter) DisplayName() string { return "Test Adapter" }
-func (a stubAdapter) InputSchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
-func (a stubAdapter) ConfigSchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
-func (a stubAdapter) OutputSchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
-func (a stubAdapter) Validate(req *connector.ExecuteRequest) error { return nil }
-func (a stubAdapter) Execute(ctx context.Context, req *connector.ExecuteRequest) (*connector.ExecuteResponse, *connector.ExecutionError) {
+func (a stubAdapter) Type() string                               { return "test.adapter" }
+func (a stubAdapter) DisplayName() string                        { return "Test Adapter" }
+func (a stubAdapter) InputSchema() json.RawMessage               { return json.RawMessage(`{"type":"object"}`) }
+func (a stubAdapter) ConfigSchema() json.RawMessage              { return json.RawMessage(`{"type":"object"}`) }
+func (a stubAdapter) OutputSchema() json.RawMessage              { return json.RawMessage(`{"type":"object"}`) }
+func (a stubAdapter) Validate(_ *connector.ExecuteRequest) error { return nil }
+
+func (a stubAdapter) Execute(
+	_ context.Context,
+	_ *connector.ExecuteRequest,
+) (*connector.ExecuteResponse, *connector.ExecutionError) {
 	return &connector.ExecuteResponse{Output: map[string]any{"ok": true}}, nil
 }
 
@@ -66,14 +78,14 @@ func TestExecutionWorker_Success(t *testing.T) {
 	worker := NewExecutionWorker(engine, defRepo, registry).(*ExecutionWorker)
 
 	cmd := business.ExecutionCommand{
-		ExecutionID:    "exec-1",
-		InstanceID:     "inst-1",
-		Workflow:       "wf",
+		ExecutionID:     "exec-1",
+		InstanceID:      "inst-1",
+		Workflow:        "wf",
 		WorkflowVersion: 1,
-		State:          "step_a",
-		Attempt:        1,
-		ExecutionToken: "token",
-		InputPayload:   json.RawMessage(`{"hello":"world"}`),
+		State:           "step_a",
+		Attempt:         1,
+		ExecutionToken:  "token",
+		InputPayload:    json.RawMessage(`{"hello":"world"}`),
 	}
 	message, _ := json.Marshal(cmd)
 
@@ -107,13 +119,13 @@ func TestExecutionWorker_MissingAdapterCommitsError(t *testing.T) {
 	worker := NewExecutionWorker(engine, defRepo, registry).(*ExecutionWorker)
 
 	cmd := business.ExecutionCommand{
-		ExecutionID:    "exec-1",
-		InstanceID:     "inst-1",
-		Workflow:       "wf",
+		ExecutionID:     "exec-1",
+		InstanceID:      "inst-1",
+		Workflow:        "wf",
 		WorkflowVersion: 1,
-		State:          "step_a",
-		Attempt:        1,
-		ExecutionToken: "token",
+		State:           "step_a",
+		Attempt:         1,
+		ExecutionToken:  "token",
 	}
 	message, _ := json.Marshal(cmd)
 

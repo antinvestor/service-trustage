@@ -163,9 +163,9 @@ func (r *eventRouter) createInstance(
 
 	// Audit event.
 	_ = r.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		InstanceID:  instance.ID,
-		EventType:   events.EventInstanceCreated,
-		State:       initialStep.ID,
+		InstanceID: instance.ID,
+		EventType:  events.EventInstanceCreated,
+		State:      initialStep.ID,
 	})
 
 	// Create initial execution.

@@ -126,13 +126,14 @@ func (b *formStoreBusiness) DeleteDefinition(ctx context.Context, id string) err
 		return fmt.Errorf("%w: %w", ErrFormDefinitionNotFound, err)
 	}
 
-	if err := b.defRepo.SoftDelete(ctx, def); err != nil {
-		return fmt.Errorf("delete form definition: %w", err)
+	if deleteErr := b.defRepo.SoftDelete(ctx, def); deleteErr != nil {
+		return fmt.Errorf("delete form definition: %w", deleteErr)
 	}
 
 	return nil
 }
 
+//nolint:gocognit // submission creation handles validation, idempotency, and uploads
 func (b *formStoreBusiness) CreateSubmission(ctx context.Context, sub *models.FormSubmission) error {
 	log := util.Log(ctx)
 	start := time.Now()
@@ -166,6 +167,7 @@ func (b *formStoreBusiness) CreateSubmission(ctx context.Context, sub *models.Fo
 	}
 
 	// Process file fields if uploader is available.
+	//nolint:nestif // upload flow is intentionally nested for clarity
 	if b.uploader != nil {
 		var dataMap map[string]any
 		if err := json.Unmarshal([]byte(sub.Data), &dataMap); err == nil {
@@ -242,6 +244,7 @@ func (b *formStoreBusiness) UpdateSubmission(ctx context.Context, sub *models.Fo
 	}
 
 	// Re-process file fields on update.
+	//nolint:nestif // upload flow is intentionally nested for clarity
 	if b.uploader != nil {
 		var dataMap map[string]any
 		if err := json.Unmarshal([]byte(sub.Data), &dataMap); err == nil {
@@ -283,8 +286,8 @@ func (b *formStoreBusiness) DeleteSubmission(ctx context.Context, id string) err
 		return fmt.Errorf("%w: %w", ErrFormSubmissionNotFound, err)
 	}
 
-	if err := b.subRepo.SoftDelete(ctx, sub); err != nil {
-		return fmt.Errorf("delete form submission: %w", err)
+	if deleteErr := b.subRepo.SoftDelete(ctx, sub); deleteErr != nil {
+		return fmt.Errorf("delete form submission: %w", deleteErr)
 	}
 
 	return nil

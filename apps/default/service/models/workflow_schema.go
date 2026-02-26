@@ -16,7 +16,7 @@ const (
 )
 
 // WorkflowStateSchema stores immutable JSON Schema documents for state contracts.
-type WorkflowStateSchema struct { //nolint:recvcheck // TableName() must be value receiver for GORM
+type WorkflowStateSchema struct {
 	data.BaseModel `gorm:"embedded"`
 
 	WorkflowName    string          `gorm:"column:workflow_name;not null;uniqueIndex:uniq_workflow_state_schema"`

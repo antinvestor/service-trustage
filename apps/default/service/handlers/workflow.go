@@ -23,7 +23,11 @@ type WorkflowHandler struct {
 }
 
 // NewWorkflowHandler creates a new WorkflowHandler.
-func NewWorkflowHandler(biz business.WorkflowBusiness, authzMiddleware authz.Middleware, metrics *telemetry.Metrics) *WorkflowHandler {
+func NewWorkflowHandler(
+	biz business.WorkflowBusiness,
+	authzMiddleware authz.Middleware,
+	metrics *telemetry.Metrics,
+) *WorkflowHandler {
 	return &WorkflowHandler{
 		workflowBiz: biz,
 		authz:       authzMiddleware,

@@ -1,4 +1,4 @@
-package tests
+package tests_test
 
 import (
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -71,7 +71,7 @@ func (s *DefaultServiceSuite) TestEventRouter_FilterBlocksNonMatching() {
 
 	instances, err := s.instanceRepo.List(ctx, "", "", 10)
 	s.Require().NoError(err)
-	s.Len(instances, 0)
+	s.Empty(instances)
 }
 
 func (s *DefaultServiceSuite) TestEventRouter_FilterHandlesInvalidExpression() {

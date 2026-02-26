@@ -15,6 +15,11 @@ type QueueDefinitionHandler struct {
 	mgr business.QueueManager
 }
 
+const (
+	defaultPriorityLevels = 3
+	defaultSLAMinutes     = 30
+)
+
 // NewQueueDefinitionHandler creates a new QueueDefinitionHandler.
 func NewQueueDefinitionHandler(mgr business.QueueManager) *QueueDefinitionHandler {
 	return &QueueDefinitionHandler{mgr: mgr}
@@ -38,7 +43,7 @@ func (h *QueueDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) 
 		Config         json.RawMessage `json:"config"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -52,8 +57,8 @@ func (h *QueueDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) 
 		Name:           req.Name,
 		Description:    req.Description,
 		Active:         true,
-		PriorityLevels: 3,
-		SLAMinutes:     30,
+		PriorityLevels: defaultPriorityLevels,
+		SLAMinutes:     defaultSLAMinutes,
 	}
 
 	if req.PriorityLevels != nil {
@@ -163,7 +168,7 @@ func (h *QueueDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) 
 		Config         json.RawMessage `json:"config"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -196,9 +201,9 @@ func (h *QueueDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) 
 		def.Config = string(req.Config)
 	}
 
-	if err := h.mgr.UpdateQueue(ctx, def); err != nil {
-		log.WithError(err).Error("failed to update queue")
-		status, msg := httpStatusForError(err)
+	if updateErr := h.mgr.UpdateQueue(ctx, def); updateErr != nil {
+		log.WithError(updateErr).Error("failed to update queue")
+		status, msg := httpStatusForError(updateErr)
 		http.Error(w, msg, status)
 
 		return

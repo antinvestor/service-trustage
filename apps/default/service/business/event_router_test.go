@@ -1,3 +1,4 @@
+//nolint:testpackage // tests need access to unexported helpers
 package business
 
 import "testing"

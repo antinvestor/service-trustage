@@ -33,5 +33,7 @@ jobs:
         with:
           # Optional: pass GITHUB_TOKEN to avoid rate limiting.
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download go modules
+        run: go mod download
       - name: Run tests with coverage
         run: go test -p 1 -json -v ./... 2>&1 | gotestfmt -hide all
