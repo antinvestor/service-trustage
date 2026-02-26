@@ -44,6 +44,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /home/nonroot/.cache/baml \
+    && chown -R 65532:65532 /home/nonroot
+
+ENV HOME=/home/nonroot
+ENV XDG_CACHE_HOME=/home/nonroot/.cache
+ENV BAML_CACHE_DIR=/home/nonroot/.cache/baml
+
 USER 65532:65532
 
 EXPOSE 80
