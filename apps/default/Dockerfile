@@ -35,12 +35,14 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 
 # ---------- Final ----------
 # BAML downloads a native shared library built for glibc (x86_64-unknown-linux-gnu).
-# Use a minimal glibc image and install libgcc for runtime compatibility.
-FROM cgr.dev/chainguard/glibc-dynamic:latest
+# Use a minimal Debian base with glibc and install libgcc runtime.
+FROM debian:bookworm-slim
 
 LABEL maintainer="Antinvestor <dev@antinvestor.com>"
 
-RUN apk add --no-cache ca-certificates libgcc
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
 
 USER 65532:65532
 
