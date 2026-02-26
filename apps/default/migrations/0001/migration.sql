@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS workflow_state_executions (
     status          VARCHAR(30) NOT NULL DEFAULT 'pending',
     execution_token VARCHAR(64) NOT NULL,
     input_schema_hash VARCHAR(64) NOT NULL,
-    input_payload   JSONB,
+    input_payload   JSONB DEFAULT '{}'::jsonb,
     output_schema_hash VARCHAR(64),
     error_class     VARCHAR(30),
     error_message   TEXT,
@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS workflow_state_schemas (
     version         BIGINT NOT NULL DEFAULT 0,
     deleted_at      TIMESTAMPTZ
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_state_schema
+    ON workflow_state_schemas (tenant_id, workflow_name, workflow_version, state, schema_type);
 
 -- workflow_state_mappings: data mapping expressions between states
 CREATE TABLE IF NOT EXISTS workflow_state_mappings (
@@ -177,7 +180,7 @@ CREATE TABLE IF NOT EXISTS trigger_bindings (
     event_filter    TEXT,
     workflow_name   VARCHAR(255) NOT NULL,
     workflow_version INT NOT NULL,
-    input_mapping   JSONB,
+    input_mapping   JSONB DEFAULT '{}'::jsonb,
     active          BOOLEAN NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     modified_at     TIMESTAMPTZ DEFAULT NOW(),

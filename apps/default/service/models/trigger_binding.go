@@ -10,7 +10,7 @@ type TriggerBinding struct {
 	EventFilter     string `gorm:"column:event_filter"`
 	WorkflowName    string `gorm:"column:workflow_name;not null"`
 	WorkflowVersion int    `gorm:"column:workflow_version;not null"`
-	InputMapping    string `gorm:"column:input_mapping;type:jsonb"`
+	InputMapping    string `gorm:"column:input_mapping;type:jsonb;default:'{}'"`
 	Active          bool   `gorm:"column:active;not null;default:true"`
 }
 

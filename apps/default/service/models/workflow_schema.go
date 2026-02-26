@@ -1,6 +1,10 @@
 package models
 
-import "github.com/pitabwire/frame/data"
+import (
+	"encoding/json"
+
+	"github.com/pitabwire/frame/data"
+)
 
 // SchemaType enumerates schema types.
 type SchemaType string
@@ -15,12 +19,12 @@ const (
 type WorkflowStateSchema struct { //nolint:recvcheck // TableName() must be value receiver for GORM
 	data.BaseModel `gorm:"embedded"`
 
-	WorkflowName    string     `gorm:"column:workflow_name;not null"`
-	WorkflowVersion int        `gorm:"column:workflow_version;not null"`
-	State           string     `gorm:"column:state;not null"`
-	SchemaType      SchemaType `gorm:"column:schema_type;not null"`
-	SchemaHash      string     `gorm:"column:schema_hash;not null"`
-	SchemaBlob      string     `gorm:"column:schema_blob;type:jsonb;not null"`
+	WorkflowName    string          `gorm:"column:workflow_name;not null;uniqueIndex:uniq_workflow_state_schema"`
+	WorkflowVersion int             `gorm:"column:workflow_version;not null;uniqueIndex:uniq_workflow_state_schema"`
+	State           string          `gorm:"column:state;not null;uniqueIndex:uniq_workflow_state_schema"`
+	SchemaType      SchemaType      `gorm:"column:schema_type;not null;uniqueIndex:uniq_workflow_state_schema"`
+	SchemaHash      string          `gorm:"column:schema_hash;not null"`
+	SchemaBlob      json.RawMessage `gorm:"column:schema_blob;type:jsonb;not null"`
 }
 
 // TableName returns the database table name.

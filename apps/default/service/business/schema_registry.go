@@ -10,7 +10,6 @@ import (
 	"time"
 
 	framecache "github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/frame/security"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -91,7 +90,7 @@ func (sr *schemaRegistry) RegisterSchema(
 		State:           state,
 		SchemaType:      schemaType,
 		SchemaHash:      hash,
-		SchemaBlob:      string(schemaBlob),
+		SchemaBlob:      schemaBlob,
 	}
 
 	if err := sr.repo.Store(ctx, schema); err != nil {
@@ -166,8 +165,8 @@ func schemaCacheKey(tenantID, workflowName string, version int, state string, sc
 
 // cachedSchema is a JSON-serializable subset of WorkflowStateSchema for Valkey caching.
 type cachedSchema struct {
-	SchemaHash string `json:"h"`
-	SchemaBlob string `json:"b"`
+	SchemaHash string          `json:"h"`
+	SchemaBlob json.RawMessage `json:"b"`
 }
 
 // lookupSchema fetches a schema, checking Valkey first (if configured) before falling back to the database.
@@ -212,28 +211,29 @@ func (sr *schemaRegistry) lookupSchema(
 	return schema, nil
 }
 
-func tenantFromContext(ctx context.Context) string {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil {
-		return "unknown"
-	}
-
-	tenantID := claims.GetTenantID()
-	if tenantID == "" {
-		return "unknown"
-	}
-
-	return tenantID
-}
 
 func computeSchemaHash(blob json.RawMessage) string {
 	hash := sha256.Sum256(blob)
 	return hex.EncodeToString(hash[:])
 }
 
-func validateAgainstSchema(schemaBlob string, data json.RawMessage) error {
+func validateAgainstSchema(schemaBlob json.RawMessage, data json.RawMessage) error {
+	normalized := strings.TrimSpace(string(schemaBlob))
+	if normalized == "" {
+		return fmt.Errorf("schema blob is empty")
+	}
+
+	// Handle double-encoded JSON (jsonb stored as a JSON string).
+	var unquoted string
+	if err := json.Unmarshal([]byte(normalized), &unquoted); err == nil {
+		trimmed := strings.TrimSpace(unquoted)
+		if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+			normalized = trimmed
+		}
+	}
+
 	// Use schema hash as cache key.
-	hash := sha256.Sum256([]byte(schemaBlob))
+	hash := sha256.Sum256([]byte(normalized))
 	cacheKey := hex.EncodeToString(hash[:])
 
 	// Check bounded cache.
@@ -241,8 +241,11 @@ func validateAgainstSchema(schemaBlob string, data json.RawMessage) error {
 
 	if !cached {
 		compiler := jsonschema.NewCompiler()
-
-		if err := compiler.AddResource("schema.json", strings.NewReader(schemaBlob)); err != nil {
+		doc, decodeErr := jsonschema.UnmarshalJSON(strings.NewReader(normalized))
+		if decodeErr != nil {
+			return fmt.Errorf("decode schema: %w", decodeErr)
+		}
+		if err := compiler.AddResource("schema.json", doc); err != nil {
 			return fmt.Errorf("add schema resource: %w", err)
 		}
 

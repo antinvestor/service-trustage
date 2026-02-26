@@ -34,7 +34,7 @@ type WorkflowStateExecution struct { //nolint:recvcheck // TableName() must be v
 	Status           ExecutionStatus `gorm:"column:status;not null;default:pending"`
 	ExecutionToken   string          `gorm:"column:execution_token;not null"`
 	InputSchemaHash  string          `gorm:"column:input_schema_hash;not null"`
-	InputPayload     string          `gorm:"column:input_payload;type:jsonb"`
+	InputPayload     string          `gorm:"column:input_payload;type:jsonb;default:'{}'"`
 	OutputSchemaHash string          `gorm:"column:output_schema_hash"`
 	ErrorClass       string          `gorm:"column:error_class"`
 	ErrorMessage     string          `gorm:"column:error_message"`

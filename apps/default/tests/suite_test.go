@@ -1,0 +1,236 @@
+package tests
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/datastore/pool"
+	"github.com/pitabwire/frame/frametests"
+	"github.com/pitabwire/frame/frametests/definition"
+	"github.com/pitabwire/frame/frametests/deps/testpostgres"
+	"github.com/pitabwire/frame/security"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/antinvestor/service-trustage/apps/default/service/business"
+	"github.com/antinvestor/service-trustage/apps/default/service/models"
+	"github.com/antinvestor/service-trustage/apps/default/service/repository"
+	"github.com/antinvestor/service-trustage/pkg/telemetry"
+)
+
+const (
+	testTenantID    = "test-tenant-001"
+	testPartitionID = "test-partition-001"
+)
+
+var truncateTables = []string{
+	"event_log",
+	"workflow_audit_events",
+	"workflow_state_outputs",
+	"workflow_state_executions",
+	"workflow_state_schemas",
+	"workflow_state_mappings",
+	"workflow_instances",
+	"workflow_definitions",
+	"workflow_retry_policies",
+	"trigger_bindings",
+	"schedule_definitions",
+	"connector_configs",
+	"connector_credentials",
+}
+
+// DefaultServiceSuite provides a shared test harness for the default service.
+type DefaultServiceSuite struct {
+	frametests.FrameBaseTestSuite
+
+	dbPool pool.Pool
+	cache  cache.RawCache
+
+	metrics *telemetry.Metrics
+
+	eventRepo    repository.EventLogRepository
+	auditRepo    repository.AuditEventRepository
+	defRepo      repository.WorkflowDefinitionRepository
+	schemaRepo   repository.SchemaRegistryRepository
+	instanceRepo repository.WorkflowInstanceRepository
+	execRepo     repository.WorkflowExecutionRepository
+	outputRepo   repository.WorkflowOutputRepository
+	triggerRepo  repository.TriggerBindingRepository
+	retryRepo    repository.RetryPolicyRepository
+	scheduleRepo repository.ScheduleRepository
+}
+
+func TestDefaultServiceSuite(t *testing.T) {
+	suite.Run(t, new(DefaultServiceSuite))
+}
+
+func (s *DefaultServiceSuite) SetupSuite() {
+	s.InitResourceFunc = func(_ context.Context) []definition.TestResource {
+		return []definition.TestResource{testpostgres.New()}
+	}
+	s.FrameBaseTestSuite.SetupSuite()
+
+	ctx := context.Background()
+
+	dsn := s.Resources()[0].GetDS(ctx)
+
+	p := pool.NewPool(ctx)
+	err := p.AddConnection(ctx,
+		pool.WithConnection(string(dsn), false),
+		pool.WithPreparedStatements(false),
+	)
+	s.Require().NoError(err, "connect to test database")
+
+	db := p.DB(ctx, false)
+	err = db.AutoMigrate(
+		&models.EventLog{},
+		&models.WorkflowAuditEvent{},
+		&models.WorkflowStateOutput{},
+		&models.WorkflowStateExecution{},
+		&models.WorkflowStateSchema{},
+		&models.WorkflowStateMapping{},
+		&models.WorkflowInstance{},
+		&models.WorkflowDefinition{},
+		&models.WorkflowRetryPolicy{},
+		&models.TriggerBinding{},
+		&models.ScheduleDefinition{},
+		&models.ConnectorConfig{},
+		&models.ConnectorCredential{},
+	)
+	s.Require().NoError(err, "auto-migrate")
+	s.Require().NoError(db.Exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_state_schema
+		 ON workflow_state_schemas (tenant_id, workflow_name, workflow_version, state, schema_type)`,
+	).Error)
+	var idxCount int64
+	s.Require().NoError(db.Raw(
+		`SELECT COUNT(1) FROM pg_indexes WHERE tablename = 'workflow_state_schemas' AND indexname = 'uniq_workflow_state_schema'`,
+	).Scan(&idxCount).Error)
+	s.Require().Equal(int64(1), idxCount, "unique index for workflow_state_schemas should exist")
+
+	s.dbPool = p
+	s.cache = cache.NewInMemoryCache()
+	s.metrics = telemetry.NewMetrics()
+
+	s.eventRepo = repository.NewEventLogRepository(p)
+	s.auditRepo = repository.NewAuditEventRepository(p)
+	s.defRepo = repository.NewWorkflowDefinitionRepository(p)
+	s.schemaRepo = repository.NewSchemaRegistryRepository(p)
+	s.instanceRepo = repository.NewWorkflowInstanceRepository(p)
+	s.execRepo = repository.NewWorkflowExecutionRepository(p)
+	s.outputRepo = repository.NewWorkflowOutputRepository(p)
+	s.triggerRepo = repository.NewTriggerBindingRepository(p)
+	s.retryRepo = repository.NewRetryPolicyRepository(p)
+	s.scheduleRepo = repository.NewScheduleRepository(p)
+}
+
+func (s *DefaultServiceSuite) SetupTest() {
+	ctx := context.Background()
+	db := s.dbPool.DB(ctx, false)
+	_ = db.Exec("TRUNCATE " + strings.Join(truncateTables, ", ") + " CASCADE").Error
+	_ = s.cache.Flush(ctx)
+}
+
+func (s *DefaultServiceSuite) TearDownSuite() {
+	ctx := context.Background()
+	if s.cache != nil {
+		_ = s.cache.Close()
+	}
+	if s.dbPool != nil {
+		s.dbPool.Close(ctx)
+	}
+	s.FrameBaseTestSuite.TearDownSuite()
+}
+
+func (s *DefaultServiceSuite) tenantCtx() context.Context {
+	claims := &security.AuthenticationClaims{
+		TenantID:    testTenantID,
+		PartitionID: testPartitionID,
+	}
+	claims.Subject = "test-user-001"
+
+	return claims.ClaimsToContext(context.Background())
+}
+
+func (s *DefaultServiceSuite) systemCtx() context.Context {
+	claims := &security.AuthenticationClaims{
+		TenantID:    testTenantID,
+		PartitionID: testPartitionID,
+	}
+	claims.Subject = "system:test"
+
+	return claims.ClaimsToContext(context.Background())
+}
+
+func (s *DefaultServiceSuite) schemaRegistry() business.SchemaRegistry {
+	return business.NewSchemaRegistry(s.schemaRepo, s.cache)
+}
+
+func (s *DefaultServiceSuite) workflowBusiness() business.WorkflowBusiness {
+	return business.NewWorkflowBusiness(s.defRepo, s.schemaRegistry())
+}
+
+func (s *DefaultServiceSuite) stateEngine() business.StateEngine {
+	return business.NewStateEngine(
+		s.instanceRepo,
+		s.execRepo,
+		s.outputRepo,
+		s.auditRepo,
+		s.defRepo,
+		s.retryRepo,
+		s.schemaRegistry(),
+		s.metrics,
+		s.cache,
+	)
+}
+
+func (s *DefaultServiceSuite) eventRouter() business.EventRouter {
+	return business.NewEventRouter(
+		s.triggerRepo,
+		s.defRepo,
+		s.instanceRepo,
+		s.auditRepo,
+		s.stateEngine(),
+		s.metrics,
+	)
+}
+
+func (s *DefaultServiceSuite) createWorkflow(ctx context.Context, dslBlob string) *models.WorkflowDefinition {
+	def, err := s.workflowBusiness().CreateWorkflow(ctx, []byte(dslBlob))
+	s.Require().NoError(err)
+	s.Require().NotEmpty(def.ID)
+	return def
+}
+
+func (s *DefaultServiceSuite) createTrigger(ctx context.Context, eventType string, def *models.WorkflowDefinition) *models.TriggerBinding {
+	binding := &models.TriggerBinding{
+		EventType:       eventType,
+		WorkflowName:    def.Name,
+		WorkflowVersion: def.WorkflowVersion,
+		InputMapping:    "{}",
+		Active:          true,
+	}
+	s.Require().NoError(s.triggerRepo.Create(ctx, binding))
+	return binding
+}
+
+func (s *DefaultServiceSuite) sampleDSL() string {
+	return `{
+  "version": "1.0",
+  "name": "sample-workflow",
+  "steps": [
+    {
+      "id": "log_step",
+      "type": "call",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "hello"
+        }
+      }
+    }
+  ]
+}`
+}

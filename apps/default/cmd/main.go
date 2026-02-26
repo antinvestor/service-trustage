@@ -107,10 +107,10 @@ func main() { //nolint:funlen // main function wiring
 
 	var schedulerWg sync.WaitGroup
 
-	dispatchSched := schedulers.NewDispatchScheduler(execRepo, engine, svc, &cfg, metrics)
+	dispatchSched := schedulers.NewDispatchScheduler(execRepo, engine, svc.QueueManager(), &cfg, metrics)
 	retrySched := schedulers.NewRetryScheduler(execRepo, instanceRepo, &cfg, metrics)
 	timeoutSched := schedulers.NewTimeoutScheduler(execRepo, instanceRepo, retryPolicyRepo, auditRepo, &cfg, metrics)
-	outboxSched := schedulers.NewOutboxScheduler(eventLogRepo, svc, &cfg, metrics)
+	outboxSched := schedulers.NewOutboxScheduler(eventLogRepo, svc.QueueManager(), &cfg, metrics)
 
 	startScheduler := func(name string, startFn func(context.Context)) {
 		schedulerWg.Add(1)

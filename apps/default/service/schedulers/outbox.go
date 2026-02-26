@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pitabwire/frame"
+	"github.com/pitabwire/frame/queue"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -20,7 +20,7 @@ import (
 // OutboxScheduler publishes unpublished events from the event_log table to NATS.
 type OutboxScheduler struct {
 	eventRepo repository.EventLogRepository
-	svc       *frame.Service
+	queueMgr  queue.Manager
 	cfg       *config.Config
 	metrics   *telemetry.Metrics
 }
@@ -28,13 +28,13 @@ type OutboxScheduler struct {
 // NewOutboxScheduler creates a new OutboxScheduler.
 func NewOutboxScheduler(
 	eventRepo repository.EventLogRepository,
-	svc *frame.Service,
+	queueMgr queue.Manager,
 	cfg *config.Config,
 	metrics *telemetry.Metrics,
 ) *OutboxScheduler {
 	return &OutboxScheduler{
 		eventRepo: eventRepo,
-		svc:       svc,
+		queueMgr:  queueMgr,
 		cfg:       cfg,
 		metrics:   metrics,
 	}
@@ -91,7 +91,7 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 			}
 
 			// Publish to NATS event stream.
-			if publishErr := s.svc.QueueManager().Publish(ctx, s.cfg.QueueEventIngestName, msg); publishErr != nil {
+			if publishErr := s.queueMgr.Publish(ctx, s.cfg.QueueEventIngestName, msg); publishErr != nil {
 				return fmt.Errorf("publish: %w", publishErr)
 			}
 

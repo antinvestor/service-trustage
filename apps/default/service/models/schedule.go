@@ -14,7 +14,7 @@ type ScheduleDefinition struct {
 	CronExpr        string     `gorm:"column:cron_expr;not null"`
 	WorkflowName    string     `gorm:"column:workflow_name;not null"`
 	WorkflowVersion int        `gorm:"column:workflow_version;not null"`
-	InputPayload    string     `gorm:"column:input_payload;type:jsonb"`
+	InputPayload    string     `gorm:"column:input_payload;type:jsonb;default:'{}'"`
 	Active          bool       `gorm:"column:active;not null;default:true"`
 	NextFireAt      *time.Time `gorm:"column:next_fire_at;index"`
 	LastFiredAt     *time.Time `gorm:"column:last_fired_at"`

@@ -130,7 +130,7 @@ func (w *ExecutionWorker) executeCallStep(
 		Metadata: map[string]string{
 			"execution_id": cmd.ExecutionID,
 			"instance_id":  cmd.InstanceID,
-			"tenant_id":    tenantID,
+			"tenant_id":    tenantIDFromContext(ctx),
 			"state":        cmd.State,
 		},
 		IdempotencyKey: idempotencyKey,
@@ -207,4 +207,13 @@ func (w *ExecutionWorker) commitError(
 			"error_class", errorClass,
 		)
 	}
+}
+
+func tenantIDFromContext(ctx context.Context) string {
+	claims := security.ClaimsFromContext(ctx)
+	if claims == nil {
+		return ""
+	}
+
+	return claims.GetTenantID()
 }

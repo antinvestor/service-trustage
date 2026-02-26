@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
-	"gorm.io/gorm/clause"
+	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -41,23 +43,15 @@ func NewSchemaRegistryRepository(dbPool pool.Pool) SchemaRegistryRepository {
 	}
 }
 
-// Store upserts a schema (immutable by hash — if the hash already exists, it's a no-op).
+// Store upserts a schema (immutable by hash — if the schema already exists, it's a no-op).
 func (r *schemaRegistryRepository) Store(ctx context.Context, schema *models.WorkflowStateSchema) error {
 	db := r.BaseRepository.Pool().DB(ctx, false)
 
-	result := db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "tenant_id"},
-			{Name: "workflow_name"},
-			{Name: "workflow_version"},
-			{Name: "state"},
-			{Name: "schema_type"},
-		},
-		DoNothing: true,
-	}).Create(schema)
-
-	if result.Error != nil {
-		return fmt.Errorf("store schema: %w", result.Error)
+	if err := db.Create(schema).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "duplicate") {
+			return nil
+		}
+		return fmt.Errorf("store schema: %w", err)
 	}
 
 	return nil

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/pitabwire/frame"
+	"github.com/pitabwire/frame/queue"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -18,7 +18,7 @@ import (
 type DispatchScheduler struct {
 	execRepo repository.WorkflowExecutionRepository
 	engine   business.StateEngine
-	svc      *frame.Service
+	queueMgr queue.Manager
 	cfg      *config.Config
 	metrics  *telemetry.Metrics
 }
@@ -27,14 +27,14 @@ type DispatchScheduler struct {
 func NewDispatchScheduler(
 	execRepo repository.WorkflowExecutionRepository,
 	engine business.StateEngine,
-	svc *frame.Service,
+	queueMgr queue.Manager,
 	cfg *config.Config,
 	metrics *telemetry.Metrics,
 ) *DispatchScheduler {
 	return &DispatchScheduler{
 		execRepo: execRepo,
 		engine:   engine,
-		svc:      svc,
+		queueMgr: queueMgr,
 		cfg:      cfg,
 		metrics:  metrics,
 	}
@@ -93,7 +93,7 @@ func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
 		}
 
 		// Publish full ExecutionCommand to NATS (includes raw token for worker commit).
-		publishErr := s.svc.QueueManager().Publish(ctx, s.cfg.QueueExecDispatchName, cmd)
+		publishErr := s.queueMgr.Publish(ctx, s.cfg.QueueExecDispatchName, cmd)
 		if publishErr != nil {
 			log.WithError(publishErr).Error("dispatch scheduler: publish failed",
 				"execution_id", exec.ID,
