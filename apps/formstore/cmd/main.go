@@ -11,6 +11,7 @@ import (
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/formstore/config"
+	"github.com/antinvestor/service-trustage/apps/formstore/service/authz"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/business"
 	appcache "github.com/antinvestor/service-trustage/apps/formstore/service/cache"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/handlers"
@@ -73,6 +74,11 @@ func main() {
 	// Business layer.
 	formBiz := business.NewFormStoreBusiness(defRepo, subRepo, uploader)
 
+	// Authorisation middleware.
+	sm := svc.SecurityManager()
+	authorizer := sm.GetAuthorizer(ctx)
+	authzMiddleware := authz.NewMiddleware(authorizer)
+
 	// Rate limiter for submission operations.
 	var submitLimiter *handlers.RateLimiter
 	if cfg.SubmissionRateLimit > 0 {
@@ -80,8 +86,8 @@ func main() {
 	}
 
 	// HTTP handlers.
-	defHandler := handlers.NewFormDefinitionHandler(formBiz)
-	subHandler := handlers.NewFormSubmissionHandler(formBiz, submitLimiter)
+	defHandler := handlers.NewFormDefinitionHandler(formBiz, authzMiddleware)
+	subHandler := handlers.NewFormSubmissionHandler(formBiz, authzMiddleware, submitLimiter)
 
 	mux := http.NewServeMux()
 

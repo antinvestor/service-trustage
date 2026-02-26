@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/security/authorizer"
 	"github.com/pitabwire/util"
 
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"
@@ -56,6 +57,15 @@ func requireAuth(ctx context.Context, w http.ResponseWriter) bool {
 	}
 
 	return true
+}
+
+// writeAuthzError writes an appropriate HTTP error response for authorisation failures.
+func writeAuthzError(w http.ResponseWriter, err error) {
+	if errors.Is(err, authorizer.ErrInvalidSubject) || errors.Is(err, authorizer.ErrInvalidObject) {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusForbidden)
 }
 
 // httpStatusForError maps a business error to an HTTP status code and safe message.

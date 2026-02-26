@@ -7,18 +7,20 @@ import (
 
 	"github.com/pitabwire/util"
 
+	"github.com/antinvestor/service-trustage/apps/formstore/service/authz"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/business"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/models"
 )
 
 // FormDefinitionHandler handles form definition HTTP endpoints.
 type FormDefinitionHandler struct {
-	biz business.FormStoreBusiness
+	biz   business.FormStoreBusiness
+	authz authz.Middleware
 }
 
 // NewFormDefinitionHandler creates a new FormDefinitionHandler.
-func NewFormDefinitionHandler(biz business.FormStoreBusiness) *FormDefinitionHandler {
-	return &FormDefinitionHandler{biz: biz}
+func NewFormDefinitionHandler(biz business.FormStoreBusiness, authz authz.Middleware) *FormDefinitionHandler {
+	return &FormDefinitionHandler{biz: biz, authz: authz}
 }
 
 // Create handles POST /api/v1/form-definitions.
@@ -27,6 +29,11 @@ func (h *FormDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageFormDefinition(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
@@ -85,6 +92,11 @@ func (h *FormDefinitionHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.authz.CanViewFormDefinition(ctx); err != nil {
+		writeAuthzError(w, err)
+		return
+	}
+
 	activeOnly := r.URL.Query().Get("active") == "true"
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -114,6 +126,11 @@ func (h *FormDefinitionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.authz.CanViewFormDefinition(ctx); err != nil {
+		writeAuthzError(w, err)
+		return
+	}
+
 	id := r.PathValue("id")
 
 	def, err := h.biz.GetDefinition(ctx, id)
@@ -134,6 +151,11 @@ func (h *FormDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageFormDefinition(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
@@ -192,6 +214,11 @@ func (h *FormDefinitionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageFormDefinition(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 

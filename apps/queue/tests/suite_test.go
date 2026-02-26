@@ -2,19 +2,26 @@ package tests_test
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore/pool"
 	"github.com/pitabwire/frame/frametests"
 	"github.com/pitabwire/frame/frametests/definition"
 	"github.com/pitabwire/frame/frametests/deps/testpostgres"
 	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/security/authorizer"
+	"github.com/pitabwire/util"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/antinvestor/service-trustage/apps/queue/service/authz"
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 	"github.com/antinvestor/service-trustage/apps/queue/service/repository"
+	"github.com/antinvestor/service-trustage/apps/queue/tests/testketo"
 )
 
 const (
@@ -25,13 +32,16 @@ const (
 type QueueSuite struct {
 	frametests.FrameBaseTestSuite
 
-	dbPool      pool.Pool
-	rawCache    cache.RawCache
-	defRepo     repository.QueueDefinitionRepository
-	itemRepo    repository.QueueItemRepository
-	counterRepo repository.QueueCounterRepository
-	stats       business.QueueStatsService
-	manager     business.QueueManager
+	dbPool       pool.Pool
+	rawCache     cache.RawCache
+	ketoReadURI  string
+	ketoWriteURI string
+	authz        security.Authorizer
+	defRepo      repository.QueueDefinitionRepository
+	itemRepo     repository.QueueItemRepository
+	counterRepo  repository.QueueCounterRepository
+	stats        business.QueueStatsService
+	manager      business.QueueManager
 }
 
 func TestQueueSuite(t *testing.T) {
@@ -40,18 +50,59 @@ func TestQueueSuite(t *testing.T) {
 
 func (s *QueueSuite) SetupSuite() {
 	s.InitResourceFunc = func(_ context.Context) []definition.TestResource {
-		return []definition.TestResource{
-			testpostgres.New(),
-		}
+		pg := testpostgres.New()
+		keto := testketo.NewWithOpts(
+			definition.WithDependancies(pg),
+			definition.WithEnableLogging(true),
+		)
+		return []definition.TestResource{pg, keto}
 	}
 	s.FrameBaseTestSuite.SetupSuite()
 
 	ctx := context.Background()
 
-	dsn := s.Resources()[0].GetDS(ctx)
+	// Extract Keto URIs from the test resource.
+	var ketoDep definition.DependancyConn
+	for _, res := range s.Resources() {
+		if res.Name() == testketo.ImageName {
+			ketoDep = res
+			break
+		}
+	}
+	s.Require().NotNil(ketoDep, "keto dependency should be available")
+
+	// Write API: default port (4467/tcp, first in port list).
+	writeURL, err := url.Parse(string(ketoDep.GetDS(ctx)))
+	s.Require().NoError(err)
+	s.ketoWriteURI = writeURL.Host
+
+	// Read API: port 4466/tcp (second in port list).
+	readPort, err := ketoDep.PortMapping(ctx, "4466/tcp")
+	s.Require().NoError(err)
+	s.ketoReadURI = fmt.Sprintf("%s:%s", writeURL.Hostname(), readPort)
+
+	// Create Keto authorizer directly (no frame.Service needed).
+	// The gRPC-based adapter expects host:port without scheme.
+	cfg := &config.ConfigurationDefault{
+		AuthorizationServiceReadURI:  s.ketoReadURI,
+		AuthorizationServiceWriteURI: s.ketoWriteURI,
+	}
+	s.authz = authorizer.NewKetoAdapter(cfg, nil)
+
+	// Database setup.
+	var pgDep definition.DependancyConn
+	for _, res := range s.Resources() {
+		if res.GetDS(ctx).IsDB() {
+			pgDep = res
+			break
+		}
+	}
+	s.Require().NotNil(pgDep, "postgres dependency should be available")
+
+	dsn := pgDep.GetDS(ctx)
 
 	p := pool.NewPool(ctx)
-	err := p.AddConnection(ctx,
+	err = p.AddConnection(ctx,
 		pool.WithConnection(string(dsn), false),
 		pool.WithPreparedStatements(false),
 	)
@@ -95,11 +146,31 @@ func (s *QueueSuite) TearDownSuite() {
 }
 
 func (s *QueueSuite) tenantCtx() context.Context {
+	return s.WithAuthClaims(context.Background(), testTenantID, "test-profile-001")
+}
+
+// WithAuthClaims creates a context with fully populated authentication claims.
+func (s *QueueSuite) WithAuthClaims(ctx context.Context, tenantID, profileID string) context.Context {
 	claims := &security.AuthenticationClaims{
-		TenantID:    testTenantID,
+		TenantID:    tenantID,
 		PartitionID: testPartitionID,
+		AccessID:    util.IDString(),
+		ContactID:   profileID,
+		SessionID:   util.IDString(),
+		DeviceID:    "test-device",
 	}
-	return claims.ClaimsToContext(context.Background())
+	claims.Subject = profileID
+	return claims.ClaimsToContext(ctx)
+}
+
+// SeedTenantRole writes a tenant-level ReBAC tuple granting the given role to a profile.
+func (s *QueueSuite) SeedTenantRole(ctx context.Context, tenantID, profileID, role string) {
+	err := s.authz.WriteTuple(ctx, security.RelationTuple{
+		Object:   security.ObjectRef{Namespace: authz.NamespaceTenant, ID: tenantID},
+		Relation: role,
+		Subject:  security.SubjectRef{Namespace: authz.NamespaceProfile, ID: profileID},
+	})
+	s.Require().NoError(err, "failed to seed tenant role")
 }
 
 // createQueue is a test helper that creates a queue definition.

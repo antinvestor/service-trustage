@@ -6,18 +6,20 @@ import (
 
 	"github.com/pitabwire/util"
 
+	"github.com/antinvestor/service-trustage/apps/queue/service/authz"
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 )
 
 // QueueCounterHandler handles queue counter HTTP endpoints.
 type QueueCounterHandler struct {
-	mgr business.QueueManager
+	mgr   business.QueueManager
+	authz authz.Middleware
 }
 
 // NewQueueCounterHandler creates a new QueueCounterHandler.
-func NewQueueCounterHandler(mgr business.QueueManager) *QueueCounterHandler {
-	return &QueueCounterHandler{mgr: mgr}
+func NewQueueCounterHandler(mgr business.QueueManager, authz authz.Middleware) *QueueCounterHandler {
+	return &QueueCounterHandler{mgr: mgr, authz: authz}
 }
 
 // Create handles POST /api/v1/queues/{queue_id}/counters.
@@ -26,6 +28,11 @@ func (h *QueueCounterHandler) Create(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
@@ -76,6 +83,11 @@ func (h *QueueCounterHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.authz.CanViewQueue(ctx); err != nil {
+		writeAuthzError(w, err)
+		return
+	}
+
 	queueID := r.PathValue("queue_id")
 
 	counters, err := h.mgr.ListCounters(ctx, queueID)
@@ -100,6 +112,11 @@ func (h *QueueCounterHandler) Open(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
@@ -133,6 +150,11 @@ func (h *QueueCounterHandler) Close(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
+		return
+	}
+
 	id := r.PathValue("id")
 
 	if err := h.mgr.CloseCounter(ctx, id); err != nil {
@@ -151,6 +173,11 @@ func (h *QueueCounterHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
@@ -173,6 +200,11 @@ func (h *QueueCounterHandler) CallNext(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
@@ -199,6 +231,11 @@ func (h *QueueCounterHandler) BeginService(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
+		return
+	}
+
 	id := r.PathValue("id")
 
 	if err := h.mgr.BeginService(ctx, id); err != nil {
@@ -217,6 +254,11 @@ func (h *QueueCounterHandler) CompleteService(w http.ResponseWriter, r *http.Req
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
+		return
+	}
+
+	if err := h.authz.CanManageCounter(ctx); err != nil {
+		writeAuthzError(w, err)
 		return
 	}
 
