@@ -10,6 +10,8 @@ import (
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/security/authorizer"
+	securityhttp "github.com/pitabwire/frame/security/interceptors/httptor"
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/default/config"
@@ -102,8 +104,9 @@ func main() { //nolint:funlen // main function wiring
 	workflowBiz := business.NewWorkflowBusiness(defRepo, schemaReg)
 
 	sm := svc.SecurityManager()
-	authorizer := sm.GetAuthorizer(ctx)
-	authzMiddleware := authz.NewMiddleware(authorizer)
+	auth := sm.GetAuthorizer(ctx)
+	authzMiddleware := authz.NewMiddleware(auth)
+	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
 
 	// Schedulers (background goroutines with coordinated shutdown).
 	// Schedulers process all tenants, so skip tenancy checks on BaseRepository queries.
@@ -193,7 +196,10 @@ func main() { //nolint:funlen // main function wiring
 	eventRouterWorker := queues.NewEventRouterWorker(eventRouter)
 
 	svc.Init(ctx,
-		frame.WithHTTPHandler(handlers.RequestIDMiddleware(handlers.LimitBodySize(mux))),
+		frame.WithHTTPHandler(securityhttp.TenancyAccessMiddleware(
+			handlers.RequestIDMiddleware(handlers.LimitBodySize(mux)),
+			tenancyAccessChecker,
+		)),
 
 		// Execution dispatch publisher (schedulers publish here).
 		frame.WithRegisterPublisher(

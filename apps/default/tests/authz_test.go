@@ -55,6 +55,8 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_AllowsAndDenies() {
 	err := mw.CanViewWorkflow(ctx)
 	s.Require().NoError(err)
 	s.Equal(authz.PermissionViewWorkflow, authorizerClient.lastReq.Permission)
+	s.Equal(authz.NamespaceProfile, authorizerClient.lastReq.Object.Namespace)
+	s.Equal(testTenantID+"/"+testPartitionID, authorizerClient.lastReq.Object.ID)
 
 	s.Require().NoError(mw.CanIngestEvent(ctx))
 	s.Require().NoError(mw.CanManageWorkflow(ctx))
@@ -67,7 +69,7 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_AllowsAndDenies() {
 	mw = authz.NewMiddleware(denyClient)
 	err = mw.CanViewWorkflow(ctx)
 	s.Require().Error(err)
-	s.ErrorIs(err, authorizer.ErrPermissionDenied)
+	s.Require().ErrorIs(err, authorizer.ErrPermissionDenied)
 }
 
 func (s *DefaultServiceSuite) TestAuthzMiddleware_InvalidClaims() {

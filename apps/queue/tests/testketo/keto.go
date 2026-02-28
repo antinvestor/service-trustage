@@ -25,6 +25,7 @@ serve:
   read:
     host: 0.0.0.0
     port: 4466
+    max_read_depth: 10
   write:
     host: 0.0.0.0
     port: 4467
@@ -34,66 +35,50 @@ log:
   format: text
 
 namespaces:
-  location: file:///home/ory/namespaces
+  location: file:///home/ory/namespaces/trustage.ts
 
 `
 
-	oplNamespaces = `// Keto Namespace Configuration for Trustage
-// Using Ory Permission Language (OPL) - TypeScript-like DSL
+	oplNamespaces = `import { Namespace, Context } from "@ory/keto-namespace-types"
 
-import { Namespace, Context } from "@ory/keto-namespace-types"
+class profile_user implements Namespace {}
 
-// trustage_profile namespace represents users/actors
-class profile implements Namespace {
+class tenancy_access implements Namespace {
   related: {
-    self: profile[]
+    member: profile_user[]
+    service: profile_user[]
   }
 }
 
-// trustage_tenant namespace represents a tenant boundary
-class trustage_tenant implements Namespace {
+class service_trustage implements Namespace {
   related: {
-    owner: profile[]
-    admin: profile[]
-    member: profile[]
-  }
-
-  permits = {
-    ingest_event: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    manage_workflow: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject),
-
-    view_workflow: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    view_instance: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    retry_instance: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject),
-
-    view_execution: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    retry_execution: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject),
+    owner: profile_user[]
+    admin: profile_user[]
+    member: profile_user[]
+    service: (profile_user | tenancy_access)[]
+    ingest_event: (profile_user | service_trustage)[]
+    manage_workflow: (profile_user | service_trustage)[]
+    view_workflow: (profile_user | service_trustage)[]
+    view_instance: (profile_user | service_trustage)[]
+    retry_instance: (profile_user | service_trustage)[]
+    view_execution: (profile_user | service_trustage)[]
+    retry_execution: (profile_user | service_trustage)[]
+    manage_form_definition: (profile_user | service_trustage)[]
+    view_form_definition: (profile_user | service_trustage)[]
+    submit_form: (profile_user | service_trustage)[]
+    view_submission: (profile_user | service_trustage)[]
+    update_submission: (profile_user | service_trustage)[]
+    delete_submission: (profile_user | service_trustage)[]
+    manage_queue: (profile_user | service_trustage)[]
+    view_queue: (profile_user | service_trustage)[]
+    enqueue_item: (profile_user | service_trustage)[]
+    view_queue_item: (profile_user | service_trustage)[]
+    manage_counter: (profile_user | service_trustage)[]
+    view_stats: (profile_user | service_trustage)[]
   }
 }
 
-export { profile, trustage_tenant }
+export { profile_user, tenancy_access, service_trustage }
 `
 
 	namespaceFile = "/home/ory/namespaces/trustage.ts"

@@ -1,56 +1,59 @@
 // Keto Namespace Configuration for Trustage
 // Using Ory Permission Language (OPL) - TypeScript-like DSL
+//
+// Two-layer authorization:
+//   Layer 1 — tenancy_access: Data access gate (can this caller access this partition?)
+//   Layer 2 — service_trustage: Functional permissions per tenant/partition
 
 import { Namespace, Context } from "@ory/keto-namespace-types"
 
-// trustage_profile namespace represents users/actors
-class profile implements Namespace {
+// profile_user is the platform-wide user identity namespace, shared across all services.
+class profile_user implements Namespace {}
+
+// tenancy_access gates data access per tenant/partition (Layer 1).
+// "member" = regular user, "service" = service bot (system_internal role).
+class tenancy_access implements Namespace {
   related: {
-    self: profile[]
+    member: profile_user[]
+    service: profile_user[]
   }
 }
 
-// trustage_tenant namespace represents a tenant boundary
-class trustage_tenant implements Namespace {
+// service_trustage holds functional permission tuples for the trustage service.
+// Permissions are materialized as direct tuples (one per user per permission).
+// The "service" relation bridges service bots from tenancy_access.
+class service_trustage implements Namespace {
   related: {
-    owner: profile[]
-    admin: profile[]
-    member: profile[]
-  }
+    owner: profile_user[]
+    admin: profile_user[]
+    member: profile_user[]
+    service: (profile_user | tenancy_access)[]
 
-  permits = {
-    ingest_event: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
+    // Default app permissions
+    ingest_event: (profile_user | service_trustage)[]
+    manage_workflow: (profile_user | service_trustage)[]
+    view_workflow: (profile_user | service_trustage)[]
+    view_instance: (profile_user | service_trustage)[]
+    retry_instance: (profile_user | service_trustage)[]
+    view_execution: (profile_user | service_trustage)[]
+    retry_execution: (profile_user | service_trustage)[]
 
-    manage_workflow: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject),
+    // Formstore app permissions
+    manage_form_definition: (profile_user | service_trustage)[]
+    view_form_definition: (profile_user | service_trustage)[]
+    submit_form: (profile_user | service_trustage)[]
+    view_submission: (profile_user | service_trustage)[]
+    update_submission: (profile_user | service_trustage)[]
+    delete_submission: (profile_user | service_trustage)[]
 
-    view_workflow: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    view_instance: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    retry_instance: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject),
-
-    view_execution: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject) ||
-      this.related.member.includes(ctx.subject),
-
-    retry_execution: (ctx: Context): boolean =>
-      this.related.owner.includes(ctx.subject) ||
-      this.related.admin.includes(ctx.subject),
+    // Queue app permissions
+    manage_queue: (profile_user | service_trustage)[]
+    view_queue: (profile_user | service_trustage)[]
+    enqueue_item: (profile_user | service_trustage)[]
+    view_queue_item: (profile_user | service_trustage)[]
+    manage_counter: (profile_user | service_trustage)[]
+    view_stats: (profile_user | service_trustage)[]
   }
 }
 
-export { profile, trustage_tenant }
+export { profile_user, tenancy_access, service_trustage }

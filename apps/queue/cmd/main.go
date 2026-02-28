@@ -7,6 +7,8 @@ import (
 	"github.com/pitabwire/frame"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
+	"github.com/pitabwire/frame/security/authorizer"
+	securityhttp "github.com/pitabwire/frame/security/interceptors/httptor"
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/queue/config"
@@ -68,8 +70,9 @@ func main() {
 
 	// Authorisation middleware.
 	sm := svc.SecurityManager()
-	authorizer := sm.GetAuthorizer(ctx)
-	authzMiddleware := authz.NewMiddleware(authorizer)
+	auth := sm.GetAuthorizer(ctx)
+	authzMiddleware := authz.NewMiddleware(auth)
+	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
 
 	// Rate limiter for enqueue operations.
 	var enqueueLimiter *handlers.RateLimiter
@@ -131,7 +134,10 @@ func main() {
 	})
 
 	svc.Init(ctx,
-		frame.WithHTTPHandler(handlers.RequestIDMiddleware(handlers.LimitBodySize(mux))),
+		frame.WithHTTPHandler(securityhttp.TenancyAccessMiddleware(
+			handlers.RequestIDMiddleware(handlers.LimitBodySize(mux)),
+			tenancyAccessChecker,
+		)),
 	)
 
 	log.Info("starting queue service",

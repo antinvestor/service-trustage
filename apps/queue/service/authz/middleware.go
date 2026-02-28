@@ -17,66 +17,33 @@ type Middleware interface {
 }
 
 type middleware struct {
-	authorizer security.Authorizer
+	checker *authorizer.FunctionChecker
 }
 
-func NewMiddleware(authorizer security.Authorizer) Middleware {
-	return &middleware{authorizer: authorizer}
+func NewMiddleware(service security.Authorizer) Middleware {
+	return &middleware{checker: authorizer.NewFunctionChecker(service, NamespaceProfile)}
 }
 
 func (m *middleware) CanManageQueue(ctx context.Context) error {
-	return m.check(ctx, PermissionManageQueue)
+	return m.checker.Check(ctx, PermissionManageQueue)
 }
 
 func (m *middleware) CanViewQueue(ctx context.Context) error {
-	return m.check(ctx, PermissionViewQueue)
+	return m.checker.Check(ctx, PermissionViewQueue)
 }
 
 func (m *middleware) CanEnqueueItem(ctx context.Context) error {
-	return m.check(ctx, PermissionEnqueueItem)
+	return m.checker.Check(ctx, PermissionEnqueueItem)
 }
 
 func (m *middleware) CanViewQueueItem(ctx context.Context) error {
-	return m.check(ctx, PermissionViewQueueItem)
+	return m.checker.Check(ctx, PermissionViewQueueItem)
 }
 
 func (m *middleware) CanManageCounter(ctx context.Context) error {
-	return m.check(ctx, PermissionManageCounter)
+	return m.checker.Check(ctx, PermissionManageCounter)
 }
 
 func (m *middleware) CanViewStats(ctx context.Context) error {
-	return m.check(ctx, PermissionViewStats)
-}
-
-func (m *middleware) check(ctx context.Context, permission string) error {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil {
-		return authorizer.ErrInvalidSubject
-	}
-
-	subjectID, err := claims.GetSubject()
-	if err != nil || subjectID == "" {
-		return authorizer.ErrInvalidSubject
-	}
-
-	tenantID := claims.GetTenantID()
-	if tenantID == "" {
-		return authorizer.ErrInvalidObject
-	}
-
-	req := security.CheckRequest{
-		Object:     security.ObjectRef{Namespace: NamespaceTenant, ID: tenantID},
-		Permission: permission,
-		Subject:    security.SubjectRef{Namespace: NamespaceProfile, ID: subjectID},
-	}
-
-	result, err := m.authorizer.Check(ctx, req)
-	if err != nil {
-		return err
-	}
-	if !result.Allowed {
-		return authorizer.NewPermissionDeniedError(req.Object, permission, req.Subject, result.Reason)
-	}
-
-	return nil
+	return m.checker.Check(ctx, PermissionViewStats)
 }

@@ -159,12 +159,34 @@ func (s *FormStoreSuite) WithAuthClaims(ctx context.Context, tenantID, profileID
 	return claims.ClaimsToContext(ctx)
 }
 
-// SeedTenantRole writes a tenant-level ReBAC tuple granting the given role to a profile.
+// SeedTenantAccess writes a tenancy_access member tuple so the profile can pass
+// the TenancyAccessChecker (data access layer).
+func (s *FormStoreSuite) SeedTenantAccess(ctx context.Context, tenantID, profileID string) {
+	tenancyPath := fmt.Sprintf("%s/%s", tenantID, testPartitionID)
+	err := s.authz.WriteTuple(ctx, authz.BuildAccessTuple(tenancyPath, profileID))
+	s.Require().NoError(err, "failed to seed tenant access")
+}
+
+// SeedTenantRole writes functional permission tuples in the service_trustage
+// namespace for the given role.
 func (s *FormStoreSuite) SeedTenantRole(ctx context.Context, tenantID, profileID, role string) {
-	err := s.authz.WriteTuple(ctx, security.RelationTuple{
-		Object:   security.ObjectRef{Namespace: authz.NamespaceTenant, ID: tenantID},
+	tenancyPath := fmt.Sprintf("%s/%s", tenantID, testPartitionID)
+	permissions := authz.RolePermissions()[role]
+	tuples := make([]security.RelationTuple, 0, 1+len(permissions))
+
+	tuples = append(tuples, security.RelationTuple{
+		Object:   security.ObjectRef{Namespace: authz.NamespaceProfile, ID: tenancyPath},
 		Relation: role,
-		Subject:  security.SubjectRef{Namespace: authz.NamespaceProfile, ID: profileID},
+		Subject:  security.SubjectRef{Namespace: authz.NamespaceProfileUser, ID: profileID},
 	})
+	for _, perm := range permissions {
+		tuples = append(tuples, security.RelationTuple{
+			Object:   security.ObjectRef{Namespace: authz.NamespaceProfile, ID: tenancyPath},
+			Relation: perm,
+			Subject:  security.SubjectRef{Namespace: authz.NamespaceProfileUser, ID: profileID},
+		})
+	}
+
+	err := s.authz.WriteTuples(ctx, tuples)
 	s.Require().NoError(err, "failed to seed tenant role")
 }
