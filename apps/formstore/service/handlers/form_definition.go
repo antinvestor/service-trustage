@@ -32,7 +32,7 @@ func (h *FormDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageFormDefinition(ctx); err != nil {
+	if err := h.authz.CanFormDefinitionManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -92,7 +92,7 @@ func (h *FormDefinitionHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewFormDefinition(ctx); err != nil {
+	if err := h.authz.CanFormDefinitionView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -126,7 +126,7 @@ func (h *FormDefinitionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewFormDefinition(ctx); err != nil {
+	if err := h.authz.CanFormDefinitionView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -154,7 +154,7 @@ func (h *FormDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageFormDefinition(ctx); err != nil {
+	if err := h.authz.CanFormDefinitionManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -217,7 +217,7 @@ func (h *FormDefinitionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageFormDefinition(ctx); err != nil {
+	if err := h.authz.CanFormDefinitionManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}

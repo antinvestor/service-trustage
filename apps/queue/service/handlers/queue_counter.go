@@ -31,7 +31,7 @@ func (h *QueueCounterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -83,7 +83,7 @@ func (h *QueueCounterHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewQueue(ctx); err != nil {
+	if err := h.authz.CanQueueView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -115,7 +115,7 @@ func (h *QueueCounterHandler) Open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -150,7 +150,7 @@ func (h *QueueCounterHandler) Close(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -176,7 +176,7 @@ func (h *QueueCounterHandler) Pause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -203,7 +203,7 @@ func (h *QueueCounterHandler) CallNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -231,7 +231,7 @@ func (h *QueueCounterHandler) BeginService(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -257,7 +257,7 @@ func (h *QueueCounterHandler) CompleteService(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := h.authz.CanManageCounter(ctx); err != nil {
+	if err := h.authz.CanCounterManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}

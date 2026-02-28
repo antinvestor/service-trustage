@@ -3,7 +3,7 @@ package authz
 const (
 	NamespaceProfile       = "service_trustage"
 	NamespaceTenancyAccess = "tenancy_access"
-	NamespaceProfileUser   = "profile/user"
+	NamespaceProfileUser   = "profile_user"
 )
 
 const (
@@ -14,35 +14,43 @@ const (
 )
 
 const (
-	PermissionManageFormDefinition = "manage_form_definition"
-	PermissionViewFormDefinition   = "view_form_definition"
-	PermissionSubmitForm           = "submit_form"
-	PermissionViewSubmission       = "view_submission"
-	PermissionUpdateSubmission     = "update_submission"
-	PermissionDeleteSubmission     = "delete_submission"
+	PermissionFormDefinitionManage = "form_definition_manage"
+	PermissionFormDefinitionView   = "form_definition_view"
+	PermissionFormSubmit           = "form_submit"
+	PermissionSubmissionView       = "submission_view"
+	PermissionSubmissionUpdate     = "submission_update"
+	PermissionSubmissionDelete     = "submission_delete"
 )
+
+// GrantedRelation returns the OPL relation name for a direct grant.
+// Direct grant relations are prefixed with "granted_" to avoid name conflicts
+// with permit functions in Keto OPL (Keto skips permit evaluation when a
+// relation shares the same name as a permit function).
+func GrantedRelation(permission string) string {
+	return "granted_" + permission
+}
 
 // RolePermissions maps each role to the permissions it grants.
 func RolePermissions() map[string][]string {
 	return map[string][]string{
 		RoleOwner: {
-			PermissionManageFormDefinition, PermissionViewFormDefinition,
-			PermissionSubmitForm, PermissionViewSubmission,
-			PermissionUpdateSubmission, PermissionDeleteSubmission,
+			PermissionFormDefinitionManage, PermissionFormDefinitionView,
+			PermissionFormSubmit, PermissionSubmissionView,
+			PermissionSubmissionUpdate, PermissionSubmissionDelete,
 		},
 		RoleAdmin: {
-			PermissionManageFormDefinition, PermissionViewFormDefinition,
-			PermissionSubmitForm, PermissionViewSubmission,
-			PermissionUpdateSubmission, PermissionDeleteSubmission,
+			PermissionFormDefinitionManage, PermissionFormDefinitionView,
+			PermissionFormSubmit, PermissionSubmissionView,
+			PermissionSubmissionUpdate, PermissionSubmissionDelete,
 		},
 		RoleMember: {
-			PermissionViewFormDefinition, PermissionSubmitForm,
-			PermissionViewSubmission,
+			PermissionFormDefinitionView, PermissionFormSubmit,
+			PermissionSubmissionView,
 		},
 		RoleService: {
-			PermissionManageFormDefinition, PermissionViewFormDefinition,
-			PermissionSubmitForm, PermissionViewSubmission,
-			PermissionUpdateSubmission, PermissionDeleteSubmission,
+			PermissionFormDefinitionManage, PermissionFormDefinitionView,
+			PermissionFormSubmit, PermissionSubmissionView,
+			PermissionSubmissionUpdate, PermissionSubmissionDelete,
 		},
 	}
 }

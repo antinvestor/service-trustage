@@ -15,13 +15,13 @@ import (
 
 type allowAllAuthz struct{}
 
-func (a allowAllAuthz) CanIngestEvent(_ context.Context) error    { return nil }
-func (a allowAllAuthz) CanManageWorkflow(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanViewWorkflow(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanViewInstance(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanRetryInstance(_ context.Context) error  { return nil }
-func (a allowAllAuthz) CanViewExecution(_ context.Context) error  { return nil }
-func (a allowAllAuthz) CanRetryExecution(_ context.Context) error { return nil }
+func (a allowAllAuthz) CanEventIngest(_ context.Context) error    { return nil }
+func (a allowAllAuthz) CanWorkflowManage(_ context.Context) error { return nil }
+func (a allowAllAuthz) CanWorkflowView(_ context.Context) error   { return nil }
+func (a allowAllAuthz) CanInstanceView(_ context.Context) error   { return nil }
+func (a allowAllAuthz) CanInstanceRetry(_ context.Context) error  { return nil }
+func (a allowAllAuthz) CanExecutionView(_ context.Context) error  { return nil }
+func (a allowAllAuthz) CanExecutionRetry(_ context.Context) error { return nil }
 
 func (s *DefaultServiceSuite) TestEventHandler_IngestEvent_Idempotent() {
 	ctx := s.tenantCtx()

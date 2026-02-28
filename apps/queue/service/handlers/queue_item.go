@@ -33,7 +33,7 @@ func (h *QueueItemHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanEnqueueItem(ctx); err != nil {
+	if err := h.authz.CanItemEnqueue(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -95,7 +95,7 @@ func (h *QueueItemHandler) ListWaiting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewQueueItem(ctx); err != nil {
+	if err := h.authz.CanQueueItemView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -129,7 +129,7 @@ func (h *QueueItemHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewQueueItem(ctx); err != nil {
+	if err := h.authz.CanQueueItemView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -156,7 +156,7 @@ func (h *QueueItemHandler) GetPosition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewQueueItem(ctx); err != nil {
+	if err := h.authz.CanQueueItemView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -183,7 +183,7 @@ func (h *QueueItemHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -209,7 +209,7 @@ func (h *QueueItemHandler) NoShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -235,7 +235,7 @@ func (h *QueueItemHandler) Requeue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -261,7 +261,7 @@ func (h *QueueItemHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}

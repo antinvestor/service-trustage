@@ -8,13 +8,13 @@ import (
 )
 
 type Middleware interface {
-	CanIngestEvent(ctx context.Context) error
-	CanManageWorkflow(ctx context.Context) error
-	CanViewWorkflow(ctx context.Context) error
-	CanViewInstance(ctx context.Context) error
-	CanRetryInstance(ctx context.Context) error
-	CanViewExecution(ctx context.Context) error
-	CanRetryExecution(ctx context.Context) error
+	CanEventIngest(ctx context.Context) error
+	CanWorkflowManage(ctx context.Context) error
+	CanWorkflowView(ctx context.Context) error
+	CanInstanceView(ctx context.Context) error
+	CanInstanceRetry(ctx context.Context) error
+	CanExecutionView(ctx context.Context) error
+	CanExecutionRetry(ctx context.Context) error
 }
 
 type middleware struct {
@@ -25,30 +25,30 @@ func NewMiddleware(service security.Authorizer) Middleware {
 	return &middleware{checker: authorizer.NewFunctionChecker(service, NamespaceProfile)}
 }
 
-func (m *middleware) CanIngestEvent(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionIngestEvent)
+func (m *middleware) CanEventIngest(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionEventIngest)
 }
 
-func (m *middleware) CanManageWorkflow(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionManageWorkflow)
+func (m *middleware) CanWorkflowManage(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionWorkflowManage)
 }
 
-func (m *middleware) CanViewWorkflow(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionViewWorkflow)
+func (m *middleware) CanWorkflowView(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionWorkflowView)
 }
 
-func (m *middleware) CanViewInstance(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionViewInstance)
+func (m *middleware) CanInstanceView(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionInstanceView)
 }
 
-func (m *middleware) CanRetryInstance(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionRetryInstance)
+func (m *middleware) CanInstanceRetry(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionInstanceRetry)
 }
 
-func (m *middleware) CanViewExecution(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionViewExecution)
+func (m *middleware) CanExecutionView(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionExecutionView)
 }
 
-func (m *middleware) CanRetryExecution(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionRetryExecution)
+func (m *middleware) CanExecutionRetry(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionExecutionRetry)
 }

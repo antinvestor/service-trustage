@@ -40,7 +40,7 @@ func (h *ObserveHandler) ListInstances(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewInstance(ctx, subject, tenantID); err != nil {
+		if err := h.authz.CanInstanceView(ctx, subject, tenantID); err != nil {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -124,7 +124,7 @@ func (h *ObserveHandler) GetInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewInstance(ctx, subject, tenantID); err != nil {
+		if err := h.authz.CanInstanceView(ctx, subject, tenantID); err != nil {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -168,7 +168,7 @@ func (h *ObserveHandler) ListExecutions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewExecution(ctx, subject, tenantID); err != nil {
+		if err := h.authz.CanExecutionView(ctx, subject, tenantID); err != nil {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -267,7 +267,7 @@ func (h *ObserveHandler) GetExecution(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewExecution(ctx, subject, tenantID); err != nil {
+		if err := h.authz.CanExecutionView(ctx, subject, tenantID); err != nil {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -327,7 +327,7 @@ func (h *ObserveHandler) RetryExecution(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanRetryExecution(ctx, subject, tenantID); err != nil {
+		if err := h.authz.CanExecutionRetry(ctx, subject, tenantID); err != nil {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -364,7 +364,7 @@ func (h *ObserveHandler) RetryInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanRetryInstance(ctx, subject, tenantID); err != nil {
+		if err := h.authz.CanInstanceRetry(ctx, subject, tenantID); err != nil {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}

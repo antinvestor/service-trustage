@@ -20,8 +20,19 @@ func BuildServiceAccessTuple(tenancyPath, profileID string) security.RelationTup
 	}
 }
 
+// BuildPermissionTuple creates a service_trustage#granted_<permission> tuple
+// for a direct grant. The relation is prefixed with "granted_" to avoid name
+// conflicts with OPL permit functions.
+func BuildPermissionTuple(tenancyPath, profileID, permission string) security.RelationTuple {
+	return security.RelationTuple{
+		Object:   security.ObjectRef{Namespace: NamespaceProfile, ID: tenancyPath},
+		Relation: GrantedRelation(permission),
+		Subject:  security.SubjectRef{Namespace: NamespaceProfileUser, ID: profileID},
+	}
+}
+
 // BuildServiceInheritanceTuples creates subject set tuples that bridge
-// tenancy_access#service → service_trustage#service so that service bots
+// tenancy_access#service -> service_trustage#service so that service bots
 // gain functional permissions through the same subject set chain.
 func BuildServiceInheritanceTuples(tenancyPath string) []security.RelationTuple {
 	permissions := RolePermissions()[RoleService]
@@ -36,7 +47,7 @@ func BuildServiceInheritanceTuples(tenancyPath string) []security.RelationTuple 
 	for _, perm := range permissions {
 		tuples = append(tuples, security.RelationTuple{
 			Object:   security.ObjectRef{Namespace: NamespaceProfile, ID: tenancyPath},
-			Relation: perm,
+			Relation: GrantedRelation(perm),
 			Subject:  security.SubjectRef{Namespace: NamespaceProfileUser, ID: tenancyPath},
 		})
 	}

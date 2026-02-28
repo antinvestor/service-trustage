@@ -19,3 +19,14 @@ func BuildServiceAccessTuple(tenancyPath, profileID string) security.RelationTup
 		Subject:  security.SubjectRef{Namespace: NamespaceProfileUser, ID: profileID},
 	}
 }
+
+// BuildPermissionTuple creates a service_trustage#granted_<permission> tuple
+// for a direct grant. The relation is prefixed with "granted_" to avoid name
+// conflicts with OPL permit functions.
+func BuildPermissionTuple(tenancyPath, profileID, permission string) security.RelationTuple {
+	return security.RelationTuple{
+		Object:   security.ObjectRef{Namespace: NamespaceProfile, ID: tenancyPath},
+		Relation: GrantedRelation(permission),
+		Subject:  security.SubjectRef{Namespace: NamespaceProfileUser, ID: profileID},
+	}
+}

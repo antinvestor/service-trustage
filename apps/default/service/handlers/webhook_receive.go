@@ -48,7 +48,7 @@ func (h *WebhookReceiveHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Re
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanIngestEvent(ctx); err != nil {
+		if err := h.authz.CanEventIngest(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}

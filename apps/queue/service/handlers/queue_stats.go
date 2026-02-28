@@ -27,7 +27,7 @@ func (h *QueueStatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewStats(ctx); err != nil {
+	if err := h.authz.CanStatsView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}

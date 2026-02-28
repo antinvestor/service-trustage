@@ -43,7 +43,7 @@ func (h *InstanceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewInstance(ctx); err != nil {
+		if err := h.authz.CanInstanceView(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -90,7 +90,7 @@ func (h *InstanceHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanRetryInstance(ctx); err != nil {
+		if err := h.authz.CanInstanceRetry(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}

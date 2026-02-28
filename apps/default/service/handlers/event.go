@@ -58,7 +58,7 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanIngestEvent(ctx); err != nil {
+		if err := h.authz.CanEventIngest(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -134,7 +134,7 @@ func (h *EventHandler) GetInstanceTimeline(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewInstance(ctx); err != nil {
+		if err := h.authz.CanInstanceView(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}

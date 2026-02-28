@@ -52,22 +52,22 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_AllowsAndDenies() {
 	authorizerClient := &fakeAuthorizer{allow: true}
 	mw := authz.NewMiddleware(authorizerClient)
 
-	err := mw.CanViewWorkflow(ctx)
+	err := mw.CanWorkflowView(ctx)
 	s.Require().NoError(err)
-	s.Equal(authz.PermissionViewWorkflow, authorizerClient.lastReq.Permission)
+	s.Equal(authz.PermissionWorkflowView, authorizerClient.lastReq.Permission)
 	s.Equal(authz.NamespaceProfile, authorizerClient.lastReq.Object.Namespace)
 	s.Equal(testTenantID+"/"+testPartitionID, authorizerClient.lastReq.Object.ID)
 
-	s.Require().NoError(mw.CanIngestEvent(ctx))
-	s.Require().NoError(mw.CanManageWorkflow(ctx))
-	s.Require().NoError(mw.CanViewInstance(ctx))
-	s.Require().NoError(mw.CanRetryInstance(ctx))
-	s.Require().NoError(mw.CanViewExecution(ctx))
-	s.Require().NoError(mw.CanRetryExecution(ctx))
+	s.Require().NoError(mw.CanEventIngest(ctx))
+	s.Require().NoError(mw.CanWorkflowManage(ctx))
+	s.Require().NoError(mw.CanInstanceView(ctx))
+	s.Require().NoError(mw.CanInstanceRetry(ctx))
+	s.Require().NoError(mw.CanExecutionView(ctx))
+	s.Require().NoError(mw.CanExecutionRetry(ctx))
 
 	denyClient := &fakeAuthorizer{allow: false}
 	mw = authz.NewMiddleware(denyClient)
-	err = mw.CanViewWorkflow(ctx)
+	err = mw.CanWorkflowView(ctx)
 	s.Require().Error(err)
 	s.Require().ErrorIs(err, authorizer.ErrPermissionDenied)
 }
@@ -77,7 +77,7 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_InvalidClaims() {
 	mw := authz.NewMiddleware(authorizerClient)
 
 	// Missing claims should fail with invalid subject.
-	err := mw.CanViewWorkflow(context.Background())
+	err := mw.CanWorkflowView(context.Background())
 	s.Require().Error(err)
 	s.Require().ErrorIs(err, authorizer.ErrInvalidSubject)
 
@@ -86,7 +86,7 @@ func (s *DefaultServiceSuite) TestAuthzMiddleware_InvalidClaims() {
 	claims.Subject = "user-1"
 	ctx := claims.ClaimsToContext(context.Background())
 
-	err = mw.CanViewWorkflow(ctx)
+	err = mw.CanWorkflowView(ctx)
 	s.Require().Error(err)
 	s.Require().ErrorIs(err, authorizer.ErrInvalidObject)
 }

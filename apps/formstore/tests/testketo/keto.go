@@ -56,25 +56,66 @@ class service_trustage implements Namespace {
     admin: profile_user[]
     member: profile_user[]
     service: (profile_user | tenancy_access)[]
-    ingest_event: (profile_user | service_trustage)[]
-    manage_workflow: (profile_user | service_trustage)[]
-    view_workflow: (profile_user | service_trustage)[]
-    view_instance: (profile_user | service_trustage)[]
-    retry_instance: (profile_user | service_trustage)[]
-    view_execution: (profile_user | service_trustage)[]
-    retry_execution: (profile_user | service_trustage)[]
-    manage_form_definition: (profile_user | service_trustage)[]
-    view_form_definition: (profile_user | service_trustage)[]
-    submit_form: (profile_user | service_trustage)[]
-    view_submission: (profile_user | service_trustage)[]
-    update_submission: (profile_user | service_trustage)[]
-    delete_submission: (profile_user | service_trustage)[]
-    manage_queue: (profile_user | service_trustage)[]
-    view_queue: (profile_user | service_trustage)[]
-    enqueue_item: (profile_user | service_trustage)[]
-    view_queue_item: (profile_user | service_trustage)[]
-    manage_counter: (profile_user | service_trustage)[]
-    view_stats: (profile_user | service_trustage)[]
+    granted_event_ingest: (profile_user | service_trustage)[]
+    granted_workflow_manage: (profile_user | service_trustage)[]
+    granted_workflow_view: (profile_user | service_trustage)[]
+    granted_instance_view: (profile_user | service_trustage)[]
+    granted_instance_retry: (profile_user | service_trustage)[]
+    granted_execution_view: (profile_user | service_trustage)[]
+    granted_execution_retry: (profile_user | service_trustage)[]
+    granted_form_definition_manage: (profile_user | service_trustage)[]
+    granted_form_definition_view: (profile_user | service_trustage)[]
+    granted_form_submit: (profile_user | service_trustage)[]
+    granted_submission_view: (profile_user | service_trustage)[]
+    granted_submission_update: (profile_user | service_trustage)[]
+    granted_submission_delete: (profile_user | service_trustage)[]
+    granted_queue_manage: (profile_user | service_trustage)[]
+    granted_queue_view: (profile_user | service_trustage)[]
+    granted_item_enqueue: (profile_user | service_trustage)[]
+    granted_queue_item_view: (profile_user | service_trustage)[]
+    granted_counter_manage: (profile_user | service_trustage)[]
+    granted_stats_view: (profile_user | service_trustage)[]
+  }
+
+  permits = {
+    event_ingest: (ctx: Context): boolean =>
+      this.related.granted_event_ingest.includes(ctx.subject),
+    workflow_manage: (ctx: Context): boolean =>
+      this.related.granted_workflow_manage.includes(ctx.subject),
+    workflow_view: (ctx: Context): boolean =>
+      this.related.granted_workflow_view.includes(ctx.subject),
+    instance_view: (ctx: Context): boolean =>
+      this.related.granted_instance_view.includes(ctx.subject),
+    instance_retry: (ctx: Context): boolean =>
+      this.related.granted_instance_retry.includes(ctx.subject),
+    execution_view: (ctx: Context): boolean =>
+      this.related.granted_execution_view.includes(ctx.subject),
+    execution_retry: (ctx: Context): boolean =>
+      this.related.granted_execution_retry.includes(ctx.subject),
+    form_definition_manage: (ctx: Context): boolean =>
+      this.related.granted_form_definition_manage.includes(ctx.subject),
+    form_definition_view: (ctx: Context): boolean =>
+      this.related.granted_form_definition_view.includes(ctx.subject),
+    form_submit: (ctx: Context): boolean =>
+      this.related.granted_form_submit.includes(ctx.subject),
+    submission_view: (ctx: Context): boolean =>
+      this.related.granted_submission_view.includes(ctx.subject),
+    submission_update: (ctx: Context): boolean =>
+      this.related.granted_submission_update.includes(ctx.subject),
+    submission_delete: (ctx: Context): boolean =>
+      this.related.granted_submission_delete.includes(ctx.subject),
+    queue_manage: (ctx: Context): boolean =>
+      this.related.granted_queue_manage.includes(ctx.subject),
+    queue_view: (ctx: Context): boolean =>
+      this.related.granted_queue_view.includes(ctx.subject),
+    item_enqueue: (ctx: Context): boolean =>
+      this.related.granted_item_enqueue.includes(ctx.subject),
+    queue_item_view: (ctx: Context): boolean =>
+      this.related.granted_queue_item_view.includes(ctx.subject),
+    counter_manage: (ctx: Context): boolean =>
+      this.related.granted_counter_manage.includes(ctx.subject),
+    stats_view: (ctx: Context): boolean =>
+      this.related.granted_stats_view.includes(ctx.subject),
   }
 }
 

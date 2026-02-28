@@ -8,12 +8,12 @@ import (
 )
 
 type Middleware interface {
-	CanManageQueue(ctx context.Context) error
-	CanViewQueue(ctx context.Context) error
-	CanEnqueueItem(ctx context.Context) error
-	CanViewQueueItem(ctx context.Context) error
-	CanManageCounter(ctx context.Context) error
-	CanViewStats(ctx context.Context) error
+	CanQueueManage(ctx context.Context) error
+	CanQueueView(ctx context.Context) error
+	CanItemEnqueue(ctx context.Context) error
+	CanQueueItemView(ctx context.Context) error
+	CanCounterManage(ctx context.Context) error
+	CanStatsView(ctx context.Context) error
 }
 
 type middleware struct {
@@ -24,26 +24,26 @@ func NewMiddleware(service security.Authorizer) Middleware {
 	return &middleware{checker: authorizer.NewFunctionChecker(service, NamespaceProfile)}
 }
 
-func (m *middleware) CanManageQueue(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionManageQueue)
+func (m *middleware) CanQueueManage(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionQueueManage)
 }
 
-func (m *middleware) CanViewQueue(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionViewQueue)
+func (m *middleware) CanQueueView(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionQueueView)
 }
 
-func (m *middleware) CanEnqueueItem(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionEnqueueItem)
+func (m *middleware) CanItemEnqueue(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionItemEnqueue)
 }
 
-func (m *middleware) CanViewQueueItem(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionViewQueueItem)
+func (m *middleware) CanQueueItemView(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionQueueItemView)
 }
 
-func (m *middleware) CanManageCounter(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionManageCounter)
+func (m *middleware) CanCounterManage(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionCounterManage)
 }
 
-func (m *middleware) CanViewStats(ctx context.Context) error {
-	return m.checker.Check(ctx, PermissionViewStats)
+func (m *middleware) CanStatsView(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionStatsView)
 }

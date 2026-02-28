@@ -45,7 +45,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanManageWorkflow(ctx); err != nil {
+		if err := h.authz.CanWorkflowManage(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -88,7 +88,7 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewWorkflow(ctx); err != nil {
+		if err := h.authz.CanWorkflowView(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -122,7 +122,7 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewWorkflow(ctx); err != nil {
+		if err := h.authz.CanWorkflowView(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -167,7 +167,7 @@ func (h *WorkflowHandler) ActivateWorkflow(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanManageWorkflow(ctx); err != nil {
+		if err := h.authz.CanWorkflowManage(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}

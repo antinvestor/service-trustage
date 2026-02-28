@@ -3,7 +3,7 @@ package authz
 const (
 	NamespaceProfile       = "service_trustage"
 	NamespaceTenancyAccess = "tenancy_access"
-	NamespaceProfileUser   = "profile/user"
+	NamespaceProfileUser   = "profile_user"
 )
 
 const (
@@ -14,36 +14,44 @@ const (
 )
 
 const (
-	PermissionIngestEvent    = "ingest_event"
-	PermissionManageWorkflow = "manage_workflow"
-	PermissionViewWorkflow   = "view_workflow"
-	PermissionViewInstance   = "view_instance"
-	PermissionRetryInstance  = "retry_instance"
-	PermissionViewExecution  = "view_execution"
-	PermissionRetryExecution = "retry_execution"
+	PermissionEventIngest    = "event_ingest"
+	PermissionWorkflowManage = "workflow_manage"
+	PermissionWorkflowView   = "workflow_view"
+	PermissionInstanceView   = "instance_view"
+	PermissionInstanceRetry  = "instance_retry"
+	PermissionExecutionView  = "execution_view"
+	PermissionExecutionRetry = "execution_retry"
 )
+
+// GrantedRelation returns the OPL relation name for a direct grant.
+// Direct grant relations are prefixed with "granted_" to avoid name conflicts
+// with permit functions in Keto OPL (Keto skips permit evaluation when a
+// relation shares the same name as a permit function).
+func GrantedRelation(permission string) string {
+	return "granted_" + permission
+}
 
 // RolePermissions maps each role to the permissions it grants.
 func RolePermissions() map[string][]string {
 	return map[string][]string{
 		RoleOwner: {
-			PermissionIngestEvent, PermissionManageWorkflow, PermissionViewWorkflow,
-			PermissionViewInstance, PermissionRetryInstance,
-			PermissionViewExecution, PermissionRetryExecution,
+			PermissionEventIngest, PermissionWorkflowManage, PermissionWorkflowView,
+			PermissionInstanceView, PermissionInstanceRetry,
+			PermissionExecutionView, PermissionExecutionRetry,
 		},
 		RoleAdmin: {
-			PermissionIngestEvent, PermissionManageWorkflow, PermissionViewWorkflow,
-			PermissionViewInstance, PermissionRetryInstance,
-			PermissionViewExecution, PermissionRetryExecution,
+			PermissionEventIngest, PermissionWorkflowManage, PermissionWorkflowView,
+			PermissionInstanceView, PermissionInstanceRetry,
+			PermissionExecutionView, PermissionExecutionRetry,
 		},
 		RoleMember: {
-			PermissionIngestEvent, PermissionViewWorkflow,
-			PermissionViewInstance, PermissionViewExecution,
+			PermissionEventIngest, PermissionWorkflowView,
+			PermissionInstanceView, PermissionExecutionView,
 		},
 		RoleService: {
-			PermissionIngestEvent, PermissionManageWorkflow, PermissionViewWorkflow,
-			PermissionViewInstance, PermissionRetryInstance,
-			PermissionViewExecution, PermissionRetryExecution,
+			PermissionEventIngest, PermissionWorkflowManage, PermissionWorkflowView,
+			PermissionInstanceView, PermissionInstanceRetry,
+			PermissionExecutionView, PermissionExecutionRetry,
 		},
 	}
 }

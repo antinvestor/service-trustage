@@ -36,7 +36,7 @@ func (h *QueueDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -105,7 +105,7 @@ func (h *QueueDefinitionHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewQueue(ctx); err != nil {
+	if err := h.authz.CanQueueView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -137,7 +137,7 @@ func (h *QueueDefinitionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewQueue(ctx); err != nil {
+	if err := h.authz.CanQueueView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -165,7 +165,7 @@ func (h *QueueDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -243,7 +243,7 @@ func (h *QueueDefinitionHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.authz.CanManageQueue(ctx); err != nil {
+	if err := h.authz.CanQueueManage(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}

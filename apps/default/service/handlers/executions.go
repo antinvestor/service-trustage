@@ -46,7 +46,7 @@ func (h *ExecutionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewExecution(ctx); err != nil {
+		if err := h.authz.CanExecutionView(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -96,7 +96,7 @@ func (h *ExecutionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanViewExecution(ctx); err != nil {
+		if err := h.authz.CanExecutionView(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -162,7 +162,7 @@ func (h *ExecutionHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.authz != nil {
-		if err := h.authz.CanRetryExecution(ctx); err != nil {
+		if err := h.authz.CanExecutionRetry(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}

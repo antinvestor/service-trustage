@@ -33,7 +33,7 @@ func (h *FormSubmissionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanSubmitForm(ctx); err != nil {
+	if err := h.authz.CanFormSubmit(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -95,7 +95,7 @@ func (h *FormSubmissionHandler) ListByForm(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.authz.CanViewSubmission(ctx); err != nil {
+	if err := h.authz.CanSubmissionView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -129,7 +129,7 @@ func (h *FormSubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanViewSubmission(ctx); err != nil {
+	if err := h.authz.CanSubmissionView(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -157,7 +157,7 @@ func (h *FormSubmissionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanUpdateSubmission(ctx); err != nil {
+	if err := h.authz.CanSubmissionUpdate(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}
@@ -215,7 +215,7 @@ func (h *FormSubmissionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanDeleteSubmission(ctx); err != nil {
+	if err := h.authz.CanSubmissionDelete(ctx); err != nil {
 		writeAuthzError(w, err)
 		return
 	}

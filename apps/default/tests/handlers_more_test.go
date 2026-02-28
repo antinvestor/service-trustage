@@ -569,13 +569,13 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_Forbidden() {
 
 type denyAuthz struct{}
 
-func (d denyAuthz) CanIngestEvent(_ context.Context) error    { return errDenied }
-func (d denyAuthz) CanManageWorkflow(_ context.Context) error { return errDenied }
-func (d denyAuthz) CanViewWorkflow(_ context.Context) error   { return errDenied }
-func (d denyAuthz) CanViewInstance(_ context.Context) error   { return errDenied }
-func (d denyAuthz) CanRetryInstance(_ context.Context) error  { return errDenied }
-func (d denyAuthz) CanViewExecution(_ context.Context) error  { return errDenied }
-func (d denyAuthz) CanRetryExecution(_ context.Context) error { return errDenied }
+func (d denyAuthz) CanEventIngest(_ context.Context) error    { return errDenied }
+func (d denyAuthz) CanWorkflowManage(_ context.Context) error { return errDenied }
+func (d denyAuthz) CanWorkflowView(_ context.Context) error   { return errDenied }
+func (d denyAuthz) CanInstanceView(_ context.Context) error   { return errDenied }
+func (d denyAuthz) CanInstanceRetry(_ context.Context) error  { return errDenied }
+func (d denyAuthz) CanExecutionView(_ context.Context) error  { return errDenied }
+func (d denyAuthz) CanExecutionRetry(_ context.Context) error { return errDenied }
 
 var errDenied = errors.New("denied")
 
