@@ -17,15 +17,13 @@ const (
 	ImageName = "oryd/keto:latest"
 
 	ketoConfiguration = `
-version: v0.14.0
-
-dsn: memory
+limit:
+  max_read_depth: 10
 
 serve:
   read:
     host: 0.0.0.0
     port: 4466
-    max_read_depth: 10
   write:
     host: 0.0.0.0
     port: 4467
