@@ -20,7 +20,11 @@ type FormSubmissionHandler struct {
 }
 
 // NewFormSubmissionHandler creates a new FormSubmissionHandler.
-func NewFormSubmissionHandler(biz business.FormStoreBusiness, authz authz.Middleware, limiter *RateLimiter) *FormSubmissionHandler {
+func NewFormSubmissionHandler(
+	biz business.FormStoreBusiness,
+	authz authz.Middleware,
+	limiter *RateLimiter,
+) *FormSubmissionHandler {
 	return &FormSubmissionHandler{biz: biz, authz: authz, limiter: limiter}
 }
 

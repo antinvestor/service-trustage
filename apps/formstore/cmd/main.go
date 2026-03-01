@@ -20,6 +20,45 @@ import (
 	"github.com/antinvestor/service-trustage/apps/formstore/service/repository"
 )
 
+func setupRoutes(
+	defHandler *handlers.FormDefinitionHandler,
+	subHandler *handlers.FormSubmissionHandler,
+	dbManager datastore.Manager,
+) *http.ServeMux {
+	mux := http.NewServeMux()
+
+	// Form definition endpoints.
+	mux.HandleFunc("POST /api/v1/form-definitions", defHandler.Create)
+	mux.HandleFunc("GET /api/v1/form-definitions", defHandler.List)
+	mux.HandleFunc("GET /api/v1/form-definitions/{id}", defHandler.Get)
+	mux.HandleFunc("PUT /api/v1/form-definitions/{id}", defHandler.Update)
+	mux.HandleFunc("DELETE /api/v1/form-definitions/{id}", defHandler.Delete)
+
+	// Form submission endpoints.
+	mux.HandleFunc("POST /api/v1/forms/{form_id}/submissions", subHandler.Submit)
+	mux.HandleFunc("GET /api/v1/forms/{form_id}/submissions", subHandler.ListByForm)
+	mux.HandleFunc("GET /api/v1/submissions/{id}", subHandler.Get)
+	mux.HandleFunc("PUT /api/v1/submissions/{id}", subHandler.Update)
+	mux.HandleFunc("DELETE /api/v1/submissions/{id}", subHandler.Delete)
+
+	// Health checks.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		pool := dbManager.GetPool(r.Context(), datastore.DefaultPoolName)
+		if pool == nil {
+			http.Error(w, "database not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	return mux
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -92,36 +131,7 @@ func main() {
 	defHandler := handlers.NewFormDefinitionHandler(formBiz, authzMiddleware)
 	subHandler := handlers.NewFormSubmissionHandler(formBiz, authzMiddleware, submitLimiter)
 
-	mux := http.NewServeMux()
-
-	// Form definition endpoints.
-	mux.HandleFunc("POST /api/v1/form-definitions", defHandler.Create)
-	mux.HandleFunc("GET /api/v1/form-definitions", defHandler.List)
-	mux.HandleFunc("GET /api/v1/form-definitions/{id}", defHandler.Get)
-	mux.HandleFunc("PUT /api/v1/form-definitions/{id}", defHandler.Update)
-	mux.HandleFunc("DELETE /api/v1/form-definitions/{id}", defHandler.Delete)
-
-	// Form submission endpoints.
-	mux.HandleFunc("POST /api/v1/forms/{form_id}/submissions", subHandler.Submit)
-	mux.HandleFunc("GET /api/v1/forms/{form_id}/submissions", subHandler.ListByForm)
-	mux.HandleFunc("GET /api/v1/submissions/{id}", subHandler.Get)
-	mux.HandleFunc("PUT /api/v1/submissions/{id}", subHandler.Update)
-	mux.HandleFunc("DELETE /api/v1/submissions/{id}", subHandler.Delete)
-
-	// Health checks.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		pool := dbManager.GetPool(r.Context(), datastore.DefaultPoolName)
-		if pool == nil {
-			http.Error(w, "database not ready", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	mux := setupRoutes(defHandler, subHandler, dbManager)
 
 	svc.Init(ctx,
 		frame.WithHTTPHandler(securityhttp.TenancyAccessMiddleware(
