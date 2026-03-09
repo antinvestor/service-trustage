@@ -13,7 +13,8 @@ type Config struct {
 	ValkeyCacheURL string `env:"VALKEY_CACHE_URL" envDefault:"redis://localhost:6379"`
 
 	// File service URL for uploading files.
-	FileServiceURL string `env:"FILE_SERVICE_URL" envDefault:"https://files.antinvestor.com"`
+	FileServiceURL                   string `env:"FILE_SERVICE_URL"                      envDefault:"https://files.antinvestor.com"`
+	FileServiceWorkloadAPITargetPath string `env:"FILE_SERVICE_WORKLOAD_API_TARGET_PATH" envDefault:""`
 
 	// Maximum submission body size in bytes (default 10MB).
 	MaxSubmissionSize int64 `env:"MAX_SUBMISSION_SIZE" envDefault:"10485760"`

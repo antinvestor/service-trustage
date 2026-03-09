@@ -188,8 +188,6 @@ github.com/ory/keto/proto v0.13.0-alpha.0 h1:9ZzjDbaBgriHGVC8fUJKD1pDqQ9nHEFOO3b
 github.com/ory/keto/proto v0.13.0-alpha.0/go.mod h1:6RagCXA7X1hhFSVjcy13ruIo8Dq/nj4J0mcN92qL+hY=
 github.com/panjf2000/ants/v2 v2.11.5 h1:a7LMnMEeux/ebqTux140tRiaqcFTV0q2bEHF03nl6Rg=
 github.com/panjf2000/ants/v2 v2.11.5/go.mod h1:8u92CYMUc6gyvTIw8Ru7Mt7+/ESnJahz5EVtqfrilek=
-github.com/pitabwire/frame v1.77.0 h1:tGDa+TUQU0gYHNcP6KjOaEQLZN0YSnijkLd2P+3V3Eg=
-github.com/pitabwire/frame v1.77.0/go.mod h1:RO6gvXGUAfGfLS625vIB1cY3lmgt9X2G5hrX8c/cPwQ=
 github.com/pitabwire/frame v1.77.1 h1:dvCapGJhZoQ1zZyBlmHp9Xvbqebo2FZ8fvlxIuY7ipc=
 github.com/pitabwire/frame v1.77.1/go.mod h1:qnKUeQxlNQa64VgpzTgq/M6blRDjUu8h1GtC4zTwPRE=
 github.com/pitabwire/natspubsub v0.7.13 h1:eEGhAn7mGqjxX6K5ba4RNkTn4TRxk6hbDrTWLusse4Y=

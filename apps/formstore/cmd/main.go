@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"buf.build/gen/go/antinvestor/files/connectrpc/go/files/v1/filesv1connect"
 	"github.com/pitabwire/frame"
+	frameclient "github.com/pitabwire/frame/client"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/security/authorizer"
@@ -24,29 +26,30 @@ func setupRoutes(
 	defHandler *handlers.FormDefinitionHandler,
 	subHandler *handlers.FormSubmissionHandler,
 	dbManager datastore.Manager,
-) *http.ServeMux {
-	mux := http.NewServeMux()
+) (*http.ServeMux, *http.ServeMux) {
+	publicMux := http.NewServeMux()
+	protectedMux := http.NewServeMux()
 
 	// Form definition endpoints.
-	mux.HandleFunc("POST /api/v1/form-definitions", defHandler.Create)
-	mux.HandleFunc("GET /api/v1/form-definitions", defHandler.List)
-	mux.HandleFunc("GET /api/v1/form-definitions/{id}", defHandler.Get)
-	mux.HandleFunc("PUT /api/v1/form-definitions/{id}", defHandler.Update)
-	mux.HandleFunc("DELETE /api/v1/form-definitions/{id}", defHandler.Delete)
+	protectedMux.HandleFunc("POST /api/v1/form-definitions", defHandler.Create)
+	protectedMux.HandleFunc("GET /api/v1/form-definitions", defHandler.List)
+	protectedMux.HandleFunc("GET /api/v1/form-definitions/{id}", defHandler.Get)
+	protectedMux.HandleFunc("PUT /api/v1/form-definitions/{id}", defHandler.Update)
+	protectedMux.HandleFunc("DELETE /api/v1/form-definitions/{id}", defHandler.Delete)
 
 	// Form submission endpoints.
-	mux.HandleFunc("POST /api/v1/forms/{form_id}/submissions", subHandler.Submit)
-	mux.HandleFunc("GET /api/v1/forms/{form_id}/submissions", subHandler.ListByForm)
-	mux.HandleFunc("GET /api/v1/submissions/{id}", subHandler.Get)
-	mux.HandleFunc("PUT /api/v1/submissions/{id}", subHandler.Update)
-	mux.HandleFunc("DELETE /api/v1/submissions/{id}", subHandler.Delete)
+	protectedMux.HandleFunc("POST /api/v1/forms/{form_id}/submissions", subHandler.Submit)
+	protectedMux.HandleFunc("GET /api/v1/forms/{form_id}/submissions", subHandler.ListByForm)
+	protectedMux.HandleFunc("GET /api/v1/submissions/{id}", subHandler.Get)
+	protectedMux.HandleFunc("PUT /api/v1/submissions/{id}", subHandler.Update)
+	protectedMux.HandleFunc("DELETE /api/v1/submissions/{id}", subHandler.Delete)
 
 	// Health checks.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	publicMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+	publicMux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		pool := dbManager.GetPool(r.Context(), datastore.DefaultPoolName)
 		if pool == nil {
 			http.Error(w, "database not ready", http.StatusServiceUnavailable)
@@ -56,7 +59,7 @@ func setupRoutes(
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	return mux
+	return publicMux, protectedMux
 }
 
 func main() {
@@ -75,7 +78,6 @@ func main() {
 		ctx,
 		frame.WithName(cfg.Name()),
 		frame.WithConfig(&cfg),
-		frame.WithRegisterServerOauth2Client(),
 		frame.WithDatastore(),
 	)
 	defer svc.Stop(ctx)
@@ -106,10 +108,15 @@ func main() {
 	var uploader *business.FileUploader
 	if cfg.FileServiceURL != "" {
 		httpClient := svc.HTTPClientManager().Client(ctx)
-		filesClient := filesv1connect.NewFilesServiceClient(httpClient, cfg.FileServiceURL)
+		fileServiceURL := cfg.FileServiceURL
+		if mtlsClient := fileServiceHTTPClient(ctx, cfg); mtlsClient != nil {
+			httpClient = mtlsClient
+			fileServiceURL = fileServiceEndpoint(cfg)
+		}
+		filesClient := filesv1connect.NewFilesServiceClient(httpClient, fileServiceURL)
 		uploadFn := business.NewFileUploadFunc(filesClient)
 		uploader = business.NewFileUploader(uploadFn)
-		log.Info("file uploader enabled", "file_service_url", cfg.FileServiceURL)
+		log.Info("file uploader enabled", "file_service_url", fileServiceURL)
 	}
 
 	// Business layer.
@@ -131,13 +138,14 @@ func main() {
 	defHandler := handlers.NewFormDefinitionHandler(formBiz, authzMiddleware)
 	subHandler := handlers.NewFormSubmissionHandler(formBiz, authzMiddleware, submitLimiter)
 
-	mux := setupRoutes(defHandler, subHandler, dbManager)
+	publicMux, protectedMux := setupRoutes(defHandler, subHandler, dbManager)
+	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(
+		handlers.RequestIDMiddleware(handlers.LimitBodySize(protectedMux, cfg.MaxSubmissionSize)),
+		tenancyAccessChecker,
+	))
 
 	svc.Init(ctx,
-		frame.WithHTTPHandler(securityhttp.TenancyAccessMiddleware(
-			handlers.RequestIDMiddleware(handlers.LimitBodySize(mux, cfg.MaxSubmissionSize)),
-			tenancyAccessChecker,
-		)),
+		frame.WithHTTPHandler(publicMux),
 	)
 
 	log.Info("starting formstore service",
@@ -147,4 +155,32 @@ func main() {
 	if runErr := svc.Run(ctx, cfg.ServerPort); runErr != nil {
 		log.WithError(runErr).Fatal("could not run service")
 	}
+}
+
+func fileServiceEndpoint(cfg appconfig.Config) string {
+	if cfg.GetTrustedDomain() == "" || strings.TrimSpace(cfg.FileServiceWorkloadAPITargetPath) == "" {
+		return cfg.FileServiceURL
+	}
+
+	switch {
+	case strings.HasPrefix(cfg.FileServiceURL, "https://"):
+		return cfg.FileServiceURL
+	case strings.HasPrefix(cfg.FileServiceURL, "http://"):
+		return "https://" + strings.TrimPrefix(cfg.FileServiceURL, "http://")
+	case strings.Contains(cfg.FileServiceURL, "://"):
+		return cfg.FileServiceURL
+	default:
+		return "https://" + cfg.FileServiceURL
+	}
+}
+
+func fileServiceHTTPClient(ctx context.Context, cfg appconfig.Config) *http.Client {
+	if cfg.GetTrustedDomain() == "" || strings.TrimSpace(cfg.FileServiceWorkloadAPITargetPath) == "" {
+		return nil
+	}
+
+	return frameclient.NewHTTPClient(
+		ctx,
+		frameclient.WithHTTPWorkloadAPITargetPath(cfg.FileServiceWorkloadAPITargetPath),
+	)
 }

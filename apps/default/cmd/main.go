@@ -43,7 +43,6 @@ func main() { //nolint:funlen // main function wiring
 		ctx,
 		frame.WithName(cfg.Name()),
 		frame.WithConfig(&cfg),
-		frame.WithRegisterServerOauth2Client(),
 		frame.WithDatastore(
 			pool.WithPreferSimpleProtocol(true),
 			pool.WithPreparedStatements(false),
@@ -149,39 +148,40 @@ func main() { //nolint:funlen // main function wiring
 	instanceHandler := handlers.NewInstanceHandler(instanceRepo, execRepo, auditRepo, authzMiddleware)
 	executionHandler := handlers.NewExecutionHandler(execRepo, instanceRepo, outputRepo, auditRepo, authzMiddleware)
 
-	mux := http.NewServeMux()
+	protectedMux := http.NewServeMux()
 
 	// Workflow management endpoints.
-	mux.HandleFunc("POST /api/v1/workflows", workflowHandler.CreateWorkflow)
-	mux.HandleFunc("GET /api/v1/workflows/{id}", workflowHandler.GetWorkflow)
-	mux.HandleFunc("POST /api/v1/workflows/{id}/activate", workflowHandler.ActivateWorkflow)
-	mux.HandleFunc("GET /api/v1/workflows", workflowHandler.ListWorkflows)
+	protectedMux.HandleFunc("POST /api/v1/workflows", workflowHandler.CreateWorkflow)
+	protectedMux.HandleFunc("GET /api/v1/workflows/{id}", workflowHandler.GetWorkflow)
+	protectedMux.HandleFunc("POST /api/v1/workflows/{id}/activate", workflowHandler.ActivateWorkflow)
+	protectedMux.HandleFunc("GET /api/v1/workflows", workflowHandler.ListWorkflows)
 
 	// Event ingestion and timeline endpoints.
-	mux.HandleFunc("POST /api/v1/events", eventHandler.IngestEvent)
-	mux.HandleFunc("GET /api/v1/instances/{id}/timeline", eventHandler.GetInstanceTimeline)
+	protectedMux.HandleFunc("POST /api/v1/events", eventHandler.IngestEvent)
+	protectedMux.HandleFunc("GET /api/v1/instances/{id}/timeline", eventHandler.GetInstanceTimeline)
 
 	// Instance endpoints.
-	mux.HandleFunc("GET /api/v1/instances", instanceHandler.List)
-	mux.HandleFunc("POST /api/v1/instances/{id}/retry", instanceHandler.Retry)
+	protectedMux.HandleFunc("GET /api/v1/instances", instanceHandler.List)
+	protectedMux.HandleFunc("POST /api/v1/instances/{id}/retry", instanceHandler.Retry)
 
 	// Execution endpoints.
-	mux.HandleFunc("GET /api/v1/executions", executionHandler.List)
-	mux.HandleFunc("GET /api/v1/executions/{id}", executionHandler.Get)
-	mux.HandleFunc("POST /api/v1/executions/{id}/retry", executionHandler.Retry)
+	protectedMux.HandleFunc("GET /api/v1/executions", executionHandler.List)
+	protectedMux.HandleFunc("GET /api/v1/executions/{id}", executionHandler.Get)
+	protectedMux.HandleFunc("POST /api/v1/executions/{id}/retry", executionHandler.Retry)
 
 	// Form capture endpoint.
-	mux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)
+	protectedMux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)
 
 	// Webhook receive endpoint.
-	mux.HandleFunc("POST /api/v1/webhooks/{webhook_id}", webhookReceiveHandler.ReceiveWebhook)
+	protectedMux.HandleFunc("POST /api/v1/webhooks/{webhook_id}", webhookReceiveHandler.ReceiveWebhook)
 
 	// Health checks.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	publicMux := http.NewServeMux()
+	publicMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+	publicMux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		pool := dbManager.GetPool(r.Context(), datastore.DefaultPoolName)
 		if pool == nil {
 			http.Error(w, "database not ready", http.StatusServiceUnavailable)
@@ -190,16 +190,17 @@ func main() { //nolint:funlen // main function wiring
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(
+		handlers.RequestIDMiddleware(handlers.LimitBodySize(protectedMux)),
+		tenancyAccessChecker,
+	))
 
 	// Queue workers.
 	executionWorker := queues.NewExecutionWorker(engine, defRepo, registry)
 	eventRouterWorker := queues.NewEventRouterWorker(eventRouter)
 
 	svc.Init(ctx,
-		frame.WithHTTPHandler(securityhttp.TenancyAccessMiddleware(
-			handlers.RequestIDMiddleware(handlers.LimitBodySize(mux)),
-			tenancyAccessChecker,
-		)),
+		frame.WithHTTPHandler(publicMux),
 
 		// Execution dispatch publisher (schedulers publish here).
 		frame.WithRegisterPublisher(

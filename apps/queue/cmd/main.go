@@ -36,7 +36,6 @@ func main() {
 		ctx,
 		frame.WithName(cfg.Name()),
 		frame.WithConfig(&cfg),
-		frame.WithRegisterServerOauth2Client(),
 		frame.WithDatastore(),
 	)
 	defer svc.Stop(ctx)
@@ -86,44 +85,45 @@ func main() {
 	counterHandler := handlers.NewQueueCounterHandler(mgr, authzMiddleware)
 	statsHandler := handlers.NewQueueStatsHandler(stats, authzMiddleware)
 
-	mux := http.NewServeMux()
+	protectedMux := http.NewServeMux()
 
 	// Queue definition endpoints.
-	mux.HandleFunc("POST /api/v1/queues", defHandler.Create)
-	mux.HandleFunc("GET /api/v1/queues", defHandler.List)
-	mux.HandleFunc("GET /api/v1/queues/{id}", defHandler.Get)
-	mux.HandleFunc("PUT /api/v1/queues/{id}", defHandler.Update)
-	mux.HandleFunc("DELETE /api/v1/queues/{id}", defHandler.Delete)
+	protectedMux.HandleFunc("POST /api/v1/queues", defHandler.Create)
+	protectedMux.HandleFunc("GET /api/v1/queues", defHandler.List)
+	protectedMux.HandleFunc("GET /api/v1/queues/{id}", defHandler.Get)
+	protectedMux.HandleFunc("PUT /api/v1/queues/{id}", defHandler.Update)
+	protectedMux.HandleFunc("DELETE /api/v1/queues/{id}", defHandler.Delete)
 
 	// Queue item endpoints.
-	mux.HandleFunc("POST /api/v1/queues/{queue_id}/items", itemHandler.Enqueue)
-	mux.HandleFunc("GET /api/v1/queues/{queue_id}/items", itemHandler.ListWaiting)
-	mux.HandleFunc("GET /api/v1/items/{id}", itemHandler.Get)
-	mux.HandleFunc("GET /api/v1/items/{id}/position", itemHandler.GetPosition)
-	mux.HandleFunc("POST /api/v1/items/{id}/cancel", itemHandler.Cancel)
-	mux.HandleFunc("POST /api/v1/items/{id}/no-show", itemHandler.NoShow)
-	mux.HandleFunc("POST /api/v1/items/{id}/requeue", itemHandler.Requeue)
-	mux.HandleFunc("POST /api/v1/items/{id}/transfer", itemHandler.Transfer)
+	protectedMux.HandleFunc("POST /api/v1/queues/{queue_id}/items", itemHandler.Enqueue)
+	protectedMux.HandleFunc("GET /api/v1/queues/{queue_id}/items", itemHandler.ListWaiting)
+	protectedMux.HandleFunc("GET /api/v1/items/{id}", itemHandler.Get)
+	protectedMux.HandleFunc("GET /api/v1/items/{id}/position", itemHandler.GetPosition)
+	protectedMux.HandleFunc("POST /api/v1/items/{id}/cancel", itemHandler.Cancel)
+	protectedMux.HandleFunc("POST /api/v1/items/{id}/no-show", itemHandler.NoShow)
+	protectedMux.HandleFunc("POST /api/v1/items/{id}/requeue", itemHandler.Requeue)
+	protectedMux.HandleFunc("POST /api/v1/items/{id}/transfer", itemHandler.Transfer)
 
 	// Counter endpoints.
-	mux.HandleFunc("POST /api/v1/queues/{queue_id}/counters", counterHandler.Create)
-	mux.HandleFunc("GET /api/v1/queues/{queue_id}/counters", counterHandler.List)
-	mux.HandleFunc("POST /api/v1/counters/{id}/open", counterHandler.Open)
-	mux.HandleFunc("POST /api/v1/counters/{id}/close", counterHandler.Close)
-	mux.HandleFunc("POST /api/v1/counters/{id}/pause", counterHandler.Pause)
-	mux.HandleFunc("POST /api/v1/counters/{id}/call-next", counterHandler.CallNext)
-	mux.HandleFunc("POST /api/v1/counters/{id}/begin-service", counterHandler.BeginService)
-	mux.HandleFunc("POST /api/v1/counters/{id}/complete-service", counterHandler.CompleteService)
+	protectedMux.HandleFunc("POST /api/v1/queues/{queue_id}/counters", counterHandler.Create)
+	protectedMux.HandleFunc("GET /api/v1/queues/{queue_id}/counters", counterHandler.List)
+	protectedMux.HandleFunc("POST /api/v1/counters/{id}/open", counterHandler.Open)
+	protectedMux.HandleFunc("POST /api/v1/counters/{id}/close", counterHandler.Close)
+	protectedMux.HandleFunc("POST /api/v1/counters/{id}/pause", counterHandler.Pause)
+	protectedMux.HandleFunc("POST /api/v1/counters/{id}/call-next", counterHandler.CallNext)
+	protectedMux.HandleFunc("POST /api/v1/counters/{id}/begin-service", counterHandler.BeginService)
+	protectedMux.HandleFunc("POST /api/v1/counters/{id}/complete-service", counterHandler.CompleteService)
 
 	// Stats endpoint.
-	mux.HandleFunc("GET /api/v1/queues/{queue_id}/stats", statsHandler.GetStats)
+	protectedMux.HandleFunc("GET /api/v1/queues/{queue_id}/stats", statsHandler.GetStats)
 
 	// Health checks.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	publicMux := http.NewServeMux()
+	publicMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+	publicMux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		pool := dbManager.GetPool(r.Context(), datastore.DefaultPoolName)
 		if pool == nil {
 			http.Error(w, "database not ready", http.StatusServiceUnavailable)
@@ -132,12 +132,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(
+		handlers.RequestIDMiddleware(handlers.LimitBodySize(protectedMux)),
+		tenancyAccessChecker,
+	))
 
 	svc.Init(ctx,
-		frame.WithHTTPHandler(securityhttp.TenancyAccessMiddleware(
-			handlers.RequestIDMiddleware(handlers.LimitBodySize(mux)),
-			tenancyAccessChecker,
-		)),
+		frame.WithHTTPHandler(publicMux),
 	)
 
 	log.Info("starting queue service",
