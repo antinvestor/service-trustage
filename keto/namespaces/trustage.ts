@@ -58,48 +58,115 @@ class service_trustage implements Namespace {
   }
 
   permits = {
-    // Default app permits
+    // Default app permits — admin-level
     event_ingest: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_event_ingest.includes(ctx.subject),
     workflow_manage: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_workflow_manage.includes(ctx.subject),
     workflow_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_workflow_view.includes(ctx.subject),
     instance_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_instance_view.includes(ctx.subject),
     instance_retry: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_instance_retry.includes(ctx.subject),
     execution_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_execution_view.includes(ctx.subject),
     execution_retry: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_execution_retry.includes(ctx.subject),
 
-    // Formstore app permits
+    // Formstore app permits — admin-level for manage/update/delete, view-level for view/submit
     form_definition_manage: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_form_definition_manage.includes(ctx.subject),
     form_definition_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_form_definition_view.includes(ctx.subject),
     form_submit: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_form_submit.includes(ctx.subject),
     submission_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_submission_view.includes(ctx.subject),
     submission_update: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_submission_update.includes(ctx.subject),
     submission_delete: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_submission_delete.includes(ctx.subject),
 
-    // Queue app permits
+    // Queue app permits — admin-level for manage, view-level for view/enqueue
     queue_manage: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_queue_manage.includes(ctx.subject),
     queue_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_queue_view.includes(ctx.subject),
     item_enqueue: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_item_enqueue.includes(ctx.subject),
     queue_item_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_queue_item_view.includes(ctx.subject),
     counter_manage: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
       this.related.granted_counter_manage.includes(ctx.subject),
     stats_view: (ctx: Context): boolean =>
+      this.related.service.includes(ctx.subject) ||
+      this.related.owner.includes(ctx.subject) ||
+      this.related.admin.includes(ctx.subject) ||
+      this.related.member.includes(ctx.subject) ||
       this.related.granted_stats_view.includes(ctx.subject),
   }
 }
