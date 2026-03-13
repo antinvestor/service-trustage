@@ -4,8 +4,9 @@ tests:
 	go test ./... -v -race -coverprofile=coverage.out
 
 format:
-	find . -name '*.go' -exec goimports -w {} +
-	golangci-lint run --fix
+	find . -name '*.go' -not -path './.git/*' -exec sed -i '/^import (/,/^)/{/^$$/d}' {} +
+	find . -name '*.go' -not -path './.git/*' -exec goimports -w {} +
+	golangci-lint run --fix -c .golangci.yaml
 
 vet:
 	go vet ./...
