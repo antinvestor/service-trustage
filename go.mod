@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	buf.build/gen/go/antinvestor/files/connectrpc/go v1.19.1-20260221113820-30caca229094.2
-	buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260221113820-30caca229094.1
+	buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260227071830-c2467bd8e48b.1
 	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
 	github.com/pitabwire/frame v1.79.0
@@ -19,6 +19,7 @@ require (
 )
 
 require (
+	buf.build/gen/go/antinvestor/common/protocolbuffers/go v1.36.11-20260219054105-fe125014d75c.1 // indirect
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
 	buf.build/gen/go/gnostic/gnostic/protocolbuffers/go v1.36.11-20230414000709-087bc8072ce4.1 // indirect
 	cel.dev/expr v0.25.1 // indirect
