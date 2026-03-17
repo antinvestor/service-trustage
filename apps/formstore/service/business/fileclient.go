@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	filesv1 "buf.build/gen/go/antinvestor/files/protocolbuffers/go/files/v1"
-
 	"buf.build/gen/go/antinvestor/files/connectrpc/go/files/v1/filesv1connect"
+	filesv1 "buf.build/gen/go/antinvestor/files/protocolbuffers/go/files/v1"
 )
 
 // uploadChunkSize is the maximum chunk size for streaming file uploads (64KB).

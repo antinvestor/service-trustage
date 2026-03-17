@@ -55,6 +55,14 @@ func main() { //nolint:funlen // main function wiring
 	// Database setup.
 	dbManager := svc.DatastoreManager()
 
+	if cfg.DoDatabaseMigrate() {
+		if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
+			log.WithError(migrateErr).Fatal("database migration failed")
+		}
+		log.Info("database migration completed successfully")
+		return
+	}
+
 	if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
 		log.WithError(migrateErr).Fatal("database migration failed")
 	}

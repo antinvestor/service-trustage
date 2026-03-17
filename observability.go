@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pitabwire/util"
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/pkg/cryptoutil"
 	"github.com/antinvestor/service-trustage/pkg/events"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
+	"github.com/pitabwire/util"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type InstancesQuery struct {
