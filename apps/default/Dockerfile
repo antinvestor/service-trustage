@@ -44,12 +44,21 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /home/nonroot/.cache/baml \
-    && chown -R 65532:65532 /home/nonroot
-
 ENV HOME=/home/nonroot
 ENV XDG_CACHE_HOME=/home/nonroot/.cache
 ENV BAML_CACHE_DIR=/home/nonroot/.cache/baml
+
+# Pre-download BAML shared library at build time so it works on read-only
+# filesystems (migration jobs, hardened pods). Update BAML_VERSION when
+# bumping the baml Go module in go.mod.
+ARG BAML_VERSION=0.219.0
+RUN mkdir -p /home/nonroot/.cache/baml \
+    && apt-get update && apt-get install -y --no-install-recommends curl \
+    && curl -fsSL "https://github.com/boundaryml/baml/releases/download/${BAML_VERSION}/libbaml_cffi-x86_64-unknown-linux-gnu.so" \
+       -o /home/nonroot/.cache/baml/libbaml_cffi-x86_64-unknown-linux-gnu.so \
+    && chmod 644 /home/nonroot/.cache/baml/libbaml_cffi-x86_64-unknown-linux-gnu.so \
+    && chown -R 65532:65532 /home/nonroot \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 USER 65532:65532
 
