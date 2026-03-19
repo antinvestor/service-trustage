@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package workflow.v1;
 
+import "common/v1/common.proto";
 import "gnostic/openapi/v3/annotations.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -62,11 +63,12 @@ message GetWorkflowResponse {
 message ListWorkflowsRequest {
   string name = 1;
   WorkflowStatus status = 2;
-  int32 limit = 3;
+  common.v1.SearchRequest search = 3;
 }
 
 message ListWorkflowsResponse {
   repeated WorkflowDefinition items = 1;
+  common.v1.PageCursor next_cursor = 2;
 }
 
 message ActivateWorkflowRequest {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pitabwire/frame/datastore"
@@ -19,6 +20,7 @@ type WorkflowExecutionRepository interface {
 	Create(ctx context.Context, exec *models.WorkflowStateExecution) error
 	GetByID(ctx context.Context, executionID string) (*models.WorkflowStateExecution, error)
 	List(ctx context.Context, status, instanceID string, limit int) ([]*models.WorkflowStateExecution, error)
+	ListPage(ctx context.Context, filter WorkflowExecutionListFilter) (*WorkflowExecutionPage, error)
 	GetLatestByInstance(ctx context.Context, instanceID string) (*models.WorkflowStateExecution, error)
 	FindPending(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	FindRetryDue(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
@@ -28,6 +30,20 @@ type WorkflowExecutionRepository interface {
 	UpdateStatus(ctx context.Context, executionID string, status models.ExecutionStatus, fields map[string]any) error
 	MarkStale(ctx context.Context, executionID string) error
 	Pool() pool.Pool
+}
+
+type WorkflowExecutionListFilter struct {
+	Status     string
+	InstanceID string
+	Query      string
+	IDQuery    string
+	Cursor     string
+	Limit      int
+}
+
+type WorkflowExecutionPage struct {
+	Items      []*models.WorkflowStateExecution
+	NextCursor string
 }
 
 type workflowExecutionRepository struct {
@@ -68,30 +84,73 @@ func (r *workflowExecutionRepository) List(
 	status, instanceID string,
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
+	page, err := r.ListPage(ctx, WorkflowExecutionListFilter{
+		Status:     status,
+		InstanceID: instanceID,
+		Limit:      limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return page.Items, nil
+}
+
+func (r *workflowExecutionRepository) ListPage(
+	ctx context.Context,
+	filter WorkflowExecutionListFilter,
+) (*WorkflowExecutionPage, error) {
 	db := r.BaseRepository.Pool().DB(ctx, true)
 
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > maxListLimit {
-		limit = maxListLimit
-	}
+	limit := normalizeListLimit(filter.Limit)
 
 	query := db.Where("deleted_at IS NULL")
-	if status != "" {
-		query = query.Where("status = ?", status)
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
 	}
-	if instanceID != "" {
-		query = query.Where("instance_id = ?", instanceID)
+	if filter.InstanceID != "" {
+		query = query.Where("instance_id = ?", filter.InstanceID)
+	}
+	if q := strings.TrimSpace(filter.IDQuery); q != "" {
+		query = query.Where("id ILIKE ?", "%"+q+"%")
+	}
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		like := "%" + q + "%"
+		query = query.Where(
+			"(id ILIKE ? OR instance_id ILIKE ? OR state ILIKE ? OR status ILIKE ? OR trace_id ILIKE ? OR error_class ILIKE ? OR error_message ILIKE ?)",
+			like,
+			like,
+			like,
+			like,
+			like,
+			like,
+			like,
+		)
+	}
+
+	var err error
+	query, err = applyDescendingCreatedAtCursor(query, filter.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("list executions: %w", err)
 	}
 
 	var execs []*models.WorkflowStateExecution
-	result := query.Order("created_at DESC").Limit(limit).Find(&execs)
+	result := query.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&execs)
 	if result.Error != nil {
 		return nil, fmt.Errorf("list executions: %w", result.Error)
 	}
 
-	return execs, nil
+	nextCursor := ""
+	if len(execs) > limit {
+		last := execs[limit-1]
+		nextCursor = encodeListCursor(last.CreatedAt, last.ID)
+		execs = execs[:limit]
+	}
+
+	return &WorkflowExecutionPage{
+		Items:      execs,
+		NextCursor: nextCursor,
+	}, nil
 }
 
 func (r *workflowExecutionRepository) GetLatestByInstance(

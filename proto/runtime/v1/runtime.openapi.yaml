@@ -251,6 +251,53 @@ paths:
                 $ref: '#/components/schemas/runtime.v1.RetryInstanceResponse'
 components:
   schemas:
+    common.v1.PageCursor:
+      type: object
+      properties:
+        limit:
+          type: integer
+          title: limit
+          format: int32
+          description: Number of items per cursor (limit)
+        page:
+          type: string
+          title: page
+          description: Page number/ cursor representing last id from result
+      title: PageCursor
+      additionalProperties: false
+      description: |-
+        PageCursor provides standard offset-based pagination/cursor stream parameters.
+         Used for list operations that return large result sets.
+    common.v1.SearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          title: query
+          description: Full-text search query string
+        idQuery:
+          type: string
+          title: id_query
+          description: Specific ID or ID pattern to search for
+        cursor:
+          title: cursor
+          description: Pagination parameters
+          $ref: '#/components/schemas/common.v1.PageCursor'
+        properties:
+          type: array
+          items:
+            type: string
+          title: properties
+          description: Specific properties/fields to include in results
+        extras:
+          title: extras
+          description: Service-specific additional search parameters
+          $ref: '#/components/schemas/google.protobuf.Struct'
+      title: SearchRequest
+      additionalProperties: false
+      description: |-
+        SearchRequest provides a standard structure for search operations across services.
+         Supports text search, ID-based queries, pagination, property filtering, and extensibility.
     connect-protocol-version:
       type: number
       title: Connect-Protocol-Version
@@ -602,10 +649,9 @@ components:
         status:
           title: status
           $ref: '#/components/schemas/runtime.v1.ExecutionStatus'
-        limit:
-          type: integer
-          title: limit
-          format: int32
+        search:
+          title: search
+          $ref: '#/components/schemas/common.v1.SearchRequest'
       title: ListExecutionsRequest
       additionalProperties: false
     runtime.v1.ListExecutionsResponse:
@@ -616,6 +662,9 @@ components:
           items:
             $ref: '#/components/schemas/runtime.v1.WorkflowExecution'
           title: items
+        nextCursor:
+          title: next_cursor
+          $ref: '#/components/schemas/common.v1.PageCursor'
       title: ListExecutionsResponse
       additionalProperties: false
     runtime.v1.ListInstancesRequest:
@@ -627,10 +676,9 @@ components:
         status:
           title: status
           $ref: '#/components/schemas/runtime.v1.InstanceStatus'
-        limit:
-          type: integer
-          title: limit
-          format: int32
+        search:
+          title: search
+          $ref: '#/components/schemas/common.v1.SearchRequest'
       title: ListInstancesRequest
       additionalProperties: false
     runtime.v1.ListInstancesResponse:
@@ -641,6 +689,9 @@ components:
           items:
             $ref: '#/components/schemas/runtime.v1.WorkflowInstance'
           title: items
+        nextCursor:
+          title: next_cursor
+          $ref: '#/components/schemas/common.v1.PageCursor'
       title: ListInstancesResponse
       additionalProperties: false
     runtime.v1.ResumeExecutionRequest:

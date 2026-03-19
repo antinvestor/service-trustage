@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"connectrpc.com/connect"
+	commonv1 "github.com/antinvestor/apis/go/common/v1"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -106,7 +107,9 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_ListExecutionsAndGetInsta
 		ctx,
 		connect.NewRequest(&runtimev1.ListExecutionsRequest{
 			InstanceId: instance.ID,
-			Limit:      10,
+			Search: &commonv1.SearchRequest{
+				Cursor: &commonv1.PageCursor{Limit: 10},
+			},
 		}),
 	)
 	s.Require().NoError(err)

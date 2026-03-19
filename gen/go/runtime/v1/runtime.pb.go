@@ -11,6 +11,7 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
+	v1 "github.com/antinvestor/apis/go/common/v1"
 	_ "github.com/google/gnostic/openapiv3"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -526,7 +527,7 @@ type ListInstancesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkflowName  string                 `protobuf:"bytes,1,opt,name=workflow_name,json=workflowName,proto3" json:"workflow_name,omitempty"`
 	Status        InstanceStatus         `protobuf:"varint,2,opt,name=status,proto3,enum=runtime.v1.InstanceStatus" json:"status,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Search        *v1.SearchRequest      `protobuf:"bytes,3,opt,name=search,proto3" json:"search,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -575,16 +576,17 @@ func (x *ListInstancesRequest) GetStatus() InstanceStatus {
 	return InstanceStatus_INSTANCE_STATUS_UNSPECIFIED
 }
 
-func (x *ListInstancesRequest) GetLimit() int32 {
+func (x *ListInstancesRequest) GetSearch() *v1.SearchRequest {
 	if x != nil {
-		return x.Limit
+		return x.Search
 	}
-	return 0
+	return nil
 }
 
 type ListInstancesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*WorkflowInstance    `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor    *v1.PageCursor         `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -622,6 +624,13 @@ func (*ListInstancesResponse) Descriptor() ([]byte, []int) {
 func (x *ListInstancesResponse) GetItems() []*WorkflowInstance {
 	if x != nil {
 		return x.Items
+	}
+	return nil
+}
+
+func (x *ListInstancesResponse) GetNextCursor() *v1.PageCursor {
+	if x != nil {
+		return x.NextCursor
 	}
 	return nil
 }
@@ -718,7 +727,7 @@ type ListExecutionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	Status        ExecutionStatus        `protobuf:"varint,2,opt,name=status,proto3,enum=runtime.v1.ExecutionStatus" json:"status,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Search        *v1.SearchRequest      `protobuf:"bytes,3,opt,name=search,proto3" json:"search,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -767,16 +776,17 @@ func (x *ListExecutionsRequest) GetStatus() ExecutionStatus {
 	return ExecutionStatus_EXECUTION_STATUS_UNSPECIFIED
 }
 
-func (x *ListExecutionsRequest) GetLimit() int32 {
+func (x *ListExecutionsRequest) GetSearch() *v1.SearchRequest {
 	if x != nil {
-		return x.Limit
+		return x.Search
 	}
-	return 0
+	return nil
 }
 
 type ListExecutionsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*WorkflowExecution   `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor    *v1.PageCursor         `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -814,6 +824,13 @@ func (*ListExecutionsResponse) Descriptor() ([]byte, []int) {
 func (x *ListExecutionsResponse) GetItems() []*WorkflowExecution {
 	if x != nil {
 		return x.Items
+	}
+	return nil
+}
+
+func (x *ListExecutionsResponse) GetNextCursor() *v1.PageCursor {
+	if x != nil {
+		return x.NextCursor
 	}
 	return nil
 }
@@ -1891,7 +1908,7 @@ var File_proto_runtime_v1_runtime_proto protoreflect.FileDescriptor
 const file_proto_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
 	"\x1eproto/runtime/v1/runtime.proto\x12\n" +
-	"runtime.v1\x1a$gnostic/openapi/v3/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xac\x06\n" +
+	"runtime.v1\x1a\x16common/v1/common.proto\x1a$gnostic/openapi/v3/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xac\x06\n" +
 	"\x10WorkflowInstance\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rworkflow_name\x18\x02 \x01(\tR\fworkflowName\x12)\n" +
@@ -1943,25 +1960,29 @@ const file_proto_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x11input_schema_hash\x18\x0f \x01(\tR\x0finputSchemaHash\x12,\n" +
 	"\x12output_schema_hash\x18\x10 \x01(\tR\x10outputSchemaHash\x12<\n" +
 	"\rinput_payload\x18\x11 \x01(\v2\x17.google.protobuf.StructR\finputPayload\x12/\n" +
-	"\x06output\x18\x12 \x01(\v2\x17.google.protobuf.StructR\x06output\"\x85\x01\n" +
+	"\x06output\x18\x12 \x01(\v2\x17.google.protobuf.StructR\x06output\"\xa1\x01\n" +
 	"\x14ListInstancesRequest\x12#\n" +
 	"\rworkflow_name\x18\x01 \x01(\tR\fworkflowName\x122\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x1a.runtime.v1.InstanceStatusR\x06status\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"K\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1a.runtime.v1.InstanceStatusR\x06status\x120\n" +
+	"\x06search\x18\x03 \x01(\v2\x18.common.v1.SearchRequestR\x06search\"\x83\x01\n" +
 	"\x15ListInstancesResponse\x122\n" +
-	"\x05items\x18\x01 \x03(\v2\x1c.runtime.v1.WorkflowInstanceR\x05items\"7\n" +
+	"\x05items\x18\x01 \x03(\v2\x1c.runtime.v1.WorkflowInstanceR\x05items\x126\n" +
+	"\vnext_cursor\x18\x02 \x01(\v2\x15.common.v1.PageCursorR\n" +
+	"nextCursor\"7\n" +
 	"\x14RetryInstanceRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\"T\n" +
 	"\x15RetryInstanceResponse\x12;\n" +
-	"\texecution\x18\x01 \x01(\v2\x1d.runtime.v1.WorkflowExecutionR\texecution\"\x83\x01\n" +
+	"\texecution\x18\x01 \x01(\v2\x1d.runtime.v1.WorkflowExecutionR\texecution\"\x9f\x01\n" +
 	"\x15ListExecutionsRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x123\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x1b.runtime.v1.ExecutionStatusR\x06status\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"M\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1b.runtime.v1.ExecutionStatusR\x06status\x120\n" +
+	"\x06search\x18\x03 \x01(\v2\x18.common.v1.SearchRequestR\x06search\"\x85\x01\n" +
 	"\x16ListExecutionsResponse\x123\n" +
-	"\x05items\x18\x01 \x03(\v2\x1d.runtime.v1.WorkflowExecutionR\x05items\"_\n" +
+	"\x05items\x18\x01 \x03(\v2\x1d.runtime.v1.WorkflowExecutionR\x05items\x126\n" +
+	"\vnext_cursor\x18\x02 \x01(\v2\x15.common.v1.PageCursorR\n" +
+	"nextCursor\"_\n" +
 	"\x13GetExecutionRequest\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12%\n" +
 	"\x0einclude_output\x18\x02 \x01(\bR\rincludeOutput\"S\n" +
@@ -2152,6 +2173,8 @@ var file_proto_runtime_v1_runtime_proto_goTypes = []any{
 	(*GetInstanceRunResponse)(nil),  // 22: runtime.v1.GetInstanceRunResponse
 	(*structpb.Struct)(nil),         // 23: google.protobuf.Struct
 	(*timestamppb.Timestamp)(nil),   // 24: google.protobuf.Timestamp
+	(*v1.SearchRequest)(nil),        // 25: common.v1.SearchRequest
+	(*v1.PageCursor)(nil),           // 26: common.v1.PageCursor
 }
 var file_proto_runtime_v1_runtime_proto_depIdxs = []int32{
 	0,  // 0: runtime.v1.WorkflowInstance.status:type_name -> runtime.v1.InstanceStatus
@@ -2169,58 +2192,62 @@ var file_proto_runtime_v1_runtime_proto_depIdxs = []int32{
 	23, // 12: runtime.v1.WorkflowExecution.input_payload:type_name -> google.protobuf.Struct
 	23, // 13: runtime.v1.WorkflowExecution.output:type_name -> google.protobuf.Struct
 	0,  // 14: runtime.v1.ListInstancesRequest.status:type_name -> runtime.v1.InstanceStatus
-	2,  // 15: runtime.v1.ListInstancesResponse.items:type_name -> runtime.v1.WorkflowInstance
-	3,  // 16: runtime.v1.RetryInstanceResponse.execution:type_name -> runtime.v1.WorkflowExecution
-	1,  // 17: runtime.v1.ListExecutionsRequest.status:type_name -> runtime.v1.ExecutionStatus
-	3,  // 18: runtime.v1.ListExecutionsResponse.items:type_name -> runtime.v1.WorkflowExecution
-	3,  // 19: runtime.v1.GetExecutionResponse.execution:type_name -> runtime.v1.WorkflowExecution
-	3,  // 20: runtime.v1.RetryExecutionResponse.execution:type_name -> runtime.v1.WorkflowExecution
-	23, // 21: runtime.v1.ResumeExecutionRequest.payload:type_name -> google.protobuf.Struct
-	3,  // 22: runtime.v1.ResumeExecutionResponse.execution:type_name -> runtime.v1.WorkflowExecution
-	23, // 23: runtime.v1.RunTimelineEntry.payload:type_name -> google.protobuf.Struct
-	24, // 24: runtime.v1.RunTimelineEntry.created_at:type_name -> google.protobuf.Timestamp
-	23, // 25: runtime.v1.StateOutput.payload:type_name -> google.protobuf.Struct
-	24, // 26: runtime.v1.StateOutput.created_at:type_name -> google.protobuf.Timestamp
-	23, // 27: runtime.v1.ScopeRun.items_payload:type_name -> google.protobuf.Struct
-	23, // 28: runtime.v1.ScopeRun.results_payload:type_name -> google.protobuf.Struct
-	24, // 29: runtime.v1.ScopeRun.created_at:type_name -> google.protobuf.Timestamp
-	24, // 30: runtime.v1.ScopeRun.updated_at:type_name -> google.protobuf.Timestamp
-	24, // 31: runtime.v1.SignalWait.timeout_at:type_name -> google.protobuf.Timestamp
-	24, // 32: runtime.v1.SignalWait.matched_at:type_name -> google.protobuf.Timestamp
-	24, // 33: runtime.v1.SignalWait.timed_out_at:type_name -> google.protobuf.Timestamp
-	24, // 34: runtime.v1.SignalWait.created_at:type_name -> google.protobuf.Timestamp
-	24, // 35: runtime.v1.SignalWait.updated_at:type_name -> google.protobuf.Timestamp
-	23, // 36: runtime.v1.SignalMessage.payload:type_name -> google.protobuf.Struct
-	24, // 37: runtime.v1.SignalMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	24, // 38: runtime.v1.SignalMessage.created_at:type_name -> google.protobuf.Timestamp
-	24, // 39: runtime.v1.SignalMessage.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 40: runtime.v1.GetInstanceRunResponse.instance:type_name -> runtime.v1.WorkflowInstance
-	3,  // 41: runtime.v1.GetInstanceRunResponse.latest_execution:type_name -> runtime.v1.WorkflowExecution
-	3,  // 42: runtime.v1.GetInstanceRunResponse.executions:type_name -> runtime.v1.WorkflowExecution
-	16, // 43: runtime.v1.GetInstanceRunResponse.timeline:type_name -> runtime.v1.RunTimelineEntry
-	17, // 44: runtime.v1.GetInstanceRunResponse.outputs:type_name -> runtime.v1.StateOutput
-	18, // 45: runtime.v1.GetInstanceRunResponse.scope_runs:type_name -> runtime.v1.ScopeRun
-	19, // 46: runtime.v1.GetInstanceRunResponse.signal_waits:type_name -> runtime.v1.SignalWait
-	20, // 47: runtime.v1.GetInstanceRunResponse.signal_messages:type_name -> runtime.v1.SignalMessage
-	4,  // 48: runtime.v1.RuntimeService.ListInstances:input_type -> runtime.v1.ListInstancesRequest
-	6,  // 49: runtime.v1.RuntimeService.RetryInstance:input_type -> runtime.v1.RetryInstanceRequest
-	8,  // 50: runtime.v1.RuntimeService.ListExecutions:input_type -> runtime.v1.ListExecutionsRequest
-	10, // 51: runtime.v1.RuntimeService.GetExecution:input_type -> runtime.v1.GetExecutionRequest
-	12, // 52: runtime.v1.RuntimeService.RetryExecution:input_type -> runtime.v1.RetryExecutionRequest
-	14, // 53: runtime.v1.RuntimeService.ResumeExecution:input_type -> runtime.v1.ResumeExecutionRequest
-	21, // 54: runtime.v1.RuntimeService.GetInstanceRun:input_type -> runtime.v1.GetInstanceRunRequest
-	5,  // 55: runtime.v1.RuntimeService.ListInstances:output_type -> runtime.v1.ListInstancesResponse
-	7,  // 56: runtime.v1.RuntimeService.RetryInstance:output_type -> runtime.v1.RetryInstanceResponse
-	9,  // 57: runtime.v1.RuntimeService.ListExecutions:output_type -> runtime.v1.ListExecutionsResponse
-	11, // 58: runtime.v1.RuntimeService.GetExecution:output_type -> runtime.v1.GetExecutionResponse
-	13, // 59: runtime.v1.RuntimeService.RetryExecution:output_type -> runtime.v1.RetryExecutionResponse
-	15, // 60: runtime.v1.RuntimeService.ResumeExecution:output_type -> runtime.v1.ResumeExecutionResponse
-	22, // 61: runtime.v1.RuntimeService.GetInstanceRun:output_type -> runtime.v1.GetInstanceRunResponse
-	55, // [55:62] is the sub-list for method output_type
-	48, // [48:55] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	25, // 15: runtime.v1.ListInstancesRequest.search:type_name -> common.v1.SearchRequest
+	2,  // 16: runtime.v1.ListInstancesResponse.items:type_name -> runtime.v1.WorkflowInstance
+	26, // 17: runtime.v1.ListInstancesResponse.next_cursor:type_name -> common.v1.PageCursor
+	3,  // 18: runtime.v1.RetryInstanceResponse.execution:type_name -> runtime.v1.WorkflowExecution
+	1,  // 19: runtime.v1.ListExecutionsRequest.status:type_name -> runtime.v1.ExecutionStatus
+	25, // 20: runtime.v1.ListExecutionsRequest.search:type_name -> common.v1.SearchRequest
+	3,  // 21: runtime.v1.ListExecutionsResponse.items:type_name -> runtime.v1.WorkflowExecution
+	26, // 22: runtime.v1.ListExecutionsResponse.next_cursor:type_name -> common.v1.PageCursor
+	3,  // 23: runtime.v1.GetExecutionResponse.execution:type_name -> runtime.v1.WorkflowExecution
+	3,  // 24: runtime.v1.RetryExecutionResponse.execution:type_name -> runtime.v1.WorkflowExecution
+	23, // 25: runtime.v1.ResumeExecutionRequest.payload:type_name -> google.protobuf.Struct
+	3,  // 26: runtime.v1.ResumeExecutionResponse.execution:type_name -> runtime.v1.WorkflowExecution
+	23, // 27: runtime.v1.RunTimelineEntry.payload:type_name -> google.protobuf.Struct
+	24, // 28: runtime.v1.RunTimelineEntry.created_at:type_name -> google.protobuf.Timestamp
+	23, // 29: runtime.v1.StateOutput.payload:type_name -> google.protobuf.Struct
+	24, // 30: runtime.v1.StateOutput.created_at:type_name -> google.protobuf.Timestamp
+	23, // 31: runtime.v1.ScopeRun.items_payload:type_name -> google.protobuf.Struct
+	23, // 32: runtime.v1.ScopeRun.results_payload:type_name -> google.protobuf.Struct
+	24, // 33: runtime.v1.ScopeRun.created_at:type_name -> google.protobuf.Timestamp
+	24, // 34: runtime.v1.ScopeRun.updated_at:type_name -> google.protobuf.Timestamp
+	24, // 35: runtime.v1.SignalWait.timeout_at:type_name -> google.protobuf.Timestamp
+	24, // 36: runtime.v1.SignalWait.matched_at:type_name -> google.protobuf.Timestamp
+	24, // 37: runtime.v1.SignalWait.timed_out_at:type_name -> google.protobuf.Timestamp
+	24, // 38: runtime.v1.SignalWait.created_at:type_name -> google.protobuf.Timestamp
+	24, // 39: runtime.v1.SignalWait.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 40: runtime.v1.SignalMessage.payload:type_name -> google.protobuf.Struct
+	24, // 41: runtime.v1.SignalMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	24, // 42: runtime.v1.SignalMessage.created_at:type_name -> google.protobuf.Timestamp
+	24, // 43: runtime.v1.SignalMessage.updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 44: runtime.v1.GetInstanceRunResponse.instance:type_name -> runtime.v1.WorkflowInstance
+	3,  // 45: runtime.v1.GetInstanceRunResponse.latest_execution:type_name -> runtime.v1.WorkflowExecution
+	3,  // 46: runtime.v1.GetInstanceRunResponse.executions:type_name -> runtime.v1.WorkflowExecution
+	16, // 47: runtime.v1.GetInstanceRunResponse.timeline:type_name -> runtime.v1.RunTimelineEntry
+	17, // 48: runtime.v1.GetInstanceRunResponse.outputs:type_name -> runtime.v1.StateOutput
+	18, // 49: runtime.v1.GetInstanceRunResponse.scope_runs:type_name -> runtime.v1.ScopeRun
+	19, // 50: runtime.v1.GetInstanceRunResponse.signal_waits:type_name -> runtime.v1.SignalWait
+	20, // 51: runtime.v1.GetInstanceRunResponse.signal_messages:type_name -> runtime.v1.SignalMessage
+	4,  // 52: runtime.v1.RuntimeService.ListInstances:input_type -> runtime.v1.ListInstancesRequest
+	6,  // 53: runtime.v1.RuntimeService.RetryInstance:input_type -> runtime.v1.RetryInstanceRequest
+	8,  // 54: runtime.v1.RuntimeService.ListExecutions:input_type -> runtime.v1.ListExecutionsRequest
+	10, // 55: runtime.v1.RuntimeService.GetExecution:input_type -> runtime.v1.GetExecutionRequest
+	12, // 56: runtime.v1.RuntimeService.RetryExecution:input_type -> runtime.v1.RetryExecutionRequest
+	14, // 57: runtime.v1.RuntimeService.ResumeExecution:input_type -> runtime.v1.ResumeExecutionRequest
+	21, // 58: runtime.v1.RuntimeService.GetInstanceRun:input_type -> runtime.v1.GetInstanceRunRequest
+	5,  // 59: runtime.v1.RuntimeService.ListInstances:output_type -> runtime.v1.ListInstancesResponse
+	7,  // 60: runtime.v1.RuntimeService.RetryInstance:output_type -> runtime.v1.RetryInstanceResponse
+	9,  // 61: runtime.v1.RuntimeService.ListExecutions:output_type -> runtime.v1.ListExecutionsResponse
+	11, // 62: runtime.v1.RuntimeService.GetExecution:output_type -> runtime.v1.GetExecutionResponse
+	13, // 63: runtime.v1.RuntimeService.RetryExecution:output_type -> runtime.v1.RetryExecutionResponse
+	15, // 64: runtime.v1.RuntimeService.ResumeExecution:output_type -> runtime.v1.ResumeExecutionResponse
+	22, // 65: runtime.v1.RuntimeService.GetInstanceRun:output_type -> runtime.v1.GetInstanceRunResponse
+	59, // [59:66] is the sub-list for method output_type
+	52, // [52:59] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_proto_runtime_v1_runtime_proto_init() }

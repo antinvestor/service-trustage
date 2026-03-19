@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"connectrpc.com/connect"
+	commonv1 "github.com/antinvestor/apis/go/common/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
@@ -73,7 +74,9 @@ func (s *DefaultServiceSuite) TestWorkflowConnectServer_Lifecycle() {
 		ctx,
 		connect.NewRequest(&workflowv1.ListWorkflowsRequest{
 			Status: workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE,
-			Limit:  10,
+			Search: &commonv1.SearchRequest{
+				Cursor: &commonv1.PageCursor{Limit: 10},
+			},
 		}),
 	)
 	s.Require().NoError(err)
@@ -227,7 +230,9 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_Lifecycle() {
 		ctx,
 		connect.NewRequest(&runtimev1.ListInstancesRequest{
 			Status: runtimev1.InstanceStatus_INSTANCE_STATUS_FAILED,
-			Limit:  10,
+			Search: &commonv1.SearchRequest{
+				Cursor: &commonv1.PageCursor{Limit: 10},
+			},
 		}),
 	)
 	s.Require().NoError(err)

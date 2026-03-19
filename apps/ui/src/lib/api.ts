@@ -1,6 +1,15 @@
 import { ConsoleSettings } from './storage';
 
 type StructLike = Record<string, unknown>;
+type RequestOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
+export type PageResult<T> = {
+  items: T[];
+  nextCursor?: string;
+};
 
 export type WorkflowInstance = {
   id: string;
@@ -154,6 +163,20 @@ type ConnectErrorShape = {
   message?: string;
 };
 
+type SearchRequest = {
+  query?: string;
+  idQuery?: string;
+  cursor?: {
+    limit?: number;
+    page?: string;
+  };
+  extras?: StructLike;
+};
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 function normalizeBase(base: string) {
   if (!base) {
     return '';
@@ -166,7 +189,60 @@ function buildUrl(base: string, path: string) {
   return new URL(path.replace(/^\//, ''), normalizeBase(base)).toString();
 }
 
-async function request<T>(settings: ConsoleSettings, url: string, options?: RequestInit) {
+function combineSignals(input?: AbortSignal, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  if (input) {
+    if (input.aborted) {
+      controller.abort(input.reason);
+    } else {
+      input.addEventListener('abort', () => controller.abort(input.reason), { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    dispose() {
+      window.clearTimeout(timeout);
+    },
+  };
+}
+
+function buildSearch(params: {
+  limit?: number;
+  cursor?: string;
+  query?: string;
+  idQuery?: string;
+  extras?: StructLike;
+}): SearchRequest | undefined {
+  const limit = params.limit ?? 50;
+  const cursor = params.cursor?.trim();
+  const query = params.query?.trim();
+  const idQuery = params.idQuery?.trim();
+  const extras = params.extras && Object.keys(params.extras).length > 0 ? params.extras : undefined;
+
+  if (!query && !idQuery && !cursor && !extras && limit <= 0) {
+    return undefined;
+  }
+
+  return {
+    ...(query ? { query } : {}),
+    ...(idQuery ? { idQuery } : {}),
+    cursor: {
+      limit,
+      ...(cursor ? { page: cursor } : {}),
+    },
+    ...(extras ? { extras } : {}),
+  };
+}
+
+async function request<T>(
+  settings: ConsoleSettings,
+  url: string,
+  options?: RequestInit,
+  requestOptions?: RequestOptions,
+) {
   if (!settings.apiBaseUrl) {
     throw new Error('API base URL is not set');
   }
@@ -180,13 +256,26 @@ async function request<T>(settings: ConsoleSettings, url: string, options?: Requ
     headers.Authorization = `Bearer ${settings.authToken}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...headers,
-      ...(options?.headers || {}),
-    },
-  });
+  const transport = combineSignals(requestOptions?.signal, requestOptions?.timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      signal: transport.signal,
+      headers: {
+        ...headers,
+        ...(options?.headers || {}),
+      },
+    });
+  } catch (error) {
+    transport.dispose();
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw new Error(error instanceof Error ? error.message : 'Network request failed');
+  }
+  transport.dispose();
 
   if (!response.ok) {
     const text = await response.text();
@@ -218,95 +307,203 @@ async function connectUnary<TRequest, TResponse>(
   service: string,
   method: string,
   body: TRequest,
+  requestOptions?: RequestOptions,
 ) {
   return request<TResponse>(settings, buildUrl(settings.apiBaseUrl, `/${service}/${method}`), {
     method: 'POST',
     body: JSON.stringify(body),
-  });
+  }, requestOptions);
 }
 
 export async function listInstances(
   settings: ConsoleSettings,
   params: {
+    workflowName?: string;
+    status?: string;
+    query?: string;
+    idQuery?: string;
+    cursor?: string;
     limit?: number;
+    parentInstanceId?: string;
+    parentExecutionId?: string;
   } = {},
+  requestOptions?: RequestOptions,
 ) {
-  return connectUnary<{ limit?: number }, { items?: WorkflowInstance[] }>(
+  const response = await connectUnary<
+    {
+      workflowName?: string;
+      status?: string;
+      search?: SearchRequest;
+    },
+    { items?: WorkflowInstance[]; nextCursor?: { page?: string } }
+  >(
     settings,
     'runtime.v1.RuntimeService',
     'ListInstances',
     {
-      limit: params.limit ?? 200,
+      workflowName: params.workflowName,
+      status: params.status,
+      search: buildSearch({
+        limit: params.limit ?? 50,
+        cursor: params.cursor,
+        query: params.query,
+        idQuery: params.idQuery,
+        extras: {
+          ...(params.parentInstanceId ? { parent_instance_id: params.parentInstanceId } : {}),
+          ...(params.parentExecutionId ? { parent_execution_id: params.parentExecutionId } : {}),
+        },
+      }),
     },
+    requestOptions,
   );
+
+  return {
+    items: response.items ?? [],
+    nextCursor: response.nextCursor?.page,
+  } satisfies PageResult<WorkflowInstance>;
 }
 
 export async function listExecutions(
   settings: ConsoleSettings,
   params: {
     instanceId?: string;
+    status?: string;
+    query?: string;
+    idQuery?: string;
+    cursor?: string;
     limit?: number;
   } = {},
+  requestOptions?: RequestOptions,
 ) {
-  return connectUnary<{ instanceId?: string; limit?: number }, { items?: WorkflowExecution[] }>(
+  const response = await connectUnary<
+    {
+      instanceId?: string;
+      status?: string;
+      search?: SearchRequest;
+    },
+    { items?: WorkflowExecution[]; nextCursor?: { page?: string } }
+  >(
     settings,
     'runtime.v1.RuntimeService',
     'ListExecutions',
     {
       instanceId: params.instanceId,
-      limit: params.limit ?? 200,
+      status: params.status,
+      search: buildSearch({
+        limit: params.limit ?? 50,
+        cursor: params.cursor,
+        query: params.query,
+        idQuery: params.idQuery,
+      }),
     },
+    requestOptions,
   );
+
+  return {
+    items: response.items ?? [],
+    nextCursor: response.nextCursor?.page,
+  } satisfies PageResult<WorkflowExecution>;
 }
 
-export async function getExecution(settings: ConsoleSettings, executionId: string) {
+export async function getExecution(
+  settings: ConsoleSettings,
+  executionId: string,
+  requestOptions?: RequestOptions,
+) {
   const response = await connectUnary<
     { executionId: string; includeOutput: boolean },
     { execution?: WorkflowExecution }
   >(settings, 'runtime.v1.RuntimeService', 'GetExecution', {
     executionId,
     includeOutput: true,
-  });
+  }, requestOptions);
 
   return response.execution;
 }
 
-export async function getInstanceRun(settings: ConsoleSettings, instanceId: string) {
+export async function getInstanceRun(
+  settings: ConsoleSettings,
+  instanceId: string,
+  requestOptions?: RequestOptions,
+) {
   return connectUnary<
     { instanceId: string; includePayloads: boolean; executionLimit: number; timelineLimit: number },
     InstanceRun
   >(settings, 'runtime.v1.RuntimeService', 'GetInstanceRun', {
     instanceId,
     includePayloads: true,
-    executionLimit: 200,
-    timelineLimit: 200,
-  });
+    executionLimit: 150,
+    timelineLimit: 150,
+  }, requestOptions);
 }
 
-export async function listWorkflows(settings: ConsoleSettings) {
-  return connectUnary<{ limit: number }, { items?: WorkflowDefinition[] }>(
+export async function listWorkflows(
+  settings: ConsoleSettings,
+  params: {
+    name?: string;
+    status?: string;
+    query?: string;
+    idQuery?: string;
+    cursor?: string;
+    limit?: number;
+  } = {},
+  requestOptions?: RequestOptions,
+) {
+  const response = await connectUnary<
+    {
+      name?: string;
+      status?: string;
+      search?: SearchRequest;
+    },
+    { items?: WorkflowDefinition[]; nextCursor?: { page?: string } }
+  >(
     settings,
     'workflow.v1.WorkflowService',
     'ListWorkflows',
-    { limit: 200 },
+    {
+      name: params.name,
+      status: params.status,
+      search: buildSearch({
+        limit: params.limit ?? 50,
+        cursor: params.cursor,
+        query: params.query,
+        idQuery: params.idQuery,
+      }),
+    },
+    requestOptions,
   );
+
+  return {
+    items: response.items ?? [],
+    nextCursor: response.nextCursor?.page,
+  } satisfies PageResult<WorkflowDefinition>;
 }
 
-export async function retryExecution(settings: ConsoleSettings, executionId: string) {
+export async function retryExecution(
+  settings: ConsoleSettings,
+  executionId: string,
+  requestOptions?: RequestOptions,
+) {
   return connectUnary<{ executionId: string }, { execution?: WorkflowExecution }>(
     settings,
     'runtime.v1.RuntimeService',
     'RetryExecution',
     { executionId },
+    requestOptions,
   );
 }
 
-export async function retryInstance(settings: ConsoleSettings, instanceId: string) {
+export async function retryInstance(
+  settings: ConsoleSettings,
+  instanceId: string,
+  requestOptions?: RequestOptions,
+) {
   return connectUnary<{ instanceId: string }, { execution?: WorkflowExecution }>(
     settings,
     'runtime.v1.RuntimeService',
     'RetryInstance',
     { instanceId },
+    requestOptions,
   );
 }
 
@@ -314,6 +511,7 @@ export async function resumeExecution(
   settings: ConsoleSettings,
   executionId: string,
   payload: Record<string, unknown>,
+  requestOptions?: RequestOptions,
 ) {
   return connectUnary<
     { executionId: string; payload: Record<string, unknown> },
@@ -321,7 +519,7 @@ export async function resumeExecution(
   >(settings, 'runtime.v1.RuntimeService', 'ResumeExecution', {
     executionId,
     payload,
-  });
+  }, requestOptions);
 }
 
 export async function ingestEvent(
@@ -332,19 +530,25 @@ export async function ingestEvent(
     idempotencyKey?: string;
     payload: Record<string, unknown>;
   },
+  requestOptions?: RequestOptions,
 ) {
   return connectUnary<
     { eventType: string; source: string; idempotencyKey?: string; payload: Record<string, unknown> },
     EventIngestResponse
-  >(settings, 'event.v1.EventService', 'IngestEvent', payload);
+  >(settings, 'event.v1.EventService', 'IngestEvent', payload, requestOptions);
 }
 
-export async function getInstanceTimeline(settings: ConsoleSettings, instanceId: string) {
+export async function getInstanceTimeline(
+  settings: ConsoleSettings,
+  instanceId: string,
+  requestOptions?: RequestOptions,
+) {
   const response = await connectUnary<{ instanceId: string }, { items?: TimelineEntry[] }>(
     settings,
     'event.v1.EventService',
     'GetInstanceTimeline',
     { instanceId },
+    requestOptions,
   );
 
   return response.items ?? [];
@@ -357,9 +561,10 @@ export async function sendSignal(
     signalName: string;
     payload: Record<string, unknown>;
   },
+  requestOptions?: RequestOptions,
 ) {
   return connectUnary<
     { instanceId: string; signalName: string; payload: Record<string, unknown> },
     { delivered?: boolean }
-  >(settings, 'signal.v1.SignalService', 'SendSignal', payload);
+  >(settings, 'signal.v1.SignalService', 'SendSignal', payload, requestOptions);
 }

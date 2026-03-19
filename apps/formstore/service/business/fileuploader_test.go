@@ -94,7 +94,6 @@ func TestFileUploader_ErrorPaths(t *testing.T) {
 	})
 
 	for _, tc := range cases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, err := uploader.ProcessFields(map[string]any{"field": tc.value})
@@ -132,7 +131,6 @@ func TestExtensionFromContentType(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-
 		t.Run(tc.contentType, func(t *testing.T) {
 			t.Parallel()
 			if got := extensionFromContentType(tc.contentType); got != tc.ext {

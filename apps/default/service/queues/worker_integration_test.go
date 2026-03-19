@@ -384,7 +384,6 @@ func (s *WorkerSuite) TestExecutionWorker_HandleControlSteps() {
 	}
 
 	for _, tc := range tests {
-
 		s.Run(tc.name, func() {
 			def, err := s.workflowBusiness().CreateWorkflow(ctx, []byte(tc.dsl))
 			s.Require().NoError(err)

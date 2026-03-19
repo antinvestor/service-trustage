@@ -11,6 +11,7 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
+	v1 "github.com/antinvestor/apis/go/common/v1"
 	_ "github.com/google/gnostic/openapiv3"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -365,7 +366,7 @@ type ListWorkflowsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Status        WorkflowStatus         `protobuf:"varint,2,opt,name=status,proto3,enum=workflow.v1.WorkflowStatus" json:"status,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Search        *v1.SearchRequest      `protobuf:"bytes,3,opt,name=search,proto3" json:"search,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -414,16 +415,17 @@ func (x *ListWorkflowsRequest) GetStatus() WorkflowStatus {
 	return WorkflowStatus_WORKFLOW_STATUS_UNSPECIFIED
 }
 
-func (x *ListWorkflowsRequest) GetLimit() int32 {
+func (x *ListWorkflowsRequest) GetSearch() *v1.SearchRequest {
 	if x != nil {
-		return x.Limit
+		return x.Search
 	}
-	return 0
+	return nil
 }
 
 type ListWorkflowsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*WorkflowDefinition  `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor    *v1.PageCursor         `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -461,6 +463,13 @@ func (*ListWorkflowsResponse) Descriptor() ([]byte, []int) {
 func (x *ListWorkflowsResponse) GetItems() []*WorkflowDefinition {
 	if x != nil {
 		return x.Items
+	}
+	return nil
+}
+
+func (x *ListWorkflowsResponse) GetNextCursor() *v1.PageCursor {
+	if x != nil {
+		return x.NextCursor
 	}
 	return nil
 }
@@ -557,7 +566,7 @@ var File_proto_workflow_v1_workflow_proto protoreflect.FileDescriptor
 
 const file_proto_workflow_v1_workflow_proto_rawDesc = "" +
 	"\n" +
-	" proto/workflow/v1/workflow.proto\x12\vworkflow.v1\x1a$gnostic/openapi/v3/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\x02\n" +
+	" proto/workflow/v1/workflow.proto\x12\vworkflow.v1\x1a\x16common/v1/common.proto\x1a$gnostic/openapi/v3/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\x02\n" +
 	"\x12WorkflowDefinition\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -577,13 +586,15 @@ const file_proto_workflow_v1_workflow_proto_rawDesc = "" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"R\n" +
 	"\x13GetWorkflowResponse\x12;\n" +
-	"\bworkflow\x18\x01 \x01(\v2\x1f.workflow.v1.WorkflowDefinitionR\bworkflow\"u\n" +
+	"\bworkflow\x18\x01 \x01(\v2\x1f.workflow.v1.WorkflowDefinitionR\bworkflow\"\x91\x01\n" +
 	"\x14ListWorkflowsRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x123\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x1b.workflow.v1.WorkflowStatusR\x06status\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"N\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1b.workflow.v1.WorkflowStatusR\x06status\x120\n" +
+	"\x06search\x18\x03 \x01(\v2\x18.common.v1.SearchRequestR\x06search\"\x86\x01\n" +
 	"\x15ListWorkflowsResponse\x125\n" +
-	"\x05items\x18\x01 \x03(\v2\x1f.workflow.v1.WorkflowDefinitionR\x05items\")\n" +
+	"\x05items\x18\x01 \x03(\v2\x1f.workflow.v1.WorkflowDefinitionR\x05items\x126\n" +
+	"\vnext_cursor\x18\x02 \x01(\v2\x15.common.v1.PageCursorR\n" +
+	"nextCursor\")\n" +
 	"\x17ActivateWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"W\n" +
 	"\x18ActivateWorkflowResponse\x12;\n" +
@@ -628,6 +639,8 @@ var file_proto_workflow_v1_workflow_proto_goTypes = []any{
 	(*ActivateWorkflowResponse)(nil), // 9: workflow.v1.ActivateWorkflowResponse
 	(*structpb.Struct)(nil),          // 10: google.protobuf.Struct
 	(*timestamppb.Timestamp)(nil),    // 11: google.protobuf.Timestamp
+	(*v1.SearchRequest)(nil),         // 12: common.v1.SearchRequest
+	(*v1.PageCursor)(nil),            // 13: common.v1.PageCursor
 }
 var file_proto_workflow_v1_workflow_proto_depIdxs = []int32{
 	0,  // 0: workflow.v1.WorkflowDefinition.status:type_name -> workflow.v1.WorkflowStatus
@@ -638,21 +651,23 @@ var file_proto_workflow_v1_workflow_proto_depIdxs = []int32{
 	1,  // 5: workflow.v1.CreateWorkflowResponse.workflow:type_name -> workflow.v1.WorkflowDefinition
 	1,  // 6: workflow.v1.GetWorkflowResponse.workflow:type_name -> workflow.v1.WorkflowDefinition
 	0,  // 7: workflow.v1.ListWorkflowsRequest.status:type_name -> workflow.v1.WorkflowStatus
-	1,  // 8: workflow.v1.ListWorkflowsResponse.items:type_name -> workflow.v1.WorkflowDefinition
-	1,  // 9: workflow.v1.ActivateWorkflowResponse.workflow:type_name -> workflow.v1.WorkflowDefinition
-	2,  // 10: workflow.v1.WorkflowService.CreateWorkflow:input_type -> workflow.v1.CreateWorkflowRequest
-	4,  // 11: workflow.v1.WorkflowService.GetWorkflow:input_type -> workflow.v1.GetWorkflowRequest
-	6,  // 12: workflow.v1.WorkflowService.ListWorkflows:input_type -> workflow.v1.ListWorkflowsRequest
-	8,  // 13: workflow.v1.WorkflowService.ActivateWorkflow:input_type -> workflow.v1.ActivateWorkflowRequest
-	3,  // 14: workflow.v1.WorkflowService.CreateWorkflow:output_type -> workflow.v1.CreateWorkflowResponse
-	5,  // 15: workflow.v1.WorkflowService.GetWorkflow:output_type -> workflow.v1.GetWorkflowResponse
-	7,  // 16: workflow.v1.WorkflowService.ListWorkflows:output_type -> workflow.v1.ListWorkflowsResponse
-	9,  // 17: workflow.v1.WorkflowService.ActivateWorkflow:output_type -> workflow.v1.ActivateWorkflowResponse
-	14, // [14:18] is the sub-list for method output_type
-	10, // [10:14] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	12, // 8: workflow.v1.ListWorkflowsRequest.search:type_name -> common.v1.SearchRequest
+	1,  // 9: workflow.v1.ListWorkflowsResponse.items:type_name -> workflow.v1.WorkflowDefinition
+	13, // 10: workflow.v1.ListWorkflowsResponse.next_cursor:type_name -> common.v1.PageCursor
+	1,  // 11: workflow.v1.ActivateWorkflowResponse.workflow:type_name -> workflow.v1.WorkflowDefinition
+	2,  // 12: workflow.v1.WorkflowService.CreateWorkflow:input_type -> workflow.v1.CreateWorkflowRequest
+	4,  // 13: workflow.v1.WorkflowService.GetWorkflow:input_type -> workflow.v1.GetWorkflowRequest
+	6,  // 14: workflow.v1.WorkflowService.ListWorkflows:input_type -> workflow.v1.ListWorkflowsRequest
+	8,  // 15: workflow.v1.WorkflowService.ActivateWorkflow:input_type -> workflow.v1.ActivateWorkflowRequest
+	3,  // 16: workflow.v1.WorkflowService.CreateWorkflow:output_type -> workflow.v1.CreateWorkflowResponse
+	5,  // 17: workflow.v1.WorkflowService.GetWorkflow:output_type -> workflow.v1.GetWorkflowResponse
+	7,  // 18: workflow.v1.WorkflowService.ListWorkflows:output_type -> workflow.v1.ListWorkflowsResponse
+	9,  // 19: workflow.v1.WorkflowService.ActivateWorkflow:output_type -> workflow.v1.ActivateWorkflowResponse
+	16, // [16:20] is the sub-list for method output_type
+	12, // [12:16] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_proto_workflow_v1_workflow_proto_init() }

@@ -138,7 +138,6 @@ func TestHandlerHelpers_HTTPStatusForError(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			gotStatus, gotMsg := httpStatusForError(tc.err)

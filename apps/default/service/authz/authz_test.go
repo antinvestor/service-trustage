@@ -86,7 +86,6 @@ func TestGrantedRelationAndRolePermissions(t *testing.T) {
 		}
 
 		for _, tc := range cases {
-
 			t.Run(tc.role, func(t *testing.T) {
 				t.Parallel()
 				rolePerms := perms[tc.role]
@@ -188,7 +187,6 @@ func TestMiddlewareChecks(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

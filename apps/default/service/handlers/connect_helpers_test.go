@@ -56,7 +56,6 @@ func TestConnectHelpers_AuthAndErrors(t *testing.T) {
 		}
 
 		for _, tc := range cases {
-
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				if got := connect.CodeOf(connectErrorForBusiness(tc.err)); got != tc.code {
@@ -196,7 +195,6 @@ func TestConnectHelpers_JSONAndStatusConversions(t *testing.T) {
 		}
 
 		for _, tc := range cases {
-
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				if got := instanceStatusToProto(tc.model); int32(got) != tc.proto {
@@ -299,7 +297,6 @@ func TestConnectHelpers_JSONAndStatusConversions(t *testing.T) {
 		}
 
 		for _, tc := range cases {
-
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				if got := executionStatusToProto(tc.model); got != tc.proto {

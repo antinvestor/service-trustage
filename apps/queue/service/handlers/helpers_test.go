@@ -124,7 +124,6 @@ func TestHandlerHelpers_HTTPStatusAndJSONMappers(t *testing.T) {
 		},
 	}
 	for _, tc := range statusCases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			gotStatus, gotMsg := httpStatusForError(tc.err)

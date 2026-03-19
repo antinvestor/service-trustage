@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	commonv1 "github.com/antinvestor/apis/go/common/v1"
 	"github.com/pitabwire/frame/security"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -149,6 +150,67 @@ func timestampFromValue(value time.Time) *timestamppb.Timestamp {
 	}
 
 	return timestamppb.New(value)
+}
+
+func searchLimit(search *commonv1.SearchRequest, fallback int) int {
+	if search == nil || search.GetCursor() == nil || search.GetCursor().GetLimit() <= 0 {
+		return fallback
+	}
+
+	return int(search.GetCursor().GetLimit())
+}
+
+func searchPage(search *commonv1.SearchRequest) string {
+	if search == nil || search.GetCursor() == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(search.GetCursor().GetPage())
+}
+
+func searchQuery(search *commonv1.SearchRequest) string {
+	if search == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(search.GetQuery())
+}
+
+func searchIDQuery(search *commonv1.SearchRequest) string {
+	if search == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(search.GetIdQuery())
+}
+
+func searchExtraString(search *commonv1.SearchRequest, key string) string {
+	if search == nil || search.GetExtras() == nil {
+		return ""
+	}
+
+	fields := search.GetExtras().GetFields()
+	if len(fields) == 0 {
+		return ""
+	}
+
+	value, ok := fields[key]
+	if !ok {
+		return ""
+	}
+
+	return strings.TrimSpace(value.GetStringValue())
+}
+
+func nextCursorProto(token string, limit int) *commonv1.PageCursor {
+	if strings.TrimSpace(token) == "" {
+		return nil
+	}
+
+	return &commonv1.PageCursor{
+		Page:  token,
+		Limit: int32(limit),
+	}
 }
 
 func workflowStatusToProto(status models.WorkflowDefinitionStatus) workflowv1.WorkflowStatus {

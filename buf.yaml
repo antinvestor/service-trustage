@@ -1,5 +1,6 @@
 version: v2
 deps:
+  - buf.build/antinvestor/common
   - buf.build/gnostic/gnostic
 
 lint:

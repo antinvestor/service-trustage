@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { startTransition, useDeferredValue, useEffect, useState } from 'react';
+import { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react';
 import {
   InstanceRun,
+  PageResult,
   SignalMessage,
   SignalWait,
   StateOutput,
@@ -28,6 +29,16 @@ const navItems = [
 ] as const;
 
 type NavKey = (typeof navItems)[number]['key'];
+type ResourceState<T> = {
+  items: T[];
+  nextCursor: string;
+  loading: boolean;
+  loadingMore: boolean;
+};
+
+const DEFAULT_PAGE_SIZE = 50;
+const CHILD_PAGE_SIZE = 100;
+const MAX_CHILD_PAGES = 20;
 
 function formatDate(value?: string) {
   if (!value) {
@@ -86,13 +97,13 @@ function statusTone(status?: string) {
   return 'bg-stone-100 text-stone-600 border-stone-200';
 }
 
-function matchesQuery(query: string, values: Array<string | number | undefined>) {
-  if (!query.trim()) {
-    return true;
-  }
-
-  const needle = query.trim().toLowerCase();
-  return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
+function createResourceState<T>(): ResourceState<T> {
+  return {
+    items: [],
+    nextCursor: '',
+    loading: false,
+    loadingMore: false,
+  };
 }
 
 function sortByNewest<T extends { createdAt?: string }>(items: T[]) {
@@ -124,6 +135,10 @@ function canRetry(status?: string) {
 
 function isWaiting(status?: string) {
   return humanizeToken(status).includes('waiting');
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function Panel({
@@ -417,9 +432,10 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState('');
   const [lastSyncedAt, setLastSyncedAt] = useState('');
 
-  const [instances, setInstances] = useState<WorkflowInstance[]>([]);
-  const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
-  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
+  const [instanceState, setInstanceState] = useState<ResourceState<WorkflowInstance>>(() => createResourceState());
+  const [executionState, setExecutionState] = useState<ResourceState<WorkflowExecution>>(() => createResourceState());
+  const [workflowState, setWorkflowState] = useState<ResourceState<WorkflowDefinition>>(() => createResourceState());
+  const [childInstanceState, setChildInstanceState] = useState<ResourceState<WorkflowInstance>>(() => createResourceState());
   const [selectedRun, setSelectedRun] = useState<InstanceRun | null>(null);
   const [selectedExecution, setSelectedExecution] = useState<WorkflowExecution | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState('');
@@ -437,7 +453,7 @@ export default function App() {
   const [signalName, setSignalName] = useState('');
   const [signalPayload, setSignalPayload] = useState('{\n  "approved": true\n}');
 
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [refreshingData, setRefreshingData] = useState(false);
   const [loadingRun, setLoadingRun] = useState(false);
   const [busyAction, setBusyAction] = useState('');
 
@@ -446,13 +462,41 @@ export default function App() {
   const deferredWorkflowQuery = useDeferredValue(workflowQuery);
   const hasConfig = settings.apiBaseUrl.trim().length > 0;
 
+  const instanceAbortRef = useRef<AbortController | null>(null);
+  const executionAbortRef = useRef<AbortController | null>(null);
+  const workflowAbortRef = useRef<AbortController | null>(null);
+  const runAbortRef = useRef<AbortController | null>(null);
+  const childAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!hasConfig) {
+      setInstanceState(createResourceState());
+      setExecutionState(createResourceState());
+      setWorkflowState(createResourceState());
+      setChildInstanceState(createResourceState());
+      setSelectedRun(null);
+      setSelectedExecution(null);
+      return;
+    }
+
+    void reloadInstances();
+  }, [hasConfig, settings.apiBaseUrl, settings.authToken, deferredInstanceQuery]);
+
   useEffect(() => {
     if (!hasConfig) {
       return;
     }
 
-    void refreshSnapshot();
-  }, [hasConfig, settings.apiBaseUrl, settings.authToken]);
+    void reloadExecutions();
+  }, [hasConfig, settings.apiBaseUrl, settings.authToken, deferredExecutionQuery]);
+
+  useEffect(() => {
+    if (!hasConfig) {
+      return;
+    }
+
+    void reloadWorkflows();
+  }, [hasConfig, settings.apiBaseUrl, settings.authToken, deferredWorkflowQuery]);
 
   useEffect(() => {
     const firstWaitingSignal = selectedRun?.signalWaits.find((item) => humanizeToken(item.status) === 'waiting');
@@ -461,35 +505,299 @@ export default function App() {
     }
   }, [selectedRun?.instance?.id]);
 
-  async function refreshSnapshot() {
+  useEffect(() => {
+    return () => {
+      instanceAbortRef.current?.abort();
+      executionAbortRef.current?.abort();
+      workflowAbortRef.current?.abort();
+      runAbortRef.current?.abort();
+      childAbortRef.current?.abort();
+    };
+  }, []);
+
+  const instances = instanceState.items;
+  const executions = executionState.items;
+  const workflows = workflowState.items;
+  const childInstances = childInstanceState.items;
+
+  function errorText(error: unknown) {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
+  }
+
+  function markSynced() {
+    setLastSyncedAt(new Date().toISOString());
+  }
+
+  async function loadInstancesPage(cursor = '', append = false) {
     if (!hasConfig) {
       return;
     }
 
-    setLoadingSnapshot(true);
+    instanceAbortRef.current?.abort();
+    const controller = new AbortController();
+    instanceAbortRef.current = controller;
+
+    setInstanceState((current) => ({
+      ...current,
+      loading: !append,
+      loadingMore: append,
+    }));
+
     try {
-      const [instanceResponse, executionResponse, workflowResponse] = await Promise.all([
-        listInstances(settings, { limit: 250 }),
-        listExecutions(settings, { limit: 250 }),
-        listWorkflows(settings),
-      ]);
+      const page = await listInstances(
+        settings,
+        {
+          limit: DEFAULT_PAGE_SIZE,
+          query: deferredInstanceQuery,
+          cursor,
+        },
+        { signal: controller.signal },
+      );
+
+      if (controller.signal.aborted) {
+        return;
+      }
 
       startTransition(() => {
-        setInstances(instanceResponse.items ?? []);
-        setExecutions(executionResponse.items ?? []);
-        setWorkflows(workflowResponse.items ?? []);
+        setInstanceState((current) => ({
+          items: append ? [...current.items, ...page.items] : page.items,
+          nextCursor: page.nextCursor || '',
+          loading: false,
+          loadingMore: false,
+        }));
       });
+      markSynced();
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
 
+      setInstanceState((current) => ({ ...current, loading: false, loadingMore: false }));
+      setStatusMessage(errorText(error));
+    }
+  }
+
+  async function reloadInstances() {
+    await loadInstancesPage('', false);
+  }
+
+  async function loadMoreInstances() {
+    if (!instanceState.nextCursor || instanceState.loadingMore) {
+      return;
+    }
+
+    await loadInstancesPage(instanceState.nextCursor, true);
+  }
+
+  async function loadExecutionsPage(cursor = '', append = false) {
+    if (!hasConfig) {
+      return;
+    }
+
+    executionAbortRef.current?.abort();
+    const controller = new AbortController();
+    executionAbortRef.current = controller;
+
+    setExecutionState((current) => ({
+      ...current,
+      loading: !append,
+      loadingMore: append,
+    }));
+
+    try {
+      const page = await listExecutions(
+        settings,
+        {
+          limit: DEFAULT_PAGE_SIZE,
+          query: deferredExecutionQuery,
+          cursor,
+        },
+        { signal: controller.signal },
+      );
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      startTransition(() => {
+        setExecutionState((current) => ({
+          items: append ? [...current.items, ...page.items] : page.items,
+          nextCursor: page.nextCursor || '',
+          loading: false,
+          loadingMore: false,
+        }));
+      });
+      markSynced();
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      setExecutionState((current) => ({ ...current, loading: false, loadingMore: false }));
+      setStatusMessage(errorText(error));
+    }
+  }
+
+  async function reloadExecutions() {
+    await loadExecutionsPage('', false);
+  }
+
+  async function loadMoreExecutions() {
+    if (!executionState.nextCursor || executionState.loadingMore) {
+      return;
+    }
+
+    await loadExecutionsPage(executionState.nextCursor, true);
+  }
+
+  async function loadWorkflowsPage(cursor = '', append = false) {
+    if (!hasConfig) {
+      return;
+    }
+
+    workflowAbortRef.current?.abort();
+    const controller = new AbortController();
+    workflowAbortRef.current = controller;
+
+    setWorkflowState((current) => ({
+      ...current,
+      loading: !append,
+      loadingMore: append,
+    }));
+
+    try {
+      const page = await listWorkflows(
+        settings,
+        {
+          limit: DEFAULT_PAGE_SIZE,
+          query: deferredWorkflowQuery,
+          cursor,
+          status: 'WORKFLOW_STATUS_ACTIVE',
+        },
+        { signal: controller.signal },
+      );
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      startTransition(() => {
+        setWorkflowState((current) => ({
+          items: append ? [...current.items, ...page.items] : page.items,
+          nextCursor: page.nextCursor || '',
+          loading: false,
+          loadingMore: false,
+        }));
+      });
+      markSynced();
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      setWorkflowState((current) => ({ ...current, loading: false, loadingMore: false }));
+      setStatusMessage(errorText(error));
+    }
+  }
+
+  async function reloadWorkflows() {
+    await loadWorkflowsPage('', false);
+  }
+
+  async function loadMoreWorkflows() {
+    if (!workflowState.nextCursor || workflowState.loadingMore) {
+      return;
+    }
+
+    await loadWorkflowsPage(workflowState.nextCursor, true);
+  }
+
+  async function loadMoreChildInstances() {
+    if (!selectedRun?.instance?.id || !childInstanceState.nextCursor || childInstanceState.loadingMore) {
+      return;
+    }
+
+    await loadChildInstances(selectedRun.instance.id, childInstanceState.nextCursor, true);
+  }
+
+  async function loadChildInstances(instanceId: string, cursor = '', append = false) {
+    childAbortRef.current?.abort();
+    const controller = new AbortController();
+    childAbortRef.current = controller;
+
+    setChildInstanceState((current) => ({
+      ...current,
+      loading: !append,
+      loadingMore: append,
+    }));
+
+    try {
+      const batches: WorkflowInstance[] = [];
+      let nextCursor = cursor;
+      let pagesLoaded = 0;
+      let finalCursor = '';
+
+      do {
+        const page: PageResult<WorkflowInstance> = await listInstances(
+          settings,
+          {
+            limit: CHILD_PAGE_SIZE,
+            parentInstanceId: instanceId,
+            cursor: nextCursor,
+          },
+          { signal: controller.signal, timeoutMs: 20000 },
+        );
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        batches.push(...page.items);
+        finalCursor = page.nextCursor || '';
+        nextCursor = finalCursor;
+        pagesLoaded += 1;
+      } while (nextCursor && pagesLoaded < MAX_CHILD_PAGES);
+
+      startTransition(() => {
+        setChildInstanceState((current) => ({
+          items: append ? [...current.items, ...batches] : batches,
+          nextCursor: finalCursor,
+          loading: false,
+          loadingMore: false,
+        }));
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      setChildInstanceState((current) => ({ ...current, loading: false, loadingMore: false }));
+      setStatusMessage(errorText(error));
+    }
+  }
+
+  async function refreshVisibleData() {
+    if (!hasConfig) {
+      return;
+    }
+
+    setRefreshingData(true);
+    try {
+      await Promise.all([reloadInstances(), reloadExecutions(), reloadWorkflows()]);
       if (selectedRun?.instance?.id) {
         await loadInstanceRun(selectedRun.instance.id, selectedExecutionId || undefined, true);
       }
-
-      setLastSyncedAt(new Date().toISOString());
-      setStatusMessage('Snapshot refreshed');
+      setStatusMessage('Visible windows refreshed');
     } catch (error) {
-      setStatusMessage(String(error));
+      if (!isAbortError(error)) {
+        setStatusMessage(errorText(error));
+      }
     } finally {
-      setLoadingSnapshot(false);
+      setRefreshingData(false);
     }
   }
 
@@ -498,21 +806,31 @@ export default function App() {
       setLoadingRun(true);
     }
 
+    runAbortRef.current?.abort();
+    const controller = new AbortController();
+    runAbortRef.current = controller;
+
     try {
-      const run = await getInstanceRun(settings, instanceId);
+      const [run, detail] = await Promise.all([
+        getInstanceRun(settings, instanceId, { signal: controller.signal, timeoutMs: 20000 }),
+        executionId ? getExecution(settings, executionId, { signal: controller.signal }) : Promise.resolve(null),
+      ]);
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
       startTransition(() => {
         setSelectedRun(run);
         setSelectedExecutionId(executionId || run.latestExecution?.id || '');
+        setSelectedExecution(detail || null);
       });
 
-      if (executionId) {
-        const detail = await getExecution(settings, executionId);
-        setSelectedExecution(detail || null);
-      } else {
-        setSelectedExecution(null);
-      }
+      await loadChildInstances(instanceId);
     } catch (error) {
-      setStatusMessage(String(error));
+      if (!isAbortError(error)) {
+        setStatusMessage(errorText(error));
+      }
     } finally {
       if (!quiet) {
         setLoadingRun(false);
@@ -530,18 +848,11 @@ export default function App() {
     setLoadingRun(true);
 
     try {
-      const [run, detail] = await Promise.all([
-        getInstanceRun(settings, execution.instanceId),
-        getExecution(settings, execution.id),
-      ]);
-
-      startTransition(() => {
-        setSelectedRun(run);
-        setSelectedExecution(detail || execution);
-        setSelectedExecutionId(execution.id);
-      });
+      await loadInstanceRun(execution.instanceId, execution.id, true);
     } catch (error) {
-      setStatusMessage(String(error));
+      if (!isAbortError(error)) {
+        setStatusMessage(errorText(error));
+      }
     } finally {
       setLoadingRun(false);
     }
@@ -551,13 +862,13 @@ export default function App() {
     setBusyAction(`retry-execution-${executionId}`);
     try {
       await retryExecution(settings, executionId);
-      await refreshSnapshot();
+      await refreshVisibleData();
       if (selectedRun?.instance?.id) {
         await loadInstanceRun(selectedRun.instance.id, executionId, true);
       }
       setStatusMessage(`Retry scheduled for execution ${executionId}`);
     } catch (error) {
-      setStatusMessage(String(error));
+      setStatusMessage(errorText(error));
     } finally {
       setBusyAction('');
     }
@@ -567,11 +878,11 @@ export default function App() {
     setBusyAction(`retry-instance-${instanceId}`);
     try {
       await retryInstance(settings, instanceId);
-      await refreshSnapshot();
+      await refreshVisibleData();
       await loadInstanceRun(instanceId, undefined, true);
       setStatusMessage(`Retry scheduled for instance ${instanceId}`);
     } catch (error) {
-      setStatusMessage(String(error));
+      setStatusMessage(errorText(error));
     } finally {
       setBusyAction('');
     }
@@ -588,14 +899,14 @@ export default function App() {
         payload,
       });
 
-      await refreshSnapshot();
+      await refreshVisibleData();
       setStatusMessage(
         response.idempotent
           ? `Event matched existing record ${response.event?.eventId || ''}`
           : `Event accepted as ${response.event?.eventId || ''}`,
       );
     } catch (error) {
-      setStatusMessage(String(error));
+      setStatusMessage(errorText(error));
     } finally {
       setBusyAction('');
     }
@@ -620,7 +931,7 @@ export default function App() {
         payload,
       });
 
-      await refreshSnapshot();
+      await refreshVisibleData();
       await loadInstanceRun(selectedRun.instance.id, selectedExecutionId || undefined, true);
       setStatusMessage(
         response.delivered
@@ -628,7 +939,7 @@ export default function App() {
           : `Signal ${signalName} queued for ${selectedRun.instance.id}`,
       );
     } catch (error) {
-      setStatusMessage(String(error));
+      setStatusMessage(errorText(error));
     } finally {
       setBusyAction('');
     }
@@ -639,29 +950,9 @@ export default function App() {
     saveSettings(next);
   }
 
-  const filteredInstances = sortByNewest(instances).filter((instance) =>
-    matchesQuery(deferredInstanceQuery, [
-      instance.id,
-      instance.workflowName,
-      instance.currentState,
-      instance.status,
-      instance.parentExecutionId,
-      instance.parentInstanceId,
-    ]),
-  );
-  const filteredExecutions = sortByNewest(executions).filter((execution) =>
-    matchesQuery(deferredExecutionQuery, [
-      execution.id,
-      execution.instanceId,
-      execution.state,
-      execution.status,
-      execution.traceId,
-      execution.errorMessage,
-    ]),
-  );
-  const filteredWorkflows = [...workflows].filter((workflow) =>
-    matchesQuery(deferredWorkflowQuery, [workflow.id, workflow.name, workflow.status]),
-  );
+  const filteredInstances = instances;
+  const filteredExecutions = executions;
+  const filteredWorkflows = workflows;
 
   const failureCount = executions.filter((execution) => canRetry(execution.status)).length;
   const waitingCount = executions.filter((execution) => isWaiting(execution.status)).length;
@@ -670,13 +961,6 @@ export default function App() {
     humanizeToken(execution.status).includes('dispatched') ||
     humanizeToken(execution.status).includes('pending'),
   ).length;
-  const childInstances = selectedRun?.instance
-    ? instances.filter(
-        (instance) =>
-          instance.parentInstanceId === selectedRun.instance?.id ||
-          selectedRun.executions.some((execution) => execution.id === instance.parentExecutionId),
-      )
-    : [];
   const selectedExecutionInRun =
     selectedExecution ||
     selectedRun?.executions.find((execution) => execution.id === selectedExecutionId) ||
@@ -721,10 +1005,10 @@ export default function App() {
 
           <div className="mt-8 grid gap-3">
             <MetricCard
-              label="Live instances"
+              label="Visible runs"
               value={instances.length}
               tone="border-sky-200 bg-sky-50 text-sky-800"
-              detail={`${runningCount} currently moving`}
+              detail={`${runningCount} moving in current page`}
             />
             <MetricCard
               label="Waiting work"
@@ -746,15 +1030,15 @@ export default function App() {
               {settings.apiBaseUrl || 'Configure the API base URL'}
             </div>
             <div className="mt-2 text-xs text-stone-500">
-              {lastSyncedAt ? `Last sync ${formatDate(lastSyncedAt)}` : 'No live snapshot yet'}
+              {lastSyncedAt ? `Last sync ${formatDate(lastSyncedAt)}` : 'No live data loaded yet'}
             </div>
             <div className="mt-4 flex gap-2">
               <button
                 className="flex-1 rounded-xl bg-[var(--ink)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white hover:bg-[var(--ink-soft)] disabled:opacity-50"
-                onClick={() => void refreshSnapshot()}
-                disabled={!hasConfig || loadingSnapshot}
+                onClick={() => void refreshVisibleData()}
+                disabled={!hasConfig || refreshingData}
               >
-                {loadingSnapshot ? 'Syncing' : 'Refresh'}
+                {refreshingData ? 'Syncing' : 'Refresh'}
               </button>
               <button
                 className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-700 hover:bg-stone-50"
@@ -791,7 +1075,7 @@ export default function App() {
                     label="Executions"
                     value={executions.length}
                     tone="border-stone-200 bg-stone-50 text-stone-800"
-                    detail="current window"
+                    detail="current result window"
                   />
                   <MetricCard
                     label="Running"
@@ -877,7 +1161,7 @@ export default function App() {
                         {hotExecutions.length === 0 && (
                           <EmptyState
                             title="Nothing urgent"
-                            description="No waiting or failed executions are visible in the current snapshot."
+                            description="No waiting or failed executions are visible in the current result window."
                           />
                         )}
                         {hotExecutions.map((execution) => (
@@ -888,9 +1172,9 @@ export default function App() {
                           >
                             <div>
                               <div className="font-semibold text-stone-900">{execution.state}</div>
-                              <div className="text-xs text-stone-500">
-                                {execution.id} • instance {shortId(execution.instanceId, 10)}
-                              </div>
+                          <div className="text-xs text-stone-500">
+                            {execution.id} • instance {shortId(execution.instanceId, 10)}
+                          </div>
                             </div>
                             <StatusBadge value={execution.status} />
                           </button>
@@ -943,6 +1227,11 @@ export default function App() {
                       />
                     </div>
                     <div className="grid gap-3">
+                      {instanceState.loading && (
+                        <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                          Loading runs…
+                        </div>
+                      )}
                       {filteredInstances.map((instance) => (
                         <button
                           key={instance.id}
@@ -976,8 +1265,17 @@ export default function App() {
                       {filteredInstances.length === 0 && (
                         <EmptyState
                           title="No runs match the current filter"
-                          description="The current snapshot does not contain a matching workflow instance."
+                          description="The server-side run search returned no matching workflow instance."
                         />
+                      )}
+                      {instanceState.nextCursor && (
+                        <button
+                          className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-white disabled:opacity-50"
+                          onClick={() => void loadMoreInstances()}
+                          disabled={instanceState.loadingMore}
+                        >
+                          {instanceState.loadingMore ? 'Loading more runs…' : 'Load more runs'}
+                        </button>
                       )}
                     </div>
                   </Panel>
@@ -999,13 +1297,35 @@ export default function App() {
                       </div>
                     )}
                     {selectedRun?.instance && (
-                      <ExecutionGraph
-                        run={selectedRun}
-                        childInstances={childInstances}
-                        selectedExecutionId={selectedExecutionId}
-                        onSelectExecution={(execution) => void handleSelectExecution(execution)}
-                        onSelectInstance={(instance) => void handleSelectInstance(instance)}
-                      />
+                      <>
+                        <ExecutionGraph
+                          run={selectedRun}
+                          childInstances={childInstances}
+                          selectedExecutionId={selectedExecutionId}
+                          onSelectExecution={(execution) => void handleSelectExecution(execution)}
+                          onSelectInstance={(instance) => void handleSelectInstance(instance)}
+                        />
+                        {(childInstanceState.loadingMore || childInstanceState.nextCursor) && (
+                          <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="text-sm text-stone-600">
+                                {childInstanceState.loadingMore
+                                  ? 'Loading more child runs for the selected trace…'
+                                  : 'More child runs exist for this trace.'}
+                              </div>
+                              {childInstanceState.nextCursor && (
+                                <button
+                                  className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                                  onClick={() => void loadMoreChildInstances()}
+                                  disabled={childInstanceState.loadingMore}
+                                >
+                                  {childInstanceState.loadingMore ? 'Loading…' : 'Load more child runs'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </Panel>
 
@@ -1060,6 +1380,11 @@ export default function App() {
                     />
                   </div>
                   <div className="grid gap-3">
+                    {executionState.loading && (
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                        Loading executions…
+                      </div>
+                    )}
                     {filteredExecutions.map((execution) => (
                       <button
                         key={execution.id}
@@ -1093,6 +1418,7 @@ export default function App() {
                                 event.stopPropagation();
                                 void handleRetryExecution(execution.id);
                               }}
+                              disabled={busyAction === `retry-execution-${execution.id}`}
                             >
                               {busyAction === `retry-execution-${execution.id}` ? 'Retrying' : 'Retry'}
                             </button>
@@ -1103,8 +1429,17 @@ export default function App() {
                     {filteredExecutions.length === 0 && (
                       <EmptyState
                         title="No executions match"
-                        description="Nothing in the visible snapshot matches the current execution filter."
+                        description="The server-side execution search returned no matching state attempts."
                       />
+                    )}
+                    {executionState.nextCursor && (
+                      <button
+                        className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-white disabled:opacity-50"
+                        onClick={() => void loadMoreExecutions()}
+                        disabled={executionState.loadingMore}
+                      >
+                        {executionState.loadingMore ? 'Loading more executions…' : 'Load more executions'}
+                      </button>
                     )}
                   </div>
                 </Panel>
@@ -1125,6 +1460,11 @@ export default function App() {
                     />
                   </div>
                   <div className="grid gap-3">
+                    {workflowState.loading && (
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                        Loading workflows…
+                      </div>
+                    )}
                     {filteredWorkflows.map((workflow) => (
                       <div
                         key={workflow.id}
@@ -1150,8 +1490,17 @@ export default function App() {
                     {filteredWorkflows.length === 0 && (
                       <EmptyState
                         title="No workflows match"
-                        description="The workflow catalog filter returned no active definitions."
+                        description="The server-side workflow search returned no active definitions."
                       />
+                    )}
+                    {workflowState.nextCursor && (
+                      <button
+                        className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-white disabled:opacity-50"
+                        onClick={() => void loadMoreWorkflows()}
+                        disabled={workflowState.loadingMore}
+                      >
+                        {workflowState.loadingMore ? 'Loading more workflows…' : 'Load more workflows'}
+                      </button>
                     )}
                   </div>
                 </Panel>
@@ -1188,7 +1537,7 @@ export default function App() {
                         label="Child runs"
                         value={childInstances.length}
                         tone="border-sky-200 bg-sky-50 text-sky-800"
-                        detail="branch or foreach children"
+                        detail={childInstanceState.nextCursor ? 'partial trace window' : 'branch or foreach children'}
                       />
                       <MetricCard
                         label="Signal waits"
@@ -1217,6 +1566,14 @@ export default function App() {
                           {humanizeToken(selectedRun.resumeStrategy)}
                         </div>
                       </div>
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">Trace coverage</div>
+                        <div className="mt-2 text-sm font-medium text-stone-900">
+                          {childInstanceState.nextCursor
+                            ? 'Child runs are paged; load more to continue the trace graph.'
+                            : 'Direct child runs loaded for the selected trace.'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1241,6 +1598,7 @@ export default function App() {
                         <button
                           className="rounded-2xl bg-[var(--ink)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--ink-soft)]"
                           onClick={() => void handleRetryExecution(selectedExecutionInRun.id)}
+                          disabled={busyAction === `retry-execution-${selectedExecutionInRun.id}`}
                         >
                           {busyAction === `retry-execution-${selectedExecutionInRun.id}`
                             ? 'Retrying execution…'
@@ -1252,6 +1610,7 @@ export default function App() {
                         <button
                           className="rounded-2xl border border-stone-200 px-4 py-3 text-sm font-semibold text-stone-800 hover:bg-stone-50"
                           onClick={() => void handleRetryInstance(selectedRun.instance!.id)}
+                          disabled={busyAction === `retry-instance-${selectedRun.instance.id}`}
                         >
                           {busyAction === `retry-instance-${selectedRun.instance.id}`
                             ? 'Retrying instance…'
@@ -1416,7 +1775,7 @@ export default function App() {
             </div>
 
             <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-              Connect-backed endpoints in use: workflow list, event ingest, runtime list/get/run, retries, and signal delivery.
+              Connect-backed endpoints in use: workflow list, event ingest, runtime list/get/run, retries, and signal delivery. The auth token is stored in session storage only.
             </div>
           </div>
         </div>

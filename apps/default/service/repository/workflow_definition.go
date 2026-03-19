@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
@@ -16,7 +17,21 @@ type WorkflowDefinitionRepository interface {
 	GetByID(ctx context.Context, id string) (*models.WorkflowDefinition, error)
 	GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error)
 	ListActiveByName(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
+	ListPage(ctx context.Context, filter WorkflowDefinitionListFilter) (*WorkflowDefinitionPage, error)
 	Update(ctx context.Context, def *models.WorkflowDefinition) error
+}
+
+type WorkflowDefinitionListFilter struct {
+	Name    string
+	Query   string
+	IDQuery string
+	Cursor  string
+	Limit   int
+}
+
+type WorkflowDefinitionPage struct {
+	Items      []*models.WorkflowDefinition
+	NextCursor string
 }
 
 type workflowDefinitionRepository struct {
@@ -71,29 +86,62 @@ func (r *workflowDefinitionRepository) ListActiveByName(
 	name string,
 	limit int,
 ) ([]*models.WorkflowDefinition, error) {
+	page, err := r.ListPage(ctx, WorkflowDefinitionListFilter{
+		Name:  name,
+		Limit: limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return page.Items, nil
+}
+
+func (r *workflowDefinitionRepository) ListPage(
+	ctx context.Context,
+	filter WorkflowDefinitionListFilter,
+) (*WorkflowDefinitionPage, error) {
 	db := r.BaseRepository.Pool().DB(ctx, true)
 
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > maxListLimit {
-		limit = maxListLimit
-	}
+	limit := normalizeListLimit(filter.Limit)
 
 	var defs []*models.WorkflowDefinition
 
 	query := db.Where("status = ? AND deleted_at IS NULL", models.WorkflowStatusActive)
-	if name != "" {
-		query = query.Where("name = ?", name)
+	if filter.Name != "" {
+		query = query.Where("name = ?", filter.Name)
+	}
+	if q := strings.TrimSpace(filter.IDQuery); q != "" {
+		query = query.Where("id ILIKE ?", "%"+q+"%")
+	}
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		like := "%" + q + "%"
+		query = query.Where("(id ILIKE ? OR name ILIKE ?)", like, like)
 	}
 
-	result := query.Order("workflow_version DESC").Limit(limit).Find(&defs)
+	var err error
+	query, err = applyDescendingCreatedAtCursor(query, filter.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow definitions: %w", err)
+	}
+
+	result := query.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&defs)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("list active workflows: %w", result.Error)
 	}
 
-	return defs, nil
+	nextCursor := ""
+	if len(defs) > limit {
+		last := defs[limit-1]
+		nextCursor = encodeListCursor(last.CreatedAt, last.ID)
+		defs = defs[:limit]
+	}
+
+	return &WorkflowDefinitionPage{
+		Items:      defs,
+		NextCursor: nextCursor,
+	}, nil
 }
 
 func (r *workflowDefinitionRepository) Update(ctx context.Context, def *models.WorkflowDefinition) error {

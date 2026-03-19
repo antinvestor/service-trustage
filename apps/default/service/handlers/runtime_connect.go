@@ -73,23 +73,29 @@ func (s *RuntimeConnectServer) ListInstances(
 		}
 	}
 
-	items, err := s.instanceRepo.List(
-		ctx,
-		instanceStatusFilter(req.Msg.GetStatus()),
-		req.Msg.GetWorkflowName(),
-		int(req.Msg.GetLimit()),
-	)
+	pageLimit := searchLimit(req.Msg.GetSearch(), 50)
+	itemsPage, err := s.instanceRepo.ListPage(ctx, repository.WorkflowInstanceListFilter{
+		Status:            instanceStatusFilter(req.Msg.GetStatus()),
+		WorkflowName:      req.Msg.GetWorkflowName(),
+		Query:             searchQuery(req.Msg.GetSearch()),
+		IDQuery:           searchIDQuery(req.Msg.GetSearch()),
+		ParentInstanceID:  searchExtraString(req.Msg.GetSearch(), "parent_instance_id"),
+		ParentExecutionID: searchExtraString(req.Msg.GetSearch(), "parent_execution_id"),
+		Cursor:            searchPage(req.Msg.GetSearch()),
+		Limit:             pageLimit,
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to list instances"))
 	}
 
-	respItems := make([]*runtimev1.WorkflowInstance, 0, len(items))
-	for _, item := range items {
+	respItems := make([]*runtimev1.WorkflowInstance, 0, len(itemsPage.Items))
+	for _, item := range itemsPage.Items {
 		respItems = append(respItems, workflowInstanceToProto(item))
 	}
 
 	return connect.NewResponse(&runtimev1.ListInstancesResponse{
-		Items: respItems,
+		Items:      respItems,
+		NextCursor: nextCursorProto(itemsPage.NextCursor, pageLimit),
 	}), nil
 }
 
@@ -145,23 +151,27 @@ func (s *RuntimeConnectServer) ListExecutions(
 		}
 	}
 
-	items, err := s.execRepo.List(
-		ctx,
-		executionStatusFilter(req.Msg.GetStatus()),
-		req.Msg.GetInstanceId(),
-		int(req.Msg.GetLimit()),
-	)
+	pageLimit := searchLimit(req.Msg.GetSearch(), 50)
+	itemsPage, err := s.execRepo.ListPage(ctx, repository.WorkflowExecutionListFilter{
+		Status:     executionStatusFilter(req.Msg.GetStatus()),
+		InstanceID: req.Msg.GetInstanceId(),
+		Query:      searchQuery(req.Msg.GetSearch()),
+		IDQuery:    searchIDQuery(req.Msg.GetSearch()),
+		Cursor:     searchPage(req.Msg.GetSearch()),
+		Limit:      pageLimit,
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	respItems := make([]*runtimev1.WorkflowExecution, 0, len(items))
-	for _, item := range items {
+	respItems := make([]*runtimev1.WorkflowExecution, 0, len(itemsPage.Items))
+	for _, item := range itemsPage.Items {
 		respItems = append(respItems, workflowExecutionToProto(item, "", false))
 	}
 
 	return connect.NewResponse(&runtimev1.ListExecutionsResponse{
-		Items: respItems,
+		Items:      respItems,
+		NextCursor: nextCursorProto(itemsPage.NextCursor, pageLimit),
 	}), nil
 }
 

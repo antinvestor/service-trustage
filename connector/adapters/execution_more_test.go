@@ -53,7 +53,6 @@ func TestAdapters_DisplayNames(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if tc.got != tc.want {
@@ -239,7 +238,6 @@ func TestLogAndAIHelpers(t *testing.T) {
 	}
 
 	for _, tc := range classCases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			execErr := classifyBAMLError(tc.err)

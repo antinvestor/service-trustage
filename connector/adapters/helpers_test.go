@@ -43,7 +43,6 @@ func TestURLValidationAndHTTPClassification(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-
 		t.Run(http.StatusText(tc.status), func(t *testing.T) {
 			t.Parallel()
 			err := classifyHTTPStatus(tc.status, "body")

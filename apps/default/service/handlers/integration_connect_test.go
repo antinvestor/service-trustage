@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	commonv1 "github.com/antinvestor/apis/go/common/v1"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	eventv1 "github.com/antinvestor/service-trustage/gen/go/event/v1"
@@ -35,7 +36,9 @@ func (s *HandlerSuite) TestWorkflowConnectServer_LifecycleAndAuth() {
 
 	_, err = server.ListWorkflows(ctx, connectReq(&workflowv1.ListWorkflowsRequest{
 		Status: workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE,
-		Limit:  10,
+		Search: &commonv1.SearchRequest{
+			Cursor: &commonv1.PageCursor{Limit: 10},
+		},
 	}))
 	s.Require().NoError(err)
 
@@ -170,11 +173,20 @@ func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
 		allowAllAuthz{},
 	)
 
-	_, err := runtimeServer.ListInstances(ctx, connectReq(&runtimev1.ListInstancesRequest{Limit: 10}))
+	_, err := runtimeServer.ListInstances(ctx, connectReq(&runtimev1.ListInstancesRequest{
+		Search: &commonv1.SearchRequest{
+			Cursor: &commonv1.PageCursor{Limit: 10},
+		},
+	}))
 	s.Require().NoError(err)
 	_, err = runtimeServer.ListExecutions(
 		ctx,
-		connectReq(&runtimev1.ListExecutionsRequest{InstanceId: instance.ID, Limit: 10}),
+		connectReq(&runtimev1.ListExecutionsRequest{
+			InstanceId: instance.ID,
+			Search: &commonv1.SearchRequest{
+				Cursor: &commonv1.PageCursor{Limit: 10},
+			},
+		}),
 	)
 	s.Require().NoError(err)
 	_, err = runtimeServer.GetExecution(ctx, connectReq(&runtimev1.GetExecutionRequest{
@@ -359,7 +371,6 @@ func (s *HandlerSuite) TestConnectServers_ValidationAndFailurePaths() {
 	}
 
 	for _, tc := range tests {
-
 		s.Run(tc.name, func() {
 			err := tc.exec()
 			s.Require().Error(err)
@@ -405,7 +416,6 @@ func TestResumeStrategyForExecution(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			s := resumeStrategyForExecution(tc.exec)

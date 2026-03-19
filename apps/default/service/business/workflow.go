@@ -20,7 +20,21 @@ type WorkflowBusiness interface {
 	) (*models.WorkflowDefinition, error)
 	GetWorkflow(ctx context.Context, id string) (*models.WorkflowDefinition, error)
 	ListWorkflows(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
+	SearchWorkflows(ctx context.Context, filter WorkflowListFilter) (*WorkflowListPage, error)
 	ActivateWorkflow(ctx context.Context, id string) error
+}
+
+type WorkflowListFilter struct {
+	Name    string
+	Query   string
+	IDQuery string
+	Cursor  string
+	Limit   int
+}
+
+type WorkflowListPage struct {
+	Items      []*models.WorkflowDefinition
+	NextCursor string
 }
 
 type workflowBusiness struct {
@@ -217,6 +231,27 @@ func (b *workflowBusiness) ListWorkflows(
 	limit int,
 ) ([]*models.WorkflowDefinition, error) {
 	return b.defRepo.ListActiveByName(ctx, name, limit)
+}
+
+func (b *workflowBusiness) SearchWorkflows(
+	ctx context.Context,
+	filter WorkflowListFilter,
+) (*WorkflowListPage, error) {
+	page, err := b.defRepo.ListPage(ctx, repository.WorkflowDefinitionListFilter{
+		Name:    filter.Name,
+		Query:   filter.Query,
+		IDQuery: filter.IDQuery,
+		Cursor:  filter.Cursor,
+		Limit:   filter.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &WorkflowListPage{
+		Items:      page.Items,
+		NextCursor: page.NextCursor,
+	}, nil
 }
 
 func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {

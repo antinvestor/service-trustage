@@ -112,18 +112,26 @@ func (s *WorkflowConnectServer) ListWorkflows(
 		return nil, err
 	}
 
-	defs, err := s.workflowBiz.ListWorkflows(ctx, req.Msg.GetName(), int(req.Msg.GetLimit()))
+	pageLimit := searchLimit(req.Msg.GetSearch(), 50)
+	page, err := s.workflowBiz.SearchWorkflows(ctx, business.WorkflowListFilter{
+		Name:    req.Msg.GetName(),
+		Query:   searchQuery(req.Msg.GetSearch()),
+		IDQuery: searchIDQuery(req.Msg.GetSearch()),
+		Cursor:  searchPage(req.Msg.GetSearch()),
+		Limit:   pageLimit,
+	})
 	if err != nil {
 		return nil, connectErrorForBusiness(err)
 	}
 
-	items := make([]*workflowv1.WorkflowDefinition, 0, len(defs))
-	for _, def := range defs {
+	items := make([]*workflowv1.WorkflowDefinition, 0, len(page.Items))
+	for _, def := range page.Items {
 		items = append(items, workflowDefinitionToProto(def))
 	}
 
 	return connect.NewResponse(&workflowv1.ListWorkflowsResponse{
-		Items: items,
+		Items:      items,
+		NextCursor: nextCursorProto(page.NextCursor, pageLimit),
 	}), nil
 }
 
