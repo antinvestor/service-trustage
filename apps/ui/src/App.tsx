@@ -1,26 +1,30 @@
-import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { startTransition, useDeferredValue, useEffect, useState } from 'react';
 import {
-  ExecutionDetail,
-  ExecutionItem,
-  InstanceItem,
-  TimelineEntry,
-  WorkflowItem,
+  InstanceRun,
+  SignalMessage,
+  SignalWait,
+  StateOutput,
+  WorkflowDefinition,
+  WorkflowExecution,
+  WorkflowInstance,
   getExecution,
-  getInstanceTimeline,
+  getInstanceRun,
   ingestEvent,
   listExecutions,
   listInstances,
   listWorkflows,
   retryExecution,
   retryInstance,
+  sendSignal,
 } from './lib/api';
 import { ConsoleSettings, loadSettings, saveSettings } from './lib/storage';
 
 const navItems = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'instances', label: 'Instances' },
-  { key: 'executions', label: 'Executions' },
-  { key: 'workflows', label: 'Workflows' },
+  { key: 'overview', label: 'Command Deck' },
+  { key: 'runs', label: 'Run Explorer' },
+  { key: 'executions', label: 'Execution Queue' },
+  { key: 'workflows', label: 'Workflow Catalog' },
 ] as const;
 
 type NavKey = (typeof navItems)[number]['key'];
@@ -29,40 +33,380 @@ function formatDate(value?: string) {
   if (!value) {
     return '—';
   }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
+
   return date.toLocaleString();
 }
 
+function shortId(value?: string, size = 8) {
+  if (!value) {
+    return '—';
+  }
+
+  return value.length <= size ? value : value.slice(0, size);
+}
+
+function humanizeToken(value?: string) {
+  if (!value) {
+    return 'unknown';
+  }
+
+  return value
+    .replace(/^.*STATUS_/, '')
+    .replace(/^WORKFLOW_STATUS_/, '')
+    .replace(/^INSTANCE_STATUS_/, '')
+    .replace(/^EXECUTION_STATUS_/, '')
+    .replace(/_/g, ' ')
+    .toLowerCase();
+}
+
 function statusTone(status?: string) {
-  if (!status) {
-    return 'bg-slate-100 text-slate-600';
+  const normalized = humanizeToken(status);
+
+  if (normalized.includes('fatal') || normalized.includes('failed') || normalized.includes('invalid')) {
+    return 'bg-rose-100 text-rose-700 border-rose-200';
   }
-  if (status.includes('failed') || status.includes('fatal') || status.includes('invalid')) {
-    return 'bg-rose-100 text-rose-700';
+  if (normalized.includes('waiting') || normalized.includes('suspended')) {
+    return 'bg-amber-100 text-amber-800 border-amber-200';
   }
-  if (status.includes('running') || status.includes('dispatched')) {
-    return 'bg-blue-100 text-blue-700';
+  if (normalized.includes('running') || normalized.includes('dispatched') || normalized.includes('pending')) {
+    return 'bg-sky-100 text-sky-700 border-sky-200';
   }
-  if (status.includes('retry')) {
-    return 'bg-amber-100 text-amber-700';
+  if (normalized.includes('retry')) {
+    return 'bg-orange-100 text-orange-700 border-orange-200';
   }
-  if (status.includes('completed')) {
-    return 'bg-emerald-100 text-emerald-700';
+  if (normalized.includes('completed') || normalized.includes('active')) {
+    return 'bg-emerald-100 text-emerald-700 border-emerald-200';
   }
-  return 'bg-slate-100 text-slate-600';
+
+  return 'bg-stone-100 text-stone-600 border-stone-200';
+}
+
+function matchesQuery(query: string, values: Array<string | number | undefined>) {
+  if (!query.trim()) {
+    return true;
+  }
+
+  const needle = query.trim().toLowerCase();
+  return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
+}
+
+function sortByNewest<T extends { createdAt?: string }>(items: T[]) {
+  return [...items].sort((left, right) => {
+    const a = new Date(left.createdAt || '').getTime() || 0;
+    const b = new Date(right.createdAt || '').getTime() || 0;
+    return b - a;
+  });
+}
+
+function outputForExecution(outputs: StateOutput[], executionId?: string) {
+  if (!executionId) {
+    return undefined;
+  }
+
+  return outputs.find((item) => item.executionId === executionId);
 }
 
 function canRetry(status?: string) {
-  if (!status) return false;
+  const normalized = humanizeToken(status);
   return (
-    status.includes('failed') ||
-    status.includes('fatal') ||
-    status.includes('invalid') ||
-    status.includes('timed_out') ||
-    status.includes('retry')
+    normalized.includes('failed') ||
+    normalized.includes('fatal') ||
+    normalized.includes('timed out') ||
+    normalized.includes('invalid') ||
+    normalized.includes('retry')
+  );
+}
+
+function isWaiting(status?: string) {
+  return humanizeToken(status).includes('waiting');
+}
+
+function Panel({
+  eyebrow,
+  title,
+  subtitle,
+  actions,
+  children,
+  className = '',
+}: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-[28px] border border-stone-200/80 bg-white/90 p-5 shadow-[0_20px_60px_rgba(40,34,24,0.08)] backdrop-blur ${className}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          {eyebrow && (
+            <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-stone-400">
+              {eyebrow}
+            </div>
+          )}
+          <h2 className="mt-1 font-logo text-xl font-semibold text-stone-900">{title}</h2>
+          {subtitle && <p className="mt-1 text-sm text-stone-500">{subtitle}</p>}
+        </div>
+        {actions}
+      </div>
+      <div className="mt-5">{children}</div>
+    </section>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  tone,
+  detail,
+}: {
+  label: string;
+  value: string | number;
+  tone: string;
+  detail?: string;
+}) {
+  return (
+    <div className={`rounded-[24px] border px-4 py-4 ${tone}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.3em]">{label}</div>
+      <div className="mt-3 text-3xl font-semibold">{value}</div>
+      {detail && <div className="mt-2 text-xs opacity-80">{detail}</div>}
+    </div>
+  );
+}
+
+function StatusBadge({ value }: { value?: string }) {
+  return (
+    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${statusTone(value)}`}>
+      {humanizeToken(value)}
+    </span>
+  );
+}
+
+function JsonBlock({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string;
+  value: unknown;
+  compact?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-stone-950/95 px-4 py-3 text-stone-100">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">{label}</div>
+      <pre className={`mt-3 overflow-auto font-mono text-[11px] leading-5 text-stone-200 ${compact ? 'max-h-28' : 'max-h-72'}`}>
+        {JSON.stringify(value ?? {}, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-dashed border-stone-300 bg-stone-50 px-5 py-8 text-center">
+      <div className="font-logo text-lg font-semibold text-stone-800">{title}</div>
+      <p className="mt-2 text-sm text-stone-500">{description}</p>
+    </div>
+  );
+}
+
+function ExecutionGraph({
+  run,
+  childInstances,
+  selectedExecutionId,
+  onSelectExecution,
+  onSelectInstance,
+}: {
+  run: InstanceRun;
+  childInstances: WorkflowInstance[];
+  selectedExecutionId?: string;
+  onSelectExecution: (execution: WorkflowExecution) => void;
+  onSelectInstance: (instance: WorkflowInstance) => void;
+}) {
+  const executions = sortByNewest(run.executions).reverse();
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-[24px] border border-stone-200 bg-stone-50 px-4 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <StatusBadge value={run.instance?.status} />
+          <div className="font-semibold text-stone-900">{run.instance?.workflowName}</div>
+          <div className="text-xs text-stone-500">instance {run.instance?.id}</div>
+          <div className="text-xs text-stone-500">trace {run.traceId || run.latestExecution?.traceId || '—'}</div>
+        </div>
+        <div className="mt-3 grid gap-3 text-sm text-stone-600 md:grid-cols-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Current state</div>
+            <div className="mt-1 font-medium text-stone-900">{run.instance?.currentState || '—'}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Resume strategy</div>
+            <div className="mt-1 font-medium text-stone-900">{humanizeToken(run.resumeStrategy)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Started</div>
+            <div className="mt-1 font-medium text-stone-900">{formatDate(run.instance?.startedAt)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Latest execution</div>
+            <div className="mt-1 font-medium text-stone-900">{run.latestExecution?.state || '—'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative space-y-5 before:absolute before:bottom-0 before:left-[17px] before:top-2 before:w-px before:bg-stone-200">
+        {executions.map((execution) => {
+          const executionOutput = outputForExecution(run.outputs, execution.id);
+          const scopeRuns = run.scopeRuns.filter((item) => item.parentExecutionId === execution.id);
+          const waits = run.signalWaits.filter((item) => item.executionId === execution.id);
+          const relatedMessages = run.signalMessages.filter((message) =>
+            waits.some((wait) => wait.messageId && wait.messageId === message.id),
+          );
+          const spawnedChildren = childInstances.filter((item) => item.parentExecutionId === execution.id);
+
+          return (
+            <div key={execution.id} className="relative pl-10">
+              <div className="absolute left-[10px] top-6 h-3.5 w-3.5 rounded-full border-4 border-[var(--canvas)] bg-[var(--ink)]" />
+              <button
+                className={`w-full rounded-[24px] border px-4 py-4 text-left transition ${
+                  selectedExecutionId === execution.id
+                    ? 'border-[var(--accent-strong)] bg-[var(--accent-soft)] shadow-[0_12px_30px_rgba(180,82,46,0.18)]'
+                    : 'border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50'
+                }`}
+                onClick={() => onSelectExecution(execution)}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge value={execution.status} />
+                      <div className="font-semibold text-stone-900">{execution.state}</div>
+                      <div className="text-xs text-stone-500">attempt #{execution.attempt}</div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
+                      <span>execution {execution.id}</span>
+                      <span>trace {execution.traceId || '—'}</span>
+                      <span>started {formatDate(execution.startedAt || execution.createdAt)}</span>
+                    </div>
+                    {execution.errorMessage && (
+                      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                        {execution.errorMessage}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-[140px] text-right text-xs text-stone-500">
+                    <div>input schema {shortId(execution.inputSchemaHash)}</div>
+                    <div className="mt-1">output schema {shortId(execution.outputSchemaHash)}</div>
+                  </div>
+                </div>
+              </button>
+
+              {(executionOutput || scopeRuns.length > 0 || waits.length > 0 || spawnedChildren.length > 0 || relatedMessages.length > 0) && (
+                <div className="mt-3 space-y-3 pl-5">
+                  {executionOutput && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-emerald-600">
+                        Output snapshot
+                      </div>
+                      <div className="mt-2 font-mono text-[11px] leading-5">
+                        {JSON.stringify(executionOutput.payload ?? {}, null, 2)}
+                      </div>
+                    </div>
+                  )}
+
+                  {scopeRuns.map((scope) => (
+                    <div key={scope.id} className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge value={scope.status} />
+                          <div className="text-sm font-semibold text-sky-900">
+                            {scope.scopeType} scope from {scope.parentState}
+                          </div>
+                        </div>
+                        <div className="text-xs text-sky-700">
+                          {scope.completedChildren}/{scope.totalChildren} completed
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs text-sky-800 md:grid-cols-4">
+                        <div>wait all: {scope.waitAll ? 'yes' : 'no'}</div>
+                        <div>failed: {scope.failedChildren}</div>
+                        <div>next child: {scope.nextChildIndex}</div>
+                        <div>max concurrency: {scope.maxConcurrency || 'auto'}</div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {waits.map((wait) => (
+                    <div key={wait.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge value={wait.status} />
+                          <div className="font-semibold">{wait.signalName}</div>
+                        </div>
+                        <div className="text-xs text-amber-700">
+                          timeout {formatDate(wait.timeoutAt)}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-amber-800">
+                        output var {wait.outputVar || 'direct payload'} • attempts {wait.attempts}
+                      </div>
+                    </div>
+                  ))}
+
+                  {relatedMessages.map((message) => (
+                    <div key={message.id} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge value={message.status} />
+                          <div className="font-semibold">{message.signalName}</div>
+                        </div>
+                        <div className="text-xs text-violet-700">delivered {formatDate(message.deliveredAt)}</div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {spawnedChildren.length > 0 && (
+                    <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">
+                        Spawned child runs
+                      </div>
+                      <div className="mt-3 grid gap-3">
+                        {spawnedChildren.map((child) => (
+                          <button
+                            key={child.id}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-3 text-left hover:border-stone-300"
+                            onClick={() => onSelectInstance(child)}
+                          >
+                            <div>
+                              <div className="font-semibold text-stone-900">{child.workflowName}</div>
+                              <div className="text-xs text-stone-500">
+                                {child.id} • {child.currentState}
+                              </div>
+                            </div>
+                            <StatusBadge value={child.status} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -71,155 +415,222 @@ export default function App() {
   const [settings, setSettings] = useState<ConsoleSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [lastSyncedAt, setLastSyncedAt] = useState('');
 
-  const [instances, setInstances] = useState<InstanceItem[]>([]);
-  const [executions, setExecutions] = useState<ExecutionItem[]>([]);
-  const [workflows, setWorkflows] = useState<WorkflowItem[]>([]);
-  const [selectedInstance, setSelectedInstance] = useState<InstanceItem | null>(null);
-  const [selectedExecution, setSelectedExecution] = useState<ExecutionDetail | null>(null);
-  const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [instances, setInstances] = useState<WorkflowInstance[]>([]);
+  const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
+  const [selectedRun, setSelectedRun] = useState<InstanceRun | null>(null);
+  const [selectedExecution, setSelectedExecution] = useState<WorkflowExecution | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState('');
+
+  const [instanceQuery, setInstanceQuery] = useState('');
+  const [executionQuery, setExecutionQuery] = useState('');
+  const [workflowQuery, setWorkflowQuery] = useState('');
 
   const [eventType, setEventType] = useState('order.created');
-  const [eventSource, setEventSource] = useState('api');
-  const [eventIdempotency, setEventIdempotency] = useState('');
+  const [eventSource, setEventSource] = useState('ops-console');
+  const [eventIdempotencyKey, setEventIdempotencyKey] = useState('');
   const [eventPayload, setEventPayload] = useState(
-    '{\n  "order_id": "12345",\n  "amount": 199.99,\n  "currency": "USD"\n}',
+    '{\n  "order_id": "ord_1001",\n  "amount": 199.99,\n  "currency": "USD"\n}',
   );
+  const [signalName, setSignalName] = useState('');
+  const [signalPayload, setSignalPayload] = useState('{\n  "approved": true\n}');
 
-  const [loadingInstances, setLoadingInstances] = useState(false);
-  const [loadingExecutions, setLoadingExecutions] = useState(false);
-  const [loadingWorkflows, setLoadingWorkflows] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [loadingRun, setLoadingRun] = useState(false);
+  const [busyAction, setBusyAction] = useState('');
 
-  const hasConfig = useMemo(() => settings.apiBaseUrl.length > 0, [settings.apiBaseUrl]);
+  const deferredInstanceQuery = useDeferredValue(instanceQuery);
+  const deferredExecutionQuery = useDeferredValue(executionQuery);
+  const deferredWorkflowQuery = useDeferredValue(workflowQuery);
+  const hasConfig = settings.apiBaseUrl.trim().length > 0;
 
   useEffect(() => {
     if (!hasConfig) {
       return;
     }
 
-    refreshAll();
-  }, [hasConfig, settings]);
+    void refreshSnapshot();
+  }, [hasConfig, settings.apiBaseUrl, settings.authToken]);
 
-  async function refreshAll() {
-    await Promise.all([refreshInstances(), refreshExecutions(), refreshWorkflows()]);
-  }
+  useEffect(() => {
+    const firstWaitingSignal = selectedRun?.signalWaits.find((item) => humanizeToken(item.status) === 'waiting');
+    if (firstWaitingSignal) {
+      setSignalName(firstWaitingSignal.signalName);
+    }
+  }, [selectedRun?.instance?.id]);
 
-  async function refreshInstances() {
+  async function refreshSnapshot() {
     if (!hasConfig) {
       return;
     }
 
-    setLoadingInstances(true);
+    setLoadingSnapshot(true);
     try {
-      const response = await listInstances(settings, { limit: 50 });
-      setInstances(response.items ?? []);
-    } catch (err) {
-      setStatusMessage(String(err));
+      const [instanceResponse, executionResponse, workflowResponse] = await Promise.all([
+        listInstances(settings, { limit: 250 }),
+        listExecutions(settings, { limit: 250 }),
+        listWorkflows(settings),
+      ]);
+
+      startTransition(() => {
+        setInstances(instanceResponse.items ?? []);
+        setExecutions(executionResponse.items ?? []);
+        setWorkflows(workflowResponse.items ?? []);
+      });
+
+      if (selectedRun?.instance?.id) {
+        await loadInstanceRun(selectedRun.instance.id, selectedExecutionId || undefined, true);
+      }
+
+      setLastSyncedAt(new Date().toISOString());
+      setStatusMessage('Snapshot refreshed');
+    } catch (error) {
+      setStatusMessage(String(error));
     } finally {
-      setLoadingInstances(false);
+      setLoadingSnapshot(false);
     }
   }
 
-  async function refreshExecutions() {
-    if (!hasConfig) {
-      return;
+  async function loadInstanceRun(instanceId: string, executionId?: string, quiet = false) {
+    if (!quiet) {
+      setLoadingRun(true);
     }
 
-    setLoadingExecutions(true);
     try {
-      const response = await listExecutions(settings, { limit: 50 });
-      setExecutions(response.items ?? []);
-    } catch (err) {
-      setStatusMessage(String(err));
+      const run = await getInstanceRun(settings, instanceId);
+      startTransition(() => {
+        setSelectedRun(run);
+        setSelectedExecutionId(executionId || run.latestExecution?.id || '');
+      });
+
+      if (executionId) {
+        const detail = await getExecution(settings, executionId);
+        setSelectedExecution(detail || null);
+      } else {
+        setSelectedExecution(null);
+      }
+    } catch (error) {
+      setStatusMessage(String(error));
     } finally {
-      setLoadingExecutions(false);
+      if (!quiet) {
+        setLoadingRun(false);
+      }
     }
   }
 
-  async function refreshWorkflows() {
-    if (!hasConfig) {
-      return;
-    }
-
-    setLoadingWorkflows(true);
-    try {
-      const response = await listWorkflows(settings);
-      setWorkflows(response.items ?? []);
-    } catch (err) {
-      setStatusMessage(String(err));
-    } finally {
-      setLoadingWorkflows(false);
-    }
+  async function handleSelectInstance(instance: WorkflowInstance) {
+    setActiveView('runs');
+    await loadInstanceRun(instance.id);
   }
 
-  async function handleSelectExecution(execution: ExecutionItem) {
-    setSelectedExecution(null);
-    setLoadingDetail(true);
-    try {
-      const detail = await getExecution(settings, execution.execution_id);
-      setSelectedExecution(detail);
-      const timelineData = await getInstanceTimeline(settings, execution.instance_id);
-      setTimeline(timelineData ?? []);
-    } catch (err) {
-      setStatusMessage(String(err));
-    } finally {
-      setLoadingDetail(false);
-    }
-  }
+  async function handleSelectExecution(execution: WorkflowExecution) {
+    setActiveView('runs');
+    setLoadingRun(true);
 
-  async function handleSelectInstance(instance: InstanceItem) {
-    setSelectedInstance(instance);
-    setLoadingDetail(true);
     try {
-      const execs = await listExecutions(settings, { instanceId: instance.id, limit: 50 });
-      setExecutions(execs.items ?? []);
-      const timelineData = await getInstanceTimeline(settings, instance.id);
-      setTimeline(timelineData ?? []);
-    } catch (err) {
-      setStatusMessage(String(err));
+      const [run, detail] = await Promise.all([
+        getInstanceRun(settings, execution.instanceId),
+        getExecution(settings, execution.id),
+      ]);
+
+      startTransition(() => {
+        setSelectedRun(run);
+        setSelectedExecution(detail || execution);
+        setSelectedExecutionId(execution.id);
+      });
+    } catch (error) {
+      setStatusMessage(String(error));
     } finally {
-      setLoadingDetail(false);
+      setLoadingRun(false);
     }
   }
 
   async function handleRetryExecution(executionId: string) {
-    setStatusMessage('Retrying execution...');
+    setBusyAction(`retry-execution-${executionId}`);
     try {
       await retryExecution(settings, executionId);
-      await refreshExecutions();
-      setStatusMessage('Retry scheduled');
-    } catch (err) {
-      setStatusMessage(String(err));
+      await refreshSnapshot();
+      if (selectedRun?.instance?.id) {
+        await loadInstanceRun(selectedRun.instance.id, executionId, true);
+      }
+      setStatusMessage(`Retry scheduled for execution ${executionId}`);
+    } catch (error) {
+      setStatusMessage(String(error));
+    } finally {
+      setBusyAction('');
     }
   }
 
   async function handleRetryInstance(instanceId: string) {
-    setStatusMessage('Retrying instance...');
+    setBusyAction(`retry-instance-${instanceId}`);
     try {
       await retryInstance(settings, instanceId);
-      await refreshExecutions();
-      await refreshInstances();
-      setStatusMessage('Retry scheduled');
-    } catch (err) {
-      setStatusMessage(String(err));
+      await refreshSnapshot();
+      await loadInstanceRun(instanceId, undefined, true);
+      setStatusMessage(`Retry scheduled for instance ${instanceId}`);
+    } catch (error) {
+      setStatusMessage(String(error));
+    } finally {
+      setBusyAction('');
     }
   }
 
   async function handleTriggerEvent() {
-    setStatusMessage('Submitting event...');
+    setBusyAction('trigger-event');
     try {
-      const payloadObject = JSON.parse(eventPayload);
+      const payload = JSON.parse(eventPayload) as Record<string, unknown>;
       const response = await ingestEvent(settings, {
-        event_type: eventType,
+        eventType,
         source: eventSource,
-        idempotency_key: eventIdempotency || undefined,
-        payload: payloadObject,
+        idempotencyKey: eventIdempotencyKey || undefined,
+        payload,
       });
-      setStatusMessage(`Event accepted: ${response.event_id}`);
-      await refreshInstances();
-    } catch (err) {
-      setStatusMessage(String(err));
+
+      await refreshSnapshot();
+      setStatusMessage(
+        response.idempotent
+          ? `Event matched existing record ${response.event?.eventId || ''}`
+          : `Event accepted as ${response.event?.eventId || ''}`,
+      );
+    } catch (error) {
+      setStatusMessage(String(error));
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function handleSendSignal() {
+    if (!selectedRun?.instance?.id) {
+      setStatusMessage('Select a workflow run before sending a signal');
+      return;
+    }
+    if (!signalName.trim()) {
+      setStatusMessage('Signal name is required');
+      return;
+    }
+
+    setBusyAction('send-signal');
+    try {
+      const payload = JSON.parse(signalPayload) as Record<string, unknown>;
+      const response = await sendSignal(settings, {
+        instanceId: selectedRun.instance.id,
+        signalName: signalName.trim(),
+        payload,
+      });
+
+      await refreshSnapshot();
+      await loadInstanceRun(selectedRun.instance.id, selectedExecutionId || undefined, true);
+      setStatusMessage(
+        response.delivered
+          ? `Signal ${signalName} delivered to ${selectedRun.instance.id}`
+          : `Signal ${signalName} queued for ${selectedRun.instance.id}`,
+      );
+    } catch (error) {
+      setStatusMessage(String(error));
+    } finally {
+      setBusyAction('');
     }
   }
 
@@ -228,27 +639,78 @@ export default function App() {
     saveSettings(next);
   }
 
-  const failedExecutions = executions.filter((exec) => canRetry(exec.status));
-  const failedInstances = instances.filter((inst) => canRetry(inst.status));
+  const filteredInstances = sortByNewest(instances).filter((instance) =>
+    matchesQuery(deferredInstanceQuery, [
+      instance.id,
+      instance.workflowName,
+      instance.currentState,
+      instance.status,
+      instance.parentExecutionId,
+      instance.parentInstanceId,
+    ]),
+  );
+  const filteredExecutions = sortByNewest(executions).filter((execution) =>
+    matchesQuery(deferredExecutionQuery, [
+      execution.id,
+      execution.instanceId,
+      execution.state,
+      execution.status,
+      execution.traceId,
+      execution.errorMessage,
+    ]),
+  );
+  const filteredWorkflows = [...workflows].filter((workflow) =>
+    matchesQuery(deferredWorkflowQuery, [workflow.id, workflow.name, workflow.status]),
+  );
+
+  const failureCount = executions.filter((execution) => canRetry(execution.status)).length;
+  const waitingCount = executions.filter((execution) => isWaiting(execution.status)).length;
+  const runningCount = executions.filter((execution) =>
+    humanizeToken(execution.status).includes('running') ||
+    humanizeToken(execution.status).includes('dispatched') ||
+    humanizeToken(execution.status).includes('pending'),
+  ).length;
+  const childInstances = selectedRun?.instance
+    ? instances.filter(
+        (instance) =>
+          instance.parentInstanceId === selectedRun.instance?.id ||
+          selectedRun.executions.some((execution) => execution.id === instance.parentExecutionId),
+      )
+    : [];
+  const selectedExecutionInRun =
+    selectedExecution ||
+    selectedRun?.executions.find((execution) => execution.id === selectedExecutionId) ||
+    null;
+  const selectedOutput = outputForExecution(selectedRun?.outputs ?? [], selectedExecutionInRun?.id);
+  const activeSignalWaits = selectedRun?.signalWaits.filter((item) => humanizeToken(item.status) === 'waiting') ?? [];
+  const pendingSignals = selectedRun?.signalMessages.filter((item) => humanizeToken(item.status) === 'pending') ?? [];
+  const openScopes = selectedRun?.scopeRuns.filter((scope) => humanizeToken(scope.status) !== 'completed') ?? [];
+  const hotExecutions = sortByNewest(executions)
+    .filter((execution) => canRetry(execution.status) || isWaiting(execution.status))
+    .slice(0, 6);
+  const watchSignals = sortByNewest(selectedRun?.signalMessages ?? []).slice(0, 6);
+  const watchTimeline = sortByNewest(selectedRun?.timeline ?? []).slice(0, 12);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="flex min-h-screen">
-        <aside className="w-64 border-r border-slate-200 bg-white/80 px-6 py-6">
-          <div className="mb-10 space-y-1">
-            <div className="text-xs uppercase tracking-[0.4em] text-slate-400">Trustage</div>
-            <h1 className="font-logo text-2xl font-semibold">Operations Console</h1>
-            <p className="text-sm text-slate-500">Hatchet-style workflow control</p>
+    <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
+      <div className="mx-auto flex min-h-screen max-w-[1800px] flex-col xl:flex-row">
+        <aside className="border-b border-stone-200/80 bg-white/70 px-5 py-6 backdrop-blur xl:min-h-screen xl:w-80 xl:border-b-0 xl:border-r">
+          <div className="space-y-2">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.45em] text-stone-400">Trustage</div>
+            <h1 className="font-logo text-3xl font-semibold leading-tight">Operator Console</h1>
+            <p className="max-w-sm text-sm text-stone-500">
+              Inspect workflow causality, branch scopes, waiting signals, retries, and live event ingress from one control surface.
+            </p>
           </div>
 
-          <nav className="space-y-2">
+          <nav className="mt-8 grid gap-2">
             {navItems.map((item) => (
               <button
                 key={item.key}
-                className={`w-full rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
+                className={`rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
                   activeView === item.key
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-[var(--ink)] text-white shadow-[0_16px_40px_rgba(23,32,51,0.18)]'
+                    : 'border border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50'
                 }`}
                 onClick={() => setActiveView(item.key)}
               >
@@ -257,405 +719,705 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="mt-10 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-xs text-slate-500">
-            <div className="font-semibold text-slate-700">Connection</div>
-            <div className="mt-1 break-all">{settings.apiBaseUrl || 'Not configured'}</div>
-            <button
-              className="mt-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              onClick={() => setSettingsOpen(true)}
-            >
-              Settings
-            </button>
+          <div className="mt-8 grid gap-3">
+            <MetricCard
+              label="Live instances"
+              value={instances.length}
+              tone="border-sky-200 bg-sky-50 text-sky-800"
+              detail={`${runningCount} currently moving`}
+            />
+            <MetricCard
+              label="Waiting work"
+              value={waitingCount}
+              tone="border-amber-200 bg-amber-50 text-amber-800"
+              detail="timers, waits, or manual gates"
+            />
+            <MetricCard
+              label="Needs attention"
+              value={failureCount}
+              tone="border-rose-200 bg-rose-50 text-rose-800"
+              detail="retryable or failed executions"
+            />
+          </div>
+
+          <div className="mt-8 rounded-[24px] border border-stone-200 bg-white px-4 py-4 text-sm text-stone-600">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-stone-400">Connection</div>
+            <div className="mt-2 break-all font-medium text-stone-900">
+              {settings.apiBaseUrl || 'Configure the API base URL'}
+            </div>
+            <div className="mt-2 text-xs text-stone-500">
+              {lastSyncedAt ? `Last sync ${formatDate(lastSyncedAt)}` : 'No live snapshot yet'}
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                className="flex-1 rounded-xl bg-[var(--ink)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white hover:bg-[var(--ink-soft)] disabled:opacity-50"
+                onClick={() => void refreshSnapshot()}
+                disabled={!hasConfig || loadingSnapshot}
+              >
+                {loadingSnapshot ? 'Syncing' : 'Refresh'}
+              </button>
+              <button
+                className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-700 hover:bg-stone-50"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Settings
+              </button>
+            </div>
           </div>
         </aside>
 
-        <div className="flex min-h-screen flex-1 flex-col">
-          <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white/70 px-6">
-            <div>
-              <div className="text-xs uppercase tracking-[0.4em] text-slate-400">Console</div>
-              <div className="text-lg font-semibold text-slate-900">{navItems.find((i) => i.key === activeView)?.label}</div>
-            </div>
-            <div className="flex items-center gap-4 text-xs text-slate-500">
-              <div className="rounded-full bg-slate-100 px-3 py-1">Instances: {instances.length}</div>
-              <div className="rounded-full bg-slate-100 px-3 py-1">Executions: {executions.length}</div>
-            </div>
-          </header>
+        <div className="flex-1 px-4 py-4 sm:px-6 lg:px-8">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_420px]">
+            <div className="space-y-6">
+              <Panel
+                eyebrow="Live posture"
+                title="Traceable orchestration state"
+                subtitle="The console is run-centric: pick an instance or execution and the right side becomes a causal trace, not a raw log dump."
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-500">
+                      {hasConfig ? 'Connected' : 'Disconnected'}
+                    </div>
+                    {statusMessage && (
+                      <div className="max-w-[360px] rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs text-stone-600">
+                        {statusMessage}
+                      </div>
+                    )}
+                  </div>
+                }
+              >
+                <div className="grid gap-3 lg:grid-cols-4">
+                  <MetricCard
+                    label="Executions"
+                    value={executions.length}
+                    tone="border-stone-200 bg-stone-50 text-stone-800"
+                    detail="current window"
+                  />
+                  <MetricCard
+                    label="Running"
+                    value={runningCount}
+                    tone="border-sky-200 bg-sky-50 text-sky-800"
+                    detail="pending, dispatched, running"
+                  />
+                  <MetricCard
+                    label="Signals waiting"
+                    value={activeSignalWaits.length}
+                    tone="border-amber-200 bg-amber-50 text-amber-800"
+                    detail="selected run"
+                  />
+                  <MetricCard
+                    label="Open scopes"
+                    value={openScopes.length}
+                    tone="border-violet-200 bg-violet-50 text-violet-800"
+                    detail="parallel or foreach branches"
+                  />
+                </div>
+              </Panel>
 
-          <main className="flex-1 gap-6 p-6 lg:grid lg:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="space-y-6">
               {activeView === 'overview' && (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Instances</p>
-                      <p className="mt-2 text-2xl font-semibold">{instances.length}</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Executions</p>
-                      <p className="mt-2 text-2xl font-semibold">{executions.length}</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Failures</p>
-                      <p className="mt-2 text-2xl font-semibold">{failedExecutions.length}</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h2 className="text-base font-semibold">Trigger an event</h2>
-                        <p className="text-sm text-slate-500">Send a real payload into Trustage.</p>
-                      </div>
+                  <Panel
+                    eyebrow="Ingress"
+                    title="Trigger an event"
+                    subtitle="Uses the Connect event API, so what you send here is the same typed ingest surface operators and services should rely on."
+                    actions={
                       <button
-                        className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-slate-800"
-                        onClick={handleTriggerEvent}
+                        className="rounded-2xl bg-[var(--accent-strong)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-white hover:bg-[var(--accent)] disabled:opacity-50"
+                        onClick={() => void handleTriggerEvent()}
+                        disabled={!hasConfig || busyAction === 'trigger-event'}
                       >
-                        Send
+                        {busyAction === 'trigger-event' ? 'Sending' : 'Send event'}
                       </button>
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-3">
-                      <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                        Event Type
+                    }
+                  >
+                    <div className="grid gap-4 lg:grid-cols-3">
+                      <label className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                        Event type
                         <input
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900"
+                          className="mt-2 w-full rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm font-normal text-stone-900"
                           value={eventType}
                           onChange={(event) => setEventType(event.target.value)}
                         />
                       </label>
-                      <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      <label className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
                         Source
                         <input
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900"
+                          className="mt-2 w-full rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm font-normal text-stone-900"
                           value={eventSource}
                           onChange={(event) => setEventSource(event.target.value)}
                         />
                       </label>
-                      <label className="space-y-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                        Idempotency
+                      <label className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                        Idempotency key
                         <input
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900"
-                          value={eventIdempotency}
-                          onChange={(event) => setEventIdempotency(event.target.value)}
+                          className="mt-2 w-full rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm font-normal text-stone-900"
+                          value={eventIdempotencyKey}
                           placeholder="optional"
+                          onChange={(event) => setEventIdempotencyKey(event.target.value)}
                         />
                       </label>
                     </div>
-                    <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
                       Payload
                       <textarea
-                        className="mt-2 h-40 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs text-slate-700"
+                        className="mt-2 h-48 w-full rounded-[24px] border border-stone-200 bg-stone-950 px-4 py-3 font-mono text-xs text-stone-100"
                         value={eventPayload}
                         onChange={(event) => setEventPayload(event.target.value)}
                       />
                     </label>
+                  </Panel>
+
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <Panel
+                      eyebrow="Attention"
+                      title="Hot executions"
+                      subtitle="Retries and waiting work rise here first."
+                    >
+                      <div className="space-y-3">
+                        {hotExecutions.length === 0 && (
+                          <EmptyState
+                            title="Nothing urgent"
+                            description="No waiting or failed executions are visible in the current snapshot."
+                          />
+                        )}
+                        {hotExecutions.map((execution) => (
+                          <button
+                            key={execution.id}
+                            className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-left hover:border-stone-300 hover:bg-white"
+                            onClick={() => void handleSelectExecution(execution)}
+                          >
+                            <div>
+                              <div className="font-semibold text-stone-900">{execution.state}</div>
+                              <div className="text-xs text-stone-500">
+                                {execution.id} • instance {shortId(execution.instanceId, 10)}
+                              </div>
+                            </div>
+                            <StatusBadge value={execution.status} />
+                          </button>
+                        ))}
+                      </div>
+                    </Panel>
+
+                    <Panel
+                      eyebrow="Signals"
+                      title="Current signal traffic"
+                      subtitle="Pending and delivered signal messages from the selected run."
+                    >
+                      <div className="space-y-3">
+                        {watchSignals.length === 0 && (
+                          <EmptyState
+                            title="No signal activity"
+                            description="Select a run with signal waits or messages to inspect signal flow."
+                          />
+                        )}
+                        {watchSignals.map((message: SignalMessage) => (
+                          <div key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-semibold text-stone-900">{message.signalName}</div>
+                              <StatusBadge value={message.status} />
+                            </div>
+                            <div className="mt-2 text-xs text-stone-500">
+                              delivered {formatDate(message.deliveredAt)} • attempts {message.attempts}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Panel>
                   </div>
                 </>
               )}
 
-              {activeView === 'instances' && (
-                <div className="rounded-2xl border border-slate-200 bg-white">
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <div>
-                      <h2 className="text-base font-semibold">Workflow Instances</h2>
-                      <p className="text-sm text-slate-500">Select an instance to inspect timeline.</p>
+              {activeView === 'runs' && (
+                <>
+                  <Panel
+                    eyebrow="Explorer"
+                    title="Workflow runs"
+                    subtitle="Filter by workflow, state, trace, or parent linkage, then open a run to inspect branch fanout and signals."
+                  >
+                    <div className="mb-4">
+                      <input
+                        className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-900"
+                        placeholder="Search by workflow, instance id, state, parent execution…"
+                        value={instanceQuery}
+                        onChange={(event) => setInstanceQuery(event.target.value)}
+                      />
                     </div>
-                    <button
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      onClick={refreshInstances}
-                      disabled={loadingInstances}
-                    >
-                      {loadingInstances ? 'Refreshing...' : 'Refresh'}
-                    </button>
-                  </div>
-                  <div className="border-t border-slate-100">
-                    <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr_auto] gap-3 px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      <span>Workflow</span>
-                      <span>State</span>
-                      <span>Status</span>
-                      <span>Started</span>
-                      <span />
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {instances.map((inst) => (
+                    <div className="grid gap-3">
+                      {filteredInstances.map((instance) => (
                         <button
-                          key={inst.id}
-                          onClick={() => handleSelectInstance(inst)}
-                          className="grid w-full grid-cols-[1.2fr_1fr_1fr_1fr_auto] items-center gap-3 px-5 py-3 text-left text-sm hover:bg-slate-50"
+                          key={instance.id}
+                          className={`grid gap-3 rounded-[24px] border px-4 py-4 text-left transition lg:grid-cols-[minmax(0,1.2fr)_180px_170px_auto] ${
+                            selectedRun?.instance?.id === instance.id
+                              ? 'border-[var(--accent-strong)] bg-[var(--accent-soft)]'
+                              : 'border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50'
+                          }`}
+                          onClick={() => void handleSelectInstance(instance)}
                         >
                           <div>
-                            <div className="font-medium">{inst.workflow_name}</div>
-                            <div className="text-xs text-slate-400">v{inst.workflow_version}</div>
+                            <div className="font-semibold text-stone-900">{instance.workflowName}</div>
+                            <div className="mt-1 text-xs text-stone-500">
+                              {instance.id}
+                              {instance.parentExecutionId ? ` • child of ${shortId(instance.parentExecutionId, 10)}` : ''}
+                            </div>
                           </div>
-                          <div className="text-slate-600">{inst.current_state}</div>
-                          <span className={`w-fit rounded-full px-2 py-1 text-xs font-semibold ${statusTone(inst.status)}`}>
-                            {inst.status}
-                          </span>
-                          <div className="text-xs text-slate-500">{formatDate(inst.started_at)}</div>
                           <div>
-                            {canRetry(inst.status) && (
-                              <button
-                                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleRetryInstance(inst.id);
-                                }}
-                              >
-                                Retry
-                              </button>
-                            )}
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Current state</div>
+                            <div className="mt-1 font-medium text-stone-800">{instance.currentState}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Started</div>
+                            <div className="mt-1 font-medium text-stone-800">{formatDate(instance.startedAt)}</div>
+                          </div>
+                          <div className="flex justify-start lg:justify-end">
+                            <StatusBadge value={instance.status} />
                           </div>
                         </button>
                       ))}
+                      {filteredInstances.length === 0 && (
+                        <EmptyState
+                          title="No runs match the current filter"
+                          description="The current snapshot does not contain a matching workflow instance."
+                        />
+                      )}
                     </div>
-                  </div>
-                </div>
-              )}
+                  </Panel>
 
-              {activeView === 'executions' && (
-                <div className="rounded-2xl border border-slate-200 bg-white">
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <div>
-                      <h2 className="text-base font-semibold">Executions</h2>
-                      <p className="text-sm text-slate-500">Click an execution for full output.</p>
-                    </div>
-                    <button
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      onClick={refreshExecutions}
-                      disabled={loadingExecutions}
-                    >
-                      {loadingExecutions ? 'Refreshing...' : 'Refresh'}
-                    </button>
-                  </div>
-                  <div className="border-t border-slate-100">
-                    <div className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr_auto] gap-3 px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      <span>Execution</span>
-                      <span>State</span>
-                      <span>Status</span>
-                      <span>Attempt</span>
-                      <span />
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {executions.map((exec) => (
-                        <button
-                          key={exec.execution_id}
-                          onClick={() => handleSelectExecution(exec)}
-                          className="grid w-full grid-cols-[1.2fr_1fr_1fr_0.8fr_auto] items-center gap-3 px-5 py-3 text-left text-sm hover:bg-slate-50"
-                        >
-                          <div className="font-medium">{exec.execution_id.slice(0, 8)}</div>
-                          <div className="text-slate-600">{exec.state}</div>
-                          <span className={`w-fit rounded-full px-2 py-1 text-xs font-semibold ${statusTone(exec.status)}`}>
-                            {exec.status}
-                          </span>
-                          <div className="text-xs text-slate-500">#{exec.attempt}</div>
-                          <div>
-                            {canRetry(exec.status) && (
-                              <button
-                                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleRetryExecution(exec.execution_id);
-                                }}
-                              >
-                                Retry
-                              </button>
-                            )}
+                  <Panel
+                    eyebrow="Trace"
+                    title="Execution graph"
+                    subtitle="This view follows the selected run from root instance to state attempts, scopes, waits, and child runs."
+                  >
+                    {!selectedRun?.instance && (
+                      <EmptyState
+                        title="Pick a run"
+                        description="Choose a workflow instance from the explorer to render its causal execution path."
+                      />
+                    )}
+                    {loadingRun && (
+                      <div className="mb-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+                        Loading selected run…
+                      </div>
+                    )}
+                    {selectedRun?.instance && (
+                      <ExecutionGraph
+                        run={selectedRun}
+                        childInstances={childInstances}
+                        selectedExecutionId={selectedExecutionId}
+                        onSelectExecution={(execution) => void handleSelectExecution(execution)}
+                        onSelectInstance={(instance) => void handleSelectInstance(instance)}
+                      />
+                    )}
+                  </Panel>
+
+                  <Panel
+                    eyebrow="Timeline"
+                    title="Causal timeline"
+                    subtitle="Audit entries are shown in descending order so an operator can reconstruct what happened without joining raw tables by hand."
+                  >
+                    <div className="space-y-3">
+                      {watchTimeline.length === 0 && (
+                        <EmptyState
+                          title="No timeline available"
+                          description="Select a run to inspect audit events, transitions, and emitted state payloads."
+                        />
+                      )}
+                      {watchTimeline.map((entry) => (
+                        <div key={`${entry.eventType}-${entry.createdAt}-${entry.executionId}`} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-stone-900">{entry.eventType}</div>
+                              <div className="mt-1 text-xs text-stone-500">
+                                {entry.state || '—'}
+                                {entry.executionId ? ` • ${entry.executionId}` : ''}
+                              </div>
+                            </div>
+                            <div className="text-xs text-stone-500">{formatDate(entry.createdAt)}</div>
                           </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeView === 'workflows' && (
-                <div className="rounded-2xl border border-slate-200 bg-white">
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <div>
-                      <h2 className="text-base font-semibold">Workflows</h2>
-                      <p className="text-sm text-slate-500">Active workflow definitions.</p>
-                    </div>
-                    <button
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      onClick={refreshWorkflows}
-                      disabled={loadingWorkflows}
-                    >
-                      {loadingWorkflows ? 'Refreshing...' : 'Refresh'}
-                    </button>
-                  </div>
-                  <div className="border-t border-slate-100">
-                    <div className="grid grid-cols-[1.4fr_0.6fr_0.6fr] gap-3 px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      <span>Name</span>
-                      <span>Version</span>
-                      <span>Status</span>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {workflows.map((workflow) => (
-                        <div
-                          key={workflow.id}
-                          className="grid grid-cols-[1.4fr_0.6fr_0.6fr] gap-3 px-5 py-3 text-sm"
-                        >
-                          <div className="font-medium">{workflow.name}</div>
-                          <div className="text-slate-600">v{workflow.version}</div>
-                          <span className={`w-fit rounded-full px-2 py-1 text-xs font-semibold ${statusTone(workflow.status)}`}>
-                            {workflow.status}
-                          </span>
+                          {(entry.fromState || entry.toState) && (
+                            <div className="mt-3 text-xs text-stone-600">
+                              {entry.fromState || '—'} → {entry.toState || '—'}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                  </div>
-                </div>
+                  </Panel>
+                </>
               )}
-            </section>
 
-            <aside className="mt-6 space-y-6 lg:mt-0">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold">Retry center</h3>
-                    <p className="text-sm text-slate-500">One click to re-run failed work.</p>
+              {activeView === 'executions' && (
+                <Panel
+                  eyebrow="Queue"
+                  title="Execution queue"
+                  subtitle="Search across state attempts, trace ids, and error messages, then open the selected execution in the run explorer."
+                >
+                  <div className="mb-4">
+                    <input
+                      className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-900"
+                      placeholder="Search by execution id, instance id, state, trace, or error…"
+                      value={executionQuery}
+                      onChange={(event) => setExecutionQuery(event.target.value)}
+                    />
                   </div>
-                </div>
-                <div className="mt-4 space-y-3">
-                  <button
-                    className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                    onClick={async () => {
-                      for (const exec of failedExecutions) {
-                        await handleRetryExecution(exec.execution_id);
-                      }
-                    }}
-                    disabled={failedExecutions.length === 0}
-                  >
-                    Retry {failedExecutions.length} failed executions
-                  </button>
-                  <button
-                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    onClick={async () => {
-                      for (const inst of failedInstances) {
-                        await handleRetryInstance(inst.id);
-                      }
-                    }}
-                    disabled={failedInstances.length === 0}
-                  >
-                    Retry {failedInstances.length} failed instances
-                  </button>
-                </div>
-              </div>
+                  <div className="grid gap-3">
+                    {filteredExecutions.map((execution) => (
+                      <button
+                        key={execution.id}
+                        className="grid gap-3 rounded-[24px] border border-stone-200 bg-white px-4 py-4 text-left transition hover:border-stone-300 hover:bg-stone-50 lg:grid-cols-[minmax(0,1.2fr)_170px_130px_150px_auto]"
+                        onClick={() => void handleSelectExecution(execution)}
+                      >
+                        <div>
+                          <div className="font-semibold text-stone-900">{execution.state}</div>
+                          <div className="mt-1 text-xs text-stone-500">
+                            {execution.id} • trace {execution.traceId || '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Instance</div>
+                          <div className="mt-1 font-medium text-stone-800">{shortId(execution.instanceId, 14)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Attempt</div>
+                          <div className="mt-1 font-medium text-stone-800">#{execution.attempt}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Started</div>
+                          <div className="mt-1 font-medium text-stone-800">{formatDate(execution.startedAt || execution.createdAt)}</div>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 lg:justify-end">
+                          <StatusBadge value={execution.status} />
+                          {canRetry(execution.status) && (
+                            <button
+                              className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleRetryExecution(execution.id);
+                              }}
+                            >
+                              {busyAction === `retry-execution-${execution.id}` ? 'Retrying' : 'Retry'}
+                            </button>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                    {filteredExecutions.length === 0 && (
+                      <EmptyState
+                        title="No executions match"
+                        description="Nothing in the visible snapshot matches the current execution filter."
+                      />
+                    )}
+                  </div>
+                </Panel>
+              )}
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h3 className="text-base font-semibold">Selection</h3>
-                <p className="text-sm text-slate-500">
-                  {selectedExecution
-                    ? `Execution ${selectedExecution.execution_id}`
-                    : selectedInstance
-                      ? `Instance ${selectedInstance.id}`
-                      : 'Pick an instance or execution.'}
-                </p>
+              {activeView === 'workflows' && (
+                <Panel
+                  eyebrow="Definitions"
+                  title="Workflow catalog"
+                  subtitle="Definition status, versioning, and active drafts visible from the workflow Connect API."
+                >
+                  <div className="mb-4">
+                    <input
+                      className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-900"
+                      placeholder="Search by workflow name or id…"
+                      value={workflowQuery}
+                      onChange={(event) => setWorkflowQuery(event.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-3">
+                    {filteredWorkflows.map((workflow) => (
+                      <div
+                        key={workflow.id}
+                        className="grid gap-3 rounded-[24px] border border-stone-200 bg-white px-4 py-4 lg:grid-cols-[minmax(0,1.4fr)_120px_170px_auto]"
+                      >
+                        <div>
+                          <div className="font-semibold text-stone-900">{workflow.name}</div>
+                          <div className="mt-1 text-xs text-stone-500">{workflow.id}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Version</div>
+                          <div className="mt-1 font-medium text-stone-800">v{workflow.version}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.25em] text-stone-400">Updated</div>
+                          <div className="mt-1 font-medium text-stone-800">{formatDate(workflow.updatedAt || workflow.createdAt)}</div>
+                        </div>
+                        <div className="flex lg:justify-end">
+                          <StatusBadge value={workflow.status} />
+                        </div>
+                      </div>
+                    ))}
+                    {filteredWorkflows.length === 0 && (
+                      <EmptyState
+                        title="No workflows match"
+                        description="The workflow catalog filter returned no active definitions."
+                      />
+                    )}
+                  </div>
+                </Panel>
+              )}
+            </div>
 
-                <div className="mt-4 space-y-3 text-xs text-slate-500">
-                  {loadingDetail && <div>Loading details…</div>}
-                  {selectedExecution && (
-                    <>
-                      <div className="rounded-lg bg-slate-50 px-3 py-2">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">State</div>
-                        <div className="text-sm text-slate-700">{selectedExecution.state}</div>
+            <aside className="space-y-6">
+              <Panel
+                eyebrow="Selected run"
+                title={selectedRun?.instance?.workflowName || 'No run selected'}
+                subtitle={
+                  selectedRun?.instance
+                    ? `Instance ${selectedRun.instance.id}`
+                    : 'Pick an instance or execution to see trace facts, payloads, waits, and operator actions.'
+                }
+              >
+                {!selectedRun?.instance && (
+                  <EmptyState
+                    title="Waiting for selection"
+                    description="Use Run Explorer or Execution Queue to open a workflow run."
+                  />
+                )}
+
+                {selectedRun?.instance && (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <MetricCard
+                        label="Executions"
+                        value={selectedRun.executions.length}
+                        tone="border-stone-200 bg-stone-50 text-stone-800"
+                        detail={`latest ${selectedRun.latestExecution?.state || '—'}`}
+                      />
+                      <MetricCard
+                        label="Child runs"
+                        value={childInstances.length}
+                        tone="border-sky-200 bg-sky-50 text-sky-800"
+                        detail="branch or foreach children"
+                      />
+                      <MetricCard
+                        label="Signal waits"
+                        value={activeSignalWaits.length}
+                        tone="border-amber-200 bg-amber-50 text-amber-800"
+                        detail="currently blocked"
+                      />
+                      <MetricCard
+                        label="Pending signals"
+                        value={pendingSignals.length}
+                        tone="border-violet-200 bg-violet-50 text-violet-800"
+                        detail="queued for delivery"
+                      />
+                    </div>
+
+                    <div className="grid gap-3">
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">Trace id</div>
+                        <div className="mt-2 font-mono text-sm text-stone-900">
+                          {selectedRun.traceId || selectedRun.latestExecution?.traceId || '—'}
+                        </div>
                       </div>
-                      <div className="rounded-lg bg-slate-50 px-3 py-2">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Input</div>
-                        <pre className="mt-2 max-h-48 overflow-auto text-xs text-slate-600">
-                          {JSON.stringify(selectedExecution.input_payload ?? {}, null, 2)}
-                        </pre>
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">Resume strategy</div>
+                        <div className="mt-2 text-sm font-medium text-stone-900">
+                          {humanizeToken(selectedRun.resumeStrategy)}
+                        </div>
                       </div>
-                      <div className="rounded-lg bg-slate-50 px-3 py-2">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Output</div>
-                        <pre className="mt-2 max-h-48 overflow-auto text-xs text-slate-600">
-                          {JSON.stringify(selectedExecution.output ?? {}, null, 2)}
-                        </pre>
-                      </div>
-                      {canRetry(selectedExecution.status) && (
+                    </div>
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
+                eyebrow="Action center"
+                title="Operator controls"
+                subtitle="Retries and signals stay attached to the selected execution graph so operators can act with context."
+              >
+                {!selectedRun?.instance && (
+                  <EmptyState
+                    title="No active context"
+                    description="Select a run first. Actions are bound to the currently inspected instance."
+                  />
+                )}
+
+                {selectedRun?.instance && (
+                  <div className="space-y-4">
+                    <div className="grid gap-3">
+                      {selectedExecutionInRun && canRetry(selectedExecutionInRun.status) && (
                         <button
-                          className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                          onClick={() => handleRetryExecution(selectedExecution.execution_id)}
+                          className="rounded-2xl bg-[var(--ink)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--ink-soft)]"
+                          onClick={() => void handleRetryExecution(selectedExecutionInRun.id)}
                         >
-                          Retry this execution
+                          {busyAction === `retry-execution-${selectedExecutionInRun.id}`
+                            ? 'Retrying execution…'
+                            : `Retry execution ${shortId(selectedExecutionInRun.id, 10)}`}
                         </button>
                       )}
-                    </>
-                  )}
-                  {selectedInstance && !selectedExecution && (
-                    <>
-                      <div className="rounded-lg bg-slate-50 px-3 py-2">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Current state</div>
-                        <div className="text-sm text-slate-700">{selectedInstance.current_state}</div>
-                      </div>
-                      {canRetry(selectedInstance.status) && (
+
+                      {canRetry(selectedRun.instance.status) && (
                         <button
-                          className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                          onClick={() => handleRetryInstance(selectedInstance.id)}
+                          className="rounded-2xl border border-stone-200 px-4 py-3 text-sm font-semibold text-stone-800 hover:bg-stone-50"
+                          onClick={() => void handleRetryInstance(selectedRun.instance!.id)}
                         >
-                          Retry this instance
+                          {busyAction === `retry-instance-${selectedRun.instance.id}`
+                            ? 'Retrying instance…'
+                            : 'Retry selected instance'}
                         </button>
                       )}
-                    </>
-                  )}
-                </div>
-              </div>
+                    </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h3 className="text-base font-semibold">Timeline</h3>
-                <p className="text-sm text-slate-500">Recent state transitions.</p>
-                <div className="mt-4 space-y-3 text-xs text-slate-500">
-                  {timeline.length === 0 && <div>No timeline events yet.</div>}
-                  {timeline.map((entry, index) => (
-                    <div key={`${entry.event_type}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{entry.event_type}</div>
-                      <div className="mt-1 text-sm text-slate-700">{entry.state ?? '—'}</div>
-                      <div className="mt-1 text-[11px] text-slate-500">{formatDate(entry.created_at)}</div>
+                    <div className="rounded-[24px] border border-stone-200 bg-stone-50 px-4 py-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">Signal delivery</div>
+                      <div className="mt-3 space-y-3">
+                        <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
+                          Signal name
+                          <input
+                            className="mt-2 w-full rounded-2xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-normal text-stone-900"
+                            value={signalName}
+                            onChange={(event) => setSignalName(event.target.value)}
+                          />
+                        </label>
+                        <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
+                          Payload
+                          <textarea
+                            className="mt-2 h-32 w-full rounded-2xl border border-stone-200 bg-stone-950 px-3 py-3 font-mono text-xs text-stone-100"
+                            value={signalPayload}
+                            onChange={(event) => setSignalPayload(event.target.value)}
+                          />
+                        </label>
+                        <button
+                          className="w-full rounded-2xl bg-[var(--accent-strong)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--accent)] disabled:opacity-50"
+                          onClick={() => void handleSendSignal()}
+                          disabled={busyAction === 'send-signal'}
+                        >
+                          {busyAction === 'send-signal' ? 'Sending signal…' : `Send signal to ${shortId(selectedRun.instance.id, 12)}`}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
+                eyebrow="Execution detail"
+                title={selectedExecutionInRun?.state || 'Select an execution node'}
+                subtitle={
+                  selectedExecutionInRun
+                    ? `${selectedExecutionInRun.id} • ${humanizeToken(selectedExecutionInRun.status)}`
+                    : 'Click an execution in the queue or graph to inspect its input and output.'
+                }
+              >
+                {!selectedExecutionInRun && (
+                  <EmptyState
+                    title="No execution focused"
+                    description="The graph is active, but no individual execution is currently focused."
+                  />
+                )}
+
+                {selectedExecutionInRun && (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 text-sm sm:grid-cols-2">
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">Status</div>
+                        <div className="mt-2">
+                          <StatusBadge value={selectedExecutionInRun.status} />
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-stone-400">Attempt</div>
+                        <div className="mt-2 font-medium text-stone-900">#{selectedExecutionInRun.attempt}</div>
+                      </div>
+                    </div>
+
+                    <JsonBlock
+                      label="Input payload"
+                      value={selectedExecution?.inputPayload || selectedExecutionInRun.inputPayload || {}}
+                    />
+                    <JsonBlock
+                      label="Output payload"
+                      value={selectedExecution?.output || selectedOutput?.payload || {}}
+                    />
+                  </div>
+                )}
+              </Panel>
+
+              <Panel
+                eyebrow="Blocked state"
+                title="Waits and queued signals"
+                subtitle="This is where an operator sees whether a run is waiting on time, branch completion, or external signal delivery."
+              >
+                <div className="space-y-3">
+                  {activeSignalWaits.map((wait: SignalWait) => (
+                    <div key={wait.id} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-amber-900">{wait.signalName}</div>
+                          <div className="text-xs text-amber-700">execution {wait.executionId}</div>
+                        </div>
+                        <StatusBadge value={wait.status} />
+                      </div>
                     </div>
                   ))}
+
+                  {pendingSignals.map((message: SignalMessage) => (
+                    <div key={message.id} className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-violet-900">{message.signalName}</div>
+                          <div className="text-xs text-violet-700">created {formatDate(message.createdAt)}</div>
+                        </div>
+                        <StatusBadge value={message.status} />
+                      </div>
+                    </div>
+                  ))}
+
+                  {activeSignalWaits.length === 0 && pendingSignals.length === 0 && (
+                    <EmptyState
+                      title="No blocked signal activity"
+                      description="The selected run currently has no waiting signal gates or pending signal messages."
+                    />
+                  )}
                 </div>
-              </div>
+              </Panel>
             </aside>
-          </main>
+          </div>
         </div>
       </div>
 
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-[32px] border border-stone-200 bg-white px-6 py-6 shadow-[0_30px_100px_rgba(25,24,22,0.25)]">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Console settings</h2>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-stone-400">Settings</div>
+                <h2 className="mt-1 font-logo text-2xl font-semibold text-stone-900">Console connection</h2>
+              </div>
               <button
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold text-stone-600 hover:bg-stone-50"
                 onClick={() => setSettingsOpen(false)}
               >
                 Close
               </button>
             </div>
-            <div className="mt-4 space-y-4">
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                API Base URL
+
+            <div className="mt-5 space-y-4">
+              <label className="block text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                API base URL
                 <input
-                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-2 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-normal text-stone-900"
                   placeholder="https://trustage.api"
                   value={settings.apiBaseUrl}
                   onChange={(event) => saveConsoleSettings({ ...settings, apiBaseUrl: event.target.value })}
                 />
               </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Auth Token
+              <label className="block text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                Auth token
                 <input
-                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-2 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-normal text-stone-900"
                   placeholder="Bearer token"
                   value={settings.authToken}
                   onChange={(event) => saveConsoleSettings({ ...settings, authToken: event.target.value })}
                 />
               </label>
             </div>
-            {statusMessage && (
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                {statusMessage}
-              </div>
-            )}
+
+            <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              Connect-backed endpoints in use: workflow list, event ingest, runtime list/get/run, retries, and signal delivery.
+            </div>
           </div>
         </div>
       )}

@@ -1,65 +1,169 @@
 import { ConsoleSettings } from './storage';
 
-export type InstanceItem = {
+type StructLike = Record<string, unknown>;
+
+export type WorkflowInstance = {
   id: string;
-  workflow_name: string;
-  workflow_version: number;
-  current_state: string;
+  workflowName: string;
+  workflowVersion: number;
+  currentState: string;
   status: string;
-  trigger_event_id?: string;
-  started_at?: string;
-  finished_at?: string;
-  created_at: string;
+  revision: number;
+  triggerEventId?: string;
+  metadata?: StructLike;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  parentInstanceId?: string;
+  parentExecutionId?: string;
+  scopeType?: string;
+  scopeParentState?: string;
+  scopeEntryState?: string;
+  scopeIndex?: number;
 };
 
-export type ExecutionItem = {
-  execution_id: string;
-  instance_id: string;
+export type WorkflowExecution = {
+  id: string;
+  instanceId: string;
   state: string;
+  stateVersion: number;
   attempt: number;
   status: string;
-  error_class?: string;
-  error_message?: string;
-  next_retry_at?: string;
-  started_at?: string;
-  finished_at?: string;
-  created_at: string;
-  trace_id?: string;
+  errorClass?: string;
+  errorMessage?: string;
+  nextRetryAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  traceId?: string;
+  inputSchemaHash?: string;
+  outputSchemaHash?: string;
+  inputPayload?: StructLike;
+  output?: StructLike;
 };
 
-export type ExecutionDetail = ExecutionItem & {
-  input_payload?: unknown;
-  output?: unknown;
-};
-
-export type WorkflowItem = {
+export type WorkflowDefinition = {
   id: string;
   name: string;
   version: number;
   status: string;
-};
-
-export type EventIngestResponse = {
-  event_id: string;
-  idempotent?: boolean;
+  dsl?: StructLike;
+  inputSchemaHash?: string;
+  timeoutSeconds?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type TimelineEntry = {
-  event_type: string;
+  eventType: string;
   state?: string;
-  created_at: string;
+  fromState?: string;
+  toState?: string;
+  executionId?: string;
+  traceId?: string;
+  payload?: StructLike;
+  createdAt?: string;
 };
 
-function buildUrl(base: string, path: string, params?: Record<string, string | number | undefined>) {
-  const url = new URL(path, base);
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
-        url.searchParams.set(key, String(value));
-      }
-    });
+export type StateOutput = {
+  executionId: string;
+  state: string;
+  schemaHash?: string;
+  payload?: StructLike;
+  createdAt?: string;
+};
+
+export type ScopeRun = {
+  id: string;
+  parentExecutionId: string;
+  parentState: string;
+  scopeType: string;
+  status: string;
+  waitAll: boolean;
+  totalChildren: number;
+  completedChildren: number;
+  failedChildren: number;
+  nextChildIndex: number;
+  maxConcurrency: number;
+  itemVar?: string;
+  indexVar?: string;
+  itemsPayload?: StructLike;
+  resultsPayload?: StructLike;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SignalWait = {
+  id: string;
+  executionId: string;
+  state: string;
+  signalName: string;
+  outputVar?: string;
+  status: string;
+  timeoutAt?: string;
+  matchedAt?: string;
+  timedOutAt?: string;
+  messageId?: string;
+  attempts: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SignalMessage = {
+  id: string;
+  signalName: string;
+  payload?: StructLike;
+  status: string;
+  deliveredAt?: string;
+  waitId?: string;
+  attempts: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type InstanceRun = {
+  instance?: WorkflowInstance;
+  latestExecution?: WorkflowExecution;
+  traceId?: string;
+  resumeStrategy?: string;
+  executions: WorkflowExecution[];
+  timeline: TimelineEntry[];
+  outputs: StateOutput[];
+  scopeRuns: ScopeRun[];
+  signalWaits: SignalWait[];
+  signalMessages: SignalMessage[];
+};
+
+export type EventRecord = {
+  eventId: string;
+  eventType: string;
+  source: string;
+  idempotencyKey?: string;
+  payload?: StructLike;
+};
+
+export type EventIngestResponse = {
+  event?: EventRecord;
+  idempotent?: boolean;
+};
+
+type ConnectErrorShape = {
+  code?: string;
+  message?: string;
+};
+
+function normalizeBase(base: string) {
+  if (!base) {
+    return '';
   }
-  return url.toString();
+
+  return base.endsWith('/') ? base : `${base}/`;
+}
+
+function buildUrl(base: string, path: string) {
+  return new URL(path.replace(/^\//, ''), normalizeBase(base)).toString();
 }
 
 async function request<T>(settings: ConsoleSettings, url: string, options?: RequestInit) {
@@ -69,6 +173,7 @@ async function request<T>(settings: ConsoleSettings, url: string, options?: Requ
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'Connect-Protocol-Version': '1',
   };
 
   if (settings.authToken) {
@@ -85,6 +190,19 @@ async function request<T>(settings: ConsoleSettings, url: string, options?: Requ
 
   if (!response.ok) {
     const text = await response.text();
+    let parsedError: ConnectErrorShape | null = null;
+
+    try {
+      parsedError = JSON.parse(text) as ConnectErrorShape;
+    } catch {
+      parsedError = null;
+    }
+
+    if (parsedError?.message || parsedError?.code) {
+      const label = parsedError.code ? `${parsedError.code}: ` : '';
+      throw new Error(`${label}${parsedError.message || `Request failed (${response.status})`}`);
+    }
+
     throw new Error(text || `Request failed (${response.status})`);
   }
 
@@ -95,92 +213,153 @@ async function request<T>(settings: ConsoleSettings, url: string, options?: Requ
   return (await response.json()) as T;
 }
 
-export async function listInstances(settings: ConsoleSettings, params: {
-  status?: string;
-  workflowName?: string;
-  limit?: number;
-  cursor?: string;
-}) {
-  return request<{ items: InstanceItem[]; next_cursor?: string }>(
+async function connectUnary<TRequest, TResponse>(
+  settings: ConsoleSettings,
+  service: string,
+  method: string,
+  body: TRequest,
+) {
+  return request<TResponse>(settings, buildUrl(settings.apiBaseUrl, `/${service}/${method}`), {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listInstances(
+  settings: ConsoleSettings,
+  params: {
+    limit?: number;
+  } = {},
+) {
+  return connectUnary<{ limit?: number }, { items?: WorkflowInstance[] }>(
     settings,
-    buildUrl(settings.apiBaseUrl, '/api/v1/instances', {
-      status: params.status,
-      workflow_name: params.workflowName,
-      limit: params.limit,
-      cursor: params.cursor,
-    }),
-    { method: 'GET' },
+    'runtime.v1.RuntimeService',
+    'ListInstances',
+    {
+      limit: params.limit ?? 200,
+    },
   );
 }
 
-export async function listExecutions(settings: ConsoleSettings, params: {
-  status?: string;
-  instanceId?: string;
-  limit?: number;
-  cursor?: string;
-}) {
-  return request<{ items: ExecutionItem[]; next_cursor?: string }>(
+export async function listExecutions(
+  settings: ConsoleSettings,
+  params: {
+    instanceId?: string;
+    limit?: number;
+  } = {},
+) {
+  return connectUnary<{ instanceId?: string; limit?: number }, { items?: WorkflowExecution[] }>(
     settings,
-    buildUrl(settings.apiBaseUrl, '/api/v1/executions', {
-      status: params.status,
-      instance_id: params.instanceId,
-      limit: params.limit,
-      cursor: params.cursor,
-    }),
-    { method: 'GET' },
+    'runtime.v1.RuntimeService',
+    'ListExecutions',
+    {
+      instanceId: params.instanceId,
+      limit: params.limit ?? 200,
+    },
   );
 }
 
 export async function getExecution(settings: ConsoleSettings, executionId: string) {
-  return request<ExecutionDetail>(
-    settings,
-    buildUrl(settings.apiBaseUrl, `/api/v1/executions/${executionId}`, {
-      include_output: 'true',
-    }),
-    { method: 'GET' },
-  );
+  const response = await connectUnary<
+    { executionId: string; includeOutput: boolean },
+    { execution?: WorkflowExecution }
+  >(settings, 'runtime.v1.RuntimeService', 'GetExecution', {
+    executionId,
+    includeOutput: true,
+  });
+
+  return response.execution;
+}
+
+export async function getInstanceRun(settings: ConsoleSettings, instanceId: string) {
+  return connectUnary<
+    { instanceId: string; includePayloads: boolean; executionLimit: number; timelineLimit: number },
+    InstanceRun
+  >(settings, 'runtime.v1.RuntimeService', 'GetInstanceRun', {
+    instanceId,
+    includePayloads: true,
+    executionLimit: 200,
+    timelineLimit: 200,
+  });
 }
 
 export async function listWorkflows(settings: ConsoleSettings) {
-  return request<{ items: WorkflowItem[] }>(
+  return connectUnary<{ limit: number }, { items?: WorkflowDefinition[] }>(
     settings,
-    buildUrl(settings.apiBaseUrl, '/api/v1/workflows', { status: 'active', limit: 100 }),
-    { method: 'GET' },
+    'workflow.v1.WorkflowService',
+    'ListWorkflows',
+    { limit: 200 },
   );
 }
 
 export async function retryExecution(settings: ConsoleSettings, executionId: string) {
-  return request<{ execution_id: string; status: string }>(
+  return connectUnary<{ executionId: string }, { execution?: WorkflowExecution }>(
     settings,
-    buildUrl(settings.apiBaseUrl, `/api/v1/executions/${executionId}/retry`),
-    { method: 'POST' },
+    'runtime.v1.RuntimeService',
+    'RetryExecution',
+    { executionId },
   );
 }
 
 export async function retryInstance(settings: ConsoleSettings, instanceId: string) {
-  return request<{ execution_id: string; status: string }>(
+  return connectUnary<{ instanceId: string }, { execution?: WorkflowExecution }>(
     settings,
-    buildUrl(settings.apiBaseUrl, `/api/v1/instances/${instanceId}/retry`),
-    { method: 'POST' },
+    'runtime.v1.RuntimeService',
+    'RetryInstance',
+    { instanceId },
   );
 }
 
-export async function ingestEvent(settings: ConsoleSettings, payload: {
-  event_type: string;
-  source: string;
-  idempotency_key?: string;
-  payload: Record<string, unknown>;
-}): Promise<EventIngestResponse> {
-  return request<EventIngestResponse>(settings, buildUrl(settings.apiBaseUrl, '/api/v1/events'), {
-    method: 'POST',
-    body: JSON.stringify(payload),
+export async function resumeExecution(
+  settings: ConsoleSettings,
+  executionId: string,
+  payload: Record<string, unknown>,
+) {
+  return connectUnary<
+    { executionId: string; payload: Record<string, unknown> },
+    { execution?: WorkflowExecution; action?: string }
+  >(settings, 'runtime.v1.RuntimeService', 'ResumeExecution', {
+    executionId,
+    payload,
   });
 }
 
+export async function ingestEvent(
+  settings: ConsoleSettings,
+  payload: {
+    eventType: string;
+    source: string;
+    idempotencyKey?: string;
+    payload: Record<string, unknown>;
+  },
+) {
+  return connectUnary<
+    { eventType: string; source: string; idempotencyKey?: string; payload: Record<string, unknown> },
+    EventIngestResponse
+  >(settings, 'event.v1.EventService', 'IngestEvent', payload);
+}
+
 export async function getInstanceTimeline(settings: ConsoleSettings, instanceId: string) {
-  return request<TimelineEntry[]>(
+  const response = await connectUnary<{ instanceId: string }, { items?: TimelineEntry[] }>(
     settings,
-    buildUrl(settings.apiBaseUrl, `/api/v1/instances/${instanceId}/timeline`),
-    { method: 'GET' },
+    'event.v1.EventService',
+    'GetInstanceTimeline',
+    { instanceId },
   );
+
+  return response.items ?? [];
+}
+
+export async function sendSignal(
+  settings: ConsoleSettings,
+  payload: {
+    instanceId: string;
+    signalName: string;
+    payload: Record<string, unknown>;
+  },
+) {
+  return connectUnary<
+    { instanceId: string; signalName: string; payload: Record<string, unknown> },
+    { delivered?: boolean }
+  >(settings, 'signal.v1.SignalService', 'SendSignal', payload);
 }
