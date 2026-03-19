@@ -1,7 +1,16 @@
-.PHONY: tests format vet docker-setup docker-stop lint build baml-gen
+.PHONY: tests coverage-raw coverage-app coverage-check format vet docker-setup docker-stop lint build baml-gen
 
 tests:
-	go test ./... -v -race -coverprofile=coverage.out
+	go test ./... -v -race
+
+coverage-raw:
+	./scripts/coverage.sh raw
+
+coverage-app:
+	./scripts/coverage.sh app
+
+coverage-check:
+	./scripts/coverage.sh check
 
 format:
 	find . -name '*.go' -not -path './.git/*' -exec sed -i '/^import (/,/^)/{/^$$/d}' {} +

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -147,13 +148,16 @@ func (r *eventLogRepository) ClaimUnpublished(
 
 		updateResult := tx.Model(&models.EventLog{}).
 			Where("id IN ? AND deleted_at IS NULL", ids).
-			Updates(map[string]any{
+			UpdateColumns(map[string]any{
 				"publish_claim_owner": owner,
 				"publish_claim_until": leaseUntil,
 				"publish_attempts":    gorm.Expr("publish_attempts + 1"),
 			})
 		if updateResult.Error != nil {
 			return fmt.Errorf("claim unpublished: %w", updateResult.Error)
+		}
+		if updateResult.RowsAffected == 0 {
+			return errors.New("claim unpublished: no rows updated")
 		}
 
 		for _, event := range events {
@@ -181,14 +185,17 @@ func (r *eventLogRepository) MarkPublishedByOwner(
 
 	result := db.Model(&models.EventLog{}).
 		Where("id = ? AND publish_claim_owner = ? AND deleted_at IS NULL", id, owner).
-		Updates(map[string]any{
+		UpdateColumns(map[string]any{
 			"published":           true,
 			"published_at":        publishedAt,
 			"publish_claim_owner": "",
-			"publish_claim_until": nil,
+			"publish_claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("mark published by owner: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("mark published by owner: no rows updated")
 	}
 
 	return nil
@@ -199,12 +206,15 @@ func (r *eventLogRepository) ReleaseClaim(ctx context.Context, id string, owner 
 
 	result := db.Model(&models.EventLog{}).
 		Where("id = ? AND publish_claim_owner = ? AND published = false AND deleted_at IS NULL", id, owner).
-		Updates(map[string]any{
+		UpdateColumns(map[string]any{
 			"publish_claim_owner": "",
-			"publish_claim_until": nil,
+			"publish_claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("release event claim: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("release event claim: no rows updated")
 	}
 
 	return nil

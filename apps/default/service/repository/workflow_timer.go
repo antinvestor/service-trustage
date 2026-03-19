@@ -124,7 +124,7 @@ func (r *workflowTimerRepository) MarkFiredByOwner(
 		UpdateColumns(map[string]any{
 			"fired_at":    firedAt,
 			"claim_owner": "",
-			"claim_until": nil,
+			"claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("mark timer fired: %w", result.Error)
@@ -140,7 +140,7 @@ func (r *workflowTimerRepository) ReleaseClaim(ctx context.Context, id string, o
 		Where("id = ? AND claim_owner = ? AND fired_at IS NULL AND deleted_at IS NULL", id, owner).
 		UpdateColumns(map[string]any{
 			"claim_owner": "",
-			"claim_until": nil,
+			"claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("release timer claim: %w", result.Error)

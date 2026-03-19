@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
@@ -592,7 +593,7 @@ func (m *queueManager) CallNext(ctx context.Context, counterID string) (*models.
 				 ORDER BY priority DESC, joined_at ASC
 				 LIMIT 1
 				 FOR UPDATE SKIP LOCKED`
-			args = []any{counter.QueueID, models.ItemStatusWaiting, categories}
+			args = []any{counter.QueueID, models.ItemStatusWaiting, pq.Array(categories)}
 		} else {
 			query = `SELECT * FROM queue_items
 				 WHERE queue_id = ? AND status = ? AND deleted_at IS NULL

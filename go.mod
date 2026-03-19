@@ -9,6 +9,7 @@ require (
 	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
 	github.com/google/gnostic v0.7.1
+	github.com/lib/pq v1.10.9
 	github.com/pitabwire/frame v1.80.1
 	github.com/pitabwire/util v0.6.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2

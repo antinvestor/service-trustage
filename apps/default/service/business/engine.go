@@ -191,10 +191,7 @@ func (e *stateEngine) CreateInitialExecution(
 	if tokenErr != nil {
 		return nil, fmt.Errorf("generate token: %w", tokenErr)
 	}
-	traceID, traceErr := cryptoutil.GenerateToken()
-	if traceErr != nil {
-		return nil, fmt.Errorf("generate trace id: %w", traceErr)
-	}
+	traceID := prefixedID("trc_")
 
 	tokenHash := cryptoutil.HashToken(rawToken)
 	exec := &models.WorkflowStateExecution{

@@ -162,7 +162,7 @@ func (r *workflowScopeRunRepository) ReleaseClaim(ctx context.Context, id, owner
 		Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", id, owner, "running").
 		Updates(map[string]any{
 			"claim_owner": "",
-			"claim_until": nil,
+			"claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("release scope claim: %w", result.Error)

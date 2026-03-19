@@ -85,6 +85,46 @@ func (s *DefaultServiceSuite) TestDispatchScheduler_RunOnce() {
 	s.Equal("exec-dispatch", queueMgr.published[0].ref)
 }
 
+func (s *DefaultServiceSuite) TestDispatchScheduler_RunUntilDrained() {
+	ctx := context.Background()
+	tenantCtx := s.tenantCtx()
+
+	def := s.createWorkflow(tenantCtx, s.sampleDSL())
+	for range 3 {
+		instance := &models.WorkflowInstance{
+			WorkflowName:    def.Name,
+			WorkflowVersion: def.WorkflowVersion,
+			CurrentState:    "log_step",
+			Status:          models.InstanceStatusRunning,
+			Revision:        1,
+		}
+		s.Require().NoError(s.instanceRepo.Create(tenantCtx, instance))
+
+		exec := &models.WorkflowStateExecution{
+			InstanceID:      instance.ID,
+			State:           "log_step",
+			Attempt:         1,
+			Status:          models.ExecStatusPending,
+			ExecutionToken:  "token",
+			InputSchemaHash: "hash",
+			InputPayload:    "{}",
+		}
+		s.Require().NoError(s.execRepo.Create(tenantCtx, exec))
+	}
+
+	cfg := &config.Config{
+		DispatchBatchSize:          1,
+		DispatchMaxBatchesPerSweep: 3,
+		QueueExecDispatchName:      "exec-dispatch",
+	}
+	queueMgr := &fakeQueueManager{}
+
+	sched := schedulers.NewDispatchScheduler(s.execRepo, s.stateEngine(), queueMgr, cfg, s.metrics)
+	count := sched.RunUntilDrained(ctx)
+	s.Equal(3, count)
+	s.Len(queueMgr.published, 3)
+}
+
 func (s *DefaultServiceSuite) TestOutboxScheduler_RunOnce() {
 	ctx := context.Background()
 	tenantCtx := s.tenantCtx()
@@ -105,6 +145,36 @@ func (s *DefaultServiceSuite) TestOutboxScheduler_RunOnce() {
 	s.Equal(1, count)
 	s.Len(queueMgr.published, 1)
 	s.Equal("event-ingest", queueMgr.published[0].ref)
+}
+
+func (s *DefaultServiceSuite) TestOutboxScheduler_RunUntilDrained() {
+	ctx := context.Background()
+	tenantCtx := s.tenantCtx()
+
+	for i := range 3 {
+		event := &models.EventLog{
+			EventType: "user.created",
+			Source:    "api",
+			Payload:   `{"index":1}`,
+		}
+		if i == 2 {
+			event.EventType = "user.updated"
+		}
+		s.Require().NoError(s.eventRepo.Create(tenantCtx, event))
+	}
+
+	cfg := &config.Config{
+		OutboxBatchSize:          1,
+		OutboxMaxBatchesPerSweep: 3,
+		OutboxClaimTTLSeconds:    30,
+		QueueEventIngestName:     "event-ingest",
+	}
+	queueMgr := &fakeQueueManager{}
+
+	sched := schedulers.NewOutboxScheduler(s.eventRepo, queueMgr, cfg, s.metrics)
+	count := sched.RunUntilDrained(ctx)
+	s.Equal(3, count)
+	s.Len(queueMgr.published, 3)
 }
 
 func (s *DefaultServiceSuite) TestRetryScheduler_RunOnce() {

@@ -145,7 +145,7 @@ func (r *workflowSignalMessageRepository) MarkDeliveredByOwner(
 			"delivered_at": deliveredAt,
 			"wait_id":      waitID,
 			"claim_owner":  "",
-			"claim_until":  nil,
+			"claim_until":  gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("mark signal message delivered: %w", result.Error)
@@ -161,7 +161,7 @@ func (r *workflowSignalMessageRepository) ReleaseClaim(ctx context.Context, id, 
 		Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", id, owner, "pending").
 		UpdateColumns(map[string]any{
 			"claim_owner": "",
-			"claim_until": nil,
+			"claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("release signal message claim: %w", result.Error)

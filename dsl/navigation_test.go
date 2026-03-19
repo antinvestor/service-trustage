@@ -140,3 +140,78 @@ func TestInitialStepHandlesEmptyWorkflow(t *testing.T) {
 		t.Fatal("expected nil initial step for empty workflow")
 	}
 }
+
+func TestResolveNextStepInSubtreeAndContainer(t *testing.T) {
+	spec := &WorkflowSpec{
+		Version: "1.0",
+		Name:    "scoped",
+		Steps: []*StepSpec{
+			{
+				ID:   "outer",
+				Type: StepTypeSequence,
+				Sequence: &SequenceSpec{
+					Steps: []*StepSpec{
+						{
+							ID:   "branch",
+							Type: StepTypeParallel,
+							Parallel: &ParallelSpec{
+								Steps: []*StepSpec{
+									{ID: "left", Type: StepTypeCall, Call: &CallSpec{Action: "log.entry"}},
+									{ID: "right", Type: StepTypeCall, Call: &CallSpec{Action: "log.entry"}},
+								},
+							},
+						},
+						{ID: "after_branch", Type: StepTypeCall, Call: &CallSpec{Action: "log.entry"}},
+					},
+				},
+			},
+			{ID: "tail", Type: StepTypeCall, Call: &CallSpec{Action: "log.entry"}},
+		},
+	}
+
+	next, err := ResolveNextStepInSubtree(spec, "outer", "right", nil)
+	if err != nil {
+		t.Fatalf("resolve in subtree: %v", err)
+	}
+	if next == nil || next.ID != "after_branch" {
+		t.Fatalf("expected after_branch, got %#v", next)
+	}
+
+	next, err = ResolveNextStepInContainer(spec, "branch", "left", nil)
+	if err != nil {
+		t.Fatalf("resolve in container: %v", err)
+	}
+	if next == nil || next.ID != "right" {
+		t.Fatalf("expected right sibling, got %#v", next)
+	}
+
+	next, err = ResolveNextStepInContainer(spec, "branch", "right", nil)
+	if err != nil {
+		t.Fatalf("resolve terminal in container: %v", err)
+	}
+	if next != nil {
+		t.Fatalf("expected subtree terminal, got %#v", next)
+	}
+}
+
+func TestResolveNextStepInContainerErrors(t *testing.T) {
+	spec := &WorkflowSpec{
+		Version: "1.0",
+		Name:    "invalid-container",
+		Steps: []*StepSpec{
+			{ID: "plain", Type: StepTypeCall, Call: &CallSpec{Action: "log.entry"}},
+		},
+	}
+
+	if _, err := ResolveNextStepInSubtree(spec, "missing", "plain", nil); err == nil {
+		t.Fatal("expected missing root error")
+	}
+
+	if _, err := ResolveNextStepInContainer(spec, "missing", "plain", nil); err == nil {
+		t.Fatal("expected missing container error")
+	}
+
+	if _, err := ResolveNextStepInContainer(spec, "plain", "plain", nil); err == nil {
+		t.Fatal("expected unsupported container error")
+	}
+}

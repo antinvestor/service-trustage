@@ -267,10 +267,13 @@ func (r *workflowExecutionRepository) UpdateStatus(
 
 	result := db.Model(&models.WorkflowStateExecution{}).
 		Where("id = ? AND deleted_at IS NULL", executionID).
-		Updates(updates)
+		UpdateColumns(updates)
 
 	if result.Error != nil {
 		return fmt.Errorf("update execution status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("update execution status: no rows updated")
 	}
 
 	return nil

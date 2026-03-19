@@ -190,7 +190,7 @@ func (r *workflowSignalWaitRepository) MarkCompletedByOwner(
 			"matched_at":  matchedAt,
 			"message_id":  messageID,
 			"claim_owner": "",
-			"claim_until": nil,
+			"claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("mark signal wait completed: %w", result.Error)
@@ -212,7 +212,7 @@ func (r *workflowSignalWaitRepository) MarkTimedOutByOwner(
 			"status":       "timed_out",
 			"timed_out_at": timedOutAt,
 			"claim_owner":  "",
-			"claim_until":  nil,
+			"claim_until":  gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("mark signal wait timed out: %w", result.Error)
@@ -228,7 +228,7 @@ func (r *workflowSignalWaitRepository) ReleaseClaim(ctx context.Context, id, own
 		Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", id, owner, "waiting").
 		UpdateColumns(map[string]any{
 			"claim_owner": "",
-			"claim_until": nil,
+			"claim_until": gorm.Expr("NULL"),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("release signal wait claim: %w", result.Error)

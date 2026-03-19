@@ -3,6 +3,7 @@ package tests_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
@@ -33,6 +34,7 @@ func (s *DefaultServiceSuite) TestStateEngine_DispatchCommitTerminal() {
 	exec, err := s.execRepo.GetLatestByInstance(ctx, instance.ID)
 	s.Require().NoError(err)
 	s.Equal(models.ExecStatusPending, exec.Status)
+	s.True(strings.HasPrefix(exec.TraceID, "trc_"))
 
 	rawToken, err := cryptoutil.GenerateToken()
 	s.Require().NoError(err)

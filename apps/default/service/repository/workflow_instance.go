@@ -185,9 +185,12 @@ func (r *workflowInstanceRepository) UpdateStatus(
 
 	result := db.Model(&models.WorkflowInstance{}).
 		Where("id = ? AND deleted_at IS NULL", instanceID).
-		Updates(updates)
+		UpdateColumns(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update instance status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("update instance status: no rows updated")
 	}
 
 	return nil
