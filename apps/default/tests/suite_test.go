@@ -30,6 +30,10 @@ var truncateTables = []string{
 	"workflow_audit_events",
 	"workflow_state_outputs",
 	"workflow_state_executions",
+	"workflow_signal_messages",
+	"workflow_signal_waits",
+	"workflow_scope_runs",
+	"workflow_timers",
 	"workflow_state_schemas",
 	"workflow_state_mappings",
 	"workflow_instances",
@@ -50,16 +54,20 @@ type DefaultServiceSuite struct {
 
 	metrics *telemetry.Metrics
 
-	eventRepo    repository.EventLogRepository
-	auditRepo    repository.AuditEventRepository
-	defRepo      repository.WorkflowDefinitionRepository
-	schemaRepo   repository.SchemaRegistryRepository
-	instanceRepo repository.WorkflowInstanceRepository
-	execRepo     repository.WorkflowExecutionRepository
-	outputRepo   repository.WorkflowOutputRepository
-	triggerRepo  repository.TriggerBindingRepository
-	retryRepo    repository.RetryPolicyRepository
-	scheduleRepo repository.ScheduleRepository
+	eventRepo      repository.EventLogRepository
+	auditRepo      repository.AuditEventRepository
+	defRepo        repository.WorkflowDefinitionRepository
+	schemaRepo     repository.SchemaRegistryRepository
+	instanceRepo   repository.WorkflowInstanceRepository
+	execRepo       repository.WorkflowExecutionRepository
+	outputRepo     repository.WorkflowOutputRepository
+	triggerRepo    repository.TriggerBindingRepository
+	retryRepo      repository.RetryPolicyRepository
+	scheduleRepo   repository.ScheduleRepository
+	timerRepo      repository.WorkflowTimerRepository
+	scopeRepo      repository.WorkflowScopeRunRepository
+	signalWaitRepo repository.WorkflowSignalWaitRepository
+	signalMsgRepo  repository.WorkflowSignalMessageRepository
 }
 
 func TestDefaultServiceSuite(t *testing.T) {
@@ -89,6 +97,10 @@ func (s *DefaultServiceSuite) SetupSuite() {
 		&models.WorkflowAuditEvent{},
 		&models.WorkflowStateOutput{},
 		&models.WorkflowStateExecution{},
+		&models.WorkflowScopeRun{},
+		&models.WorkflowSignalWait{},
+		&models.WorkflowSignalMessage{},
+		&models.WorkflowTimer{},
 		&models.WorkflowStateSchema{},
 		&models.WorkflowStateMapping{},
 		&models.WorkflowInstance{},
@@ -103,6 +115,11 @@ func (s *DefaultServiceSuite) SetupSuite() {
 	s.Require().NoError(db.Exec(
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_state_schema
 		 ON workflow_state_schemas (tenant_id, workflow_name, workflow_version, state, schema_type)`,
+	).Error)
+	s.Require().NoError(db.Exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_instance_trigger_dedupe
+		 ON workflow_instances (tenant_id, partition_id, workflow_name, workflow_version, trigger_event_id)
+		 WHERE trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL`,
 	).Error)
 	var idxCount int64
 	s.Require().NoError(db.Raw(
@@ -120,6 +137,10 @@ func (s *DefaultServiceSuite) SetupSuite() {
 	s.schemaRepo = repository.NewSchemaRegistryRepository(p)
 	s.instanceRepo = repository.NewWorkflowInstanceRepository(p)
 	s.execRepo = repository.NewWorkflowExecutionRepository(p)
+	s.timerRepo = repository.NewWorkflowTimerRepository(p)
+	s.scopeRepo = repository.NewWorkflowScopeRunRepository(p)
+	s.signalWaitRepo = repository.NewWorkflowSignalWaitRepository(p)
+	s.signalMsgRepo = repository.NewWorkflowSignalMessageRepository(p)
 	s.outputRepo = repository.NewWorkflowOutputRepository(p)
 	s.triggerRepo = repository.NewTriggerBindingRepository(p)
 	s.retryRepo = repository.NewRetryPolicyRepository(p)
@@ -166,6 +187,11 @@ func (s *DefaultServiceSuite) stateEngine() business.StateEngine {
 	return business.NewStateEngine(
 		s.instanceRepo,
 		s.execRepo,
+		repository.NewWorkflowRuntimeRepository(s.dbPool),
+		s.timerRepo,
+		s.scopeRepo,
+		s.signalWaitRepo,
+		s.signalMsgRepo,
 		s.outputRepo,
 		s.auditRepo,
 		s.defRepo,

@@ -19,11 +19,11 @@ const (
 type WorkflowStateSchema struct {
 	data.BaseModel `gorm:"embedded"`
 
-	WorkflowName    string          `gorm:"column:workflow_name;not null;uniqueIndex:uniq_workflow_state_schema"`
-	WorkflowVersion int             `gorm:"column:workflow_version;not null;uniqueIndex:uniq_workflow_state_schema"`
-	State           string          `gorm:"column:state;not null;uniqueIndex:uniq_workflow_state_schema"`
-	SchemaType      SchemaType      `gorm:"column:schema_type;not null;uniqueIndex:uniq_workflow_state_schema"`
-	SchemaHash      string          `gorm:"column:schema_hash;not null"`
+	WorkflowName    string          `gorm:"column:workflow_name;not null"`
+	WorkflowVersion int             `gorm:"column:workflow_version;not null"`
+	State           string          `gorm:"column:state;not null"`
+	SchemaType      SchemaType      `gorm:"column:schema_type;not null"`
+	SchemaHash      string          `gorm:"column:schema_hash;not null;index:idx_wss_hash"`
 	SchemaBlob      json.RawMessage `gorm:"column:schema_blob;type:jsonb;not null"`
 }
 

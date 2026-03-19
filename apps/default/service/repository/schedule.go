@@ -7,6 +7,7 @@ import (
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
+	"gorm.io/gorm/clause"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -50,17 +51,11 @@ func (r *scheduleRepository) FindDue(
 	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	var schedules []*models.ScheduleDefinition
-
-	result := db.Raw(`
-		SELECT * FROM schedule_definitions
-		WHERE active = true
-		  AND deleted_at IS NULL
-		  AND next_fire_at IS NOT NULL
-		  AND next_fire_at <= ?
-		ORDER BY next_fire_at ASC
-		LIMIT ?
-		FOR UPDATE SKIP LOCKED
-	`, now, limit).Scan(&schedules)
+	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("active = ? AND deleted_at IS NULL AND next_fire_at IS NOT NULL AND next_fire_at <= ?", true, now).
+		Order("next_fire_at ASC").
+		Limit(limit).
+		Find(&schedules)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("find due schedules: %w", result.Error)
@@ -77,11 +72,13 @@ func (r *scheduleRepository) UpdateFireTimes(
 ) error {
 	db := r.BaseRepository.Pool().DB(ctx, false)
 
-	result := db.Exec(`
-		UPDATE schedule_definitions
-		SET last_fired_at = ?, next_fire_at = ?, modified_at = NOW()
-		WHERE id = ?
-	`, lastFired, nextFire, id)
+	result := db.Model(&models.ScheduleDefinition{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]any{
+			"last_fired_at": lastFired,
+			"next_fire_at":  nextFire,
+			"modified_at":   time.Now(),
+		})
 
 	if result.Error != nil {
 		return fmt.Errorf("update fire times: %w", result.Error)

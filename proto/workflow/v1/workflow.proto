@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package workflow.v1;
+
+import "gnostic/openapi/v3/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/antinvestor/service-trustage/gen/go/workflow/v1;workflowv1";
+option java_multiple_files = true;
+option java_package = "workflowv1";
+option (gnostic.openapi.v3.document) = {
+  info: {
+    title: "Trustage Workflow API"
+    version: "v1.0.0"
+    description: "Workflow definition management for the Trustage orchestrator."
+  }
+};
+
+service WorkflowService {
+  rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse);
+  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse);
+  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc ActivateWorkflow(ActivateWorkflowRequest) returns (ActivateWorkflowResponse);
+}
+
+enum WorkflowStatus {
+  WORKFLOW_STATUS_UNSPECIFIED = 0;
+  WORKFLOW_STATUS_DRAFT = 1;
+  WORKFLOW_STATUS_ACTIVE = 2;
+  WORKFLOW_STATUS_ARCHIVED = 3;
+}
+
+message WorkflowDefinition {
+  string id = 1;
+  string name = 2;
+  int32 version = 3;
+  WorkflowStatus status = 4;
+  google.protobuf.Struct dsl = 5;
+  string input_schema_hash = 6;
+  int64 timeout_seconds = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CreateWorkflowRequest {
+  google.protobuf.Struct dsl = 1;
+}
+
+message CreateWorkflowResponse {
+  WorkflowDefinition workflow = 1;
+}
+
+message GetWorkflowRequest {
+  string id = 1;
+}
+
+message GetWorkflowResponse {
+  WorkflowDefinition workflow = 1;
+}
+
+message ListWorkflowsRequest {
+  string name = 1;
+  WorkflowStatus status = 2;
+  int32 limit = 3;
+}
+
+message ListWorkflowsResponse {
+  repeated WorkflowDefinition items = 1;
+}
+
+message ActivateWorkflowRequest {
+  string id = 1;
+}
+
+message ActivateWorkflowResponse {
+  WorkflowDefinition workflow = 1;
+}

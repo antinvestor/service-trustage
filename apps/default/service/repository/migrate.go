@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/util"
@@ -25,7 +26,11 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		&models.WorkflowStateSchema{},
 		&models.WorkflowStateMapping{},
 		&models.WorkflowStateOutput{},
+		&models.WorkflowScopeRun{},
+		&models.WorkflowSignalWait{},
+		&models.WorkflowSignalMessage{},
 		&models.WorkflowRetryPolicy{},
+		&models.WorkflowTimer{},
 		&models.WorkflowAuditEvent{},
 		&models.EventLog{},
 		&models.TriggerBinding{},
@@ -37,57 +42,15 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		return fmt.Errorf("auto-migrate database schema: %w", err)
 	}
 
-	indexes := []string{
-		// Workflow definitions.
-		"CREATE INDEX IF NOT EXISTS idx_wd_tenant ON workflow_definitions(tenant_id, partition_id)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_wd_name_version ON workflow_definitions(tenant_id, name, workflow_version) WHERE deleted_at IS NULL",
+	for _, indexDef := range migrationIndexes() {
+		for _, indexName := range indexDef.Names {
+			if db.Migrator().HasIndex(indexDef.Model, indexName) {
+				continue
+			}
 
-		// Workflow instances.
-		"CREATE INDEX IF NOT EXISTS idx_wi_tenant ON workflow_instances(tenant_id, partition_id)",
-		"CREATE INDEX IF NOT EXISTS idx_wi_status ON workflow_instances(status) WHERE deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_wi_workflow ON workflow_instances(tenant_id, workflow_name, workflow_version)",
-		"CREATE INDEX IF NOT EXISTS idx_wi_trigger ON workflow_instances(trigger_event_id) WHERE trigger_event_id IS NOT NULL",
-
-		// Workflow state executions - scheduler indexes (partial).
-		"CREATE INDEX IF NOT EXISTS idx_wse_tenant ON workflow_state_executions(tenant_id, partition_id)",
-		"CREATE INDEX IF NOT EXISTS idx_wse_instance ON workflow_state_executions(instance_id, state)",
-		"CREATE INDEX IF NOT EXISTS idx_wse_pending ON workflow_state_executions(status, created_at) WHERE status = 'pending'",
-		"CREATE INDEX IF NOT EXISTS idx_wse_retry ON workflow_state_executions(next_retry_at) WHERE status = 'retry_scheduled'",
-		"CREATE INDEX IF NOT EXISTS idx_wse_dispatched ON workflow_state_executions(status, created_at) WHERE status = 'dispatched'",
-
-		// Schema registry.
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_wss_unique ON workflow_state_schemas(tenant_id, workflow_name, workflow_version, state, schema_type)",
-		"CREATE INDEX IF NOT EXISTS idx_wss_hash ON workflow_state_schemas(schema_hash)",
-
-		// Mappings.
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_unique ON workflow_state_mappings(tenant_id, workflow_name, workflow_version, from_state, to_state) WHERE deleted_at IS NULL",
-
-		// Outputs.
-		"CREATE INDEX IF NOT EXISTS idx_wso_instance ON workflow_state_outputs(instance_id, state)",
-		"CREATE INDEX IF NOT EXISTS idx_wso_execution ON workflow_state_outputs(execution_id)",
-
-		// Retry policies.
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_wrp_unique ON workflow_retry_policies(tenant_id, workflow_name, workflow_version, state) WHERE deleted_at IS NULL",
-
-		// Audit events.
-		"CREATE INDEX IF NOT EXISTS idx_wae_instance ON workflow_audit_events(instance_id, created_at)",
-		"CREATE INDEX IF NOT EXISTS idx_wae_type ON workflow_audit_events(event_type)",
-
-		// Event log - outbox pattern.
-		"CREATE INDEX IF NOT EXISTS idx_el_unpublished ON event_log(published, created_at) WHERE published = false AND deleted_at IS NULL",
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_el_idempotency_tenant ON event_log(tenant_id, partition_id, idempotency_key) WHERE idempotency_key IS NOT NULL AND deleted_at IS NULL",
-
-		// Trigger bindings.
-		"CREATE INDEX IF NOT EXISTS idx_tb_event ON trigger_bindings(tenant_id, event_type) WHERE active = true AND deleted_at IS NULL",
-
-		// Schedule definitions.
-		"CREATE INDEX IF NOT EXISTS idx_sd_tenant ON schedule_definitions(tenant_id, partition_id)",
-		"CREATE INDEX IF NOT EXISTS idx_sd_due ON schedule_definitions(next_fire_at) WHERE active = true AND deleted_at IS NULL",
-	}
-
-	for _, sql := range indexes {
-		if indexErr := db.Exec(sql).Error; indexErr != nil {
-			return fmt.Errorf("create index %q: %w", sql, indexErr)
+			if indexErr := db.Migrator().CreateIndex(indexDef.Model, indexName); indexErr != nil {
+				return fmt.Errorf("create index %s on %T: %w", indexName, indexDef.Model, indexErr)
+			}
 		}
 	}
 
@@ -95,3 +58,225 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 
 	return nil
 }
+
+type migrationIndex struct {
+	Model any
+	Names []string
+}
+
+func migrationIndexes() []migrationIndex {
+	return []migrationIndex{
+		{
+			Model: &workflowDefinitionIndexModel{},
+			Names: []string{"idx_wd_tenant", "idx_wd_name_version"},
+		},
+		{
+			Model: &workflowInstanceIndexModel{},
+			Names: []string{
+				"idx_wi_tenant",
+				"idx_wi_status",
+				"idx_wi_workflow",
+				"idx_wi_trigger",
+				"idx_wi_parent_execution",
+				"idx_wi_trigger_dedupe",
+			},
+		},
+		{
+			Model: &workflowExecutionIndexModel{},
+			Names: []string{
+				"idx_wse_tenant",
+				"idx_wse_instance",
+				"idx_wse_pending",
+				"idx_wse_retry",
+				"idx_wse_waiting",
+				"idx_wse_dispatched",
+			},
+		},
+		{
+			Model: &workflowTimerIndexModel{},
+			Names: []string{"idx_wt_execution_unique", "idx_wt_due"},
+		},
+		{
+			Model: &workflowSchemaIndexModel{},
+			Names: []string{"idx_wss_unique", "idx_wss_hash"},
+		},
+		{
+			Model: &workflowMappingIndexModel{},
+			Names: []string{"idx_wsm_unique"},
+		},
+		{
+			Model: &workflowOutputIndexModel{},
+			Names: []string{"idx_wso_instance", "idx_wso_execution"},
+		},
+		{
+			Model: &workflowScopeRunIndexModel{},
+			Names: []string{"idx_wsr_parent_execution_unique", "idx_wsr_running"},
+		},
+		{
+			Model: &workflowSignalWaitIndexModel{},
+			Names: []string{"idx_wsw_execution_unique", "idx_wsw_waiting"},
+		},
+		{
+			Model: &workflowSignalMessageIndexModel{},
+			Names: []string{"idx_wsm_pending"},
+		},
+		{
+			Model: &workflowRetryPolicyIndexModel{},
+			Names: []string{"idx_wrp_unique"},
+		},
+		{
+			Model: &workflowAuditEventIndexModel{},
+			Names: []string{"idx_wae_instance", "idx_wae_type"},
+		},
+		{
+			Model: &eventLogIndexModel{},
+			Names: []string{"idx_el_unpublished", "idx_el_claimable", "idx_el_idempotency_tenant"},
+		},
+		{
+			Model: &triggerBindingIndexModel{},
+			Names: []string{"idx_tb_event"},
+		},
+		{
+			Model: &scheduleDefinitionIndexModel{},
+			Names: []string{"idx_sd_tenant", "idx_sd_due"},
+		},
+	}
+}
+
+type workflowDefinitionIndexModel struct {
+	TenantID        string `gorm:"column:tenant_id;index:idx_wd_tenant,priority:1;index:idx_wd_name_version,unique,where:deleted_at IS NULL,priority:1"`
+	PartitionID     string `gorm:"column:partition_id;index:idx_wd_tenant,priority:2"`
+	Name            string `gorm:"column:name;index:idx_wd_name_version,unique,where:deleted_at IS NULL,priority:2"`
+	WorkflowVersion int    `gorm:"column:workflow_version;index:idx_wd_name_version,unique,where:deleted_at IS NULL,priority:3"`
+}
+
+func (workflowDefinitionIndexModel) TableName() string { return "workflow_definitions" }
+
+type workflowInstanceIndexModel struct {
+	TenantID          string `gorm:"column:tenant_id;index:idx_wi_tenant,priority:1;index:idx_wi_workflow,priority:1;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:1"`
+	PartitionID       string `gorm:"column:partition_id;index:idx_wi_tenant,priority:2;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:2"`
+	Status            string `gorm:"column:status;index:idx_wi_status,where:deleted_at IS NULL"`
+	WorkflowName      string `gorm:"column:workflow_name;index:idx_wi_workflow,priority:2;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:3"`
+	WorkflowVersion   int    `gorm:"column:workflow_version;index:idx_wi_workflow,priority:3;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:4"`
+	TriggerEventID    string `gorm:"column:trigger_event_id;index:idx_wi_trigger,where:trigger_event_id IS NOT NULL;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:5"`
+	ParentExecutionID string `gorm:"column:parent_execution_id;index:idx_wi_parent_execution,where:parent_execution_id IS NOT NULL AND parent_execution_id <> '' AND deleted_at IS NULL,priority:1"`
+	ScopeIndex        int    `gorm:"column:scope_index;index:idx_wi_parent_execution,where:parent_execution_id IS NOT NULL AND parent_execution_id <> '' AND deleted_at IS NULL,priority:2"`
+}
+
+func (workflowInstanceIndexModel) TableName() string { return "workflow_instances" }
+
+type workflowExecutionIndexModel struct {
+	TenantID    string    `gorm:"column:tenant_id;index:idx_wse_tenant,priority:1"`
+	PartitionID string    `gorm:"column:partition_id;index:idx_wse_tenant,priority:2"`
+	InstanceID  string    `gorm:"column:instance_id;index:idx_wse_instance,priority:1"`
+	State       string    `gorm:"column:state;index:idx_wse_instance,priority:2"`
+	Status      string    `gorm:"column:status;index:idx_wse_pending,where:status = 'pending',priority:1;index:idx_wse_waiting,where:status = 'waiting',priority:1;index:idx_wse_dispatched,where:status = 'dispatched',priority:1"`
+	CreatedAt   time.Time `gorm:"column:created_at;index:idx_wse_pending,where:status = 'pending',priority:2;index:idx_wse_waiting,where:status = 'waiting',priority:2;index:idx_wse_dispatched,where:status = 'dispatched',priority:2"`
+	NextRetryAt time.Time `gorm:"column:next_retry_at;index:idx_wse_retry,where:status = 'retry_scheduled'"`
+}
+
+func (workflowExecutionIndexModel) TableName() string { return "workflow_state_executions" }
+
+type workflowTimerIndexModel struct {
+	ExecutionID string    `gorm:"column:execution_id;index:idx_wt_execution_unique,unique,where:deleted_at IS NULL"`
+	FiresAt     time.Time `gorm:"column:fires_at;index:idx_wt_due,where:fired_at IS NULL AND deleted_at IS NULL"`
+}
+
+func (workflowTimerIndexModel) TableName() string { return "workflow_timers" }
+
+type workflowSchemaIndexModel struct {
+	TenantID        string `gorm:"column:tenant_id;index:idx_wss_unique,unique,priority:1"`
+	WorkflowName    string `gorm:"column:workflow_name;index:idx_wss_unique,unique,priority:2"`
+	WorkflowVersion int    `gorm:"column:workflow_version;index:idx_wss_unique,unique,priority:3"`
+	State           string `gorm:"column:state;index:idx_wss_unique,unique,priority:4"`
+	SchemaType      string `gorm:"column:schema_type;index:idx_wss_unique,unique,priority:5"`
+	SchemaHash      string `gorm:"column:schema_hash;index:idx_wss_hash"`
+}
+
+func (workflowSchemaIndexModel) TableName() string { return "workflow_state_schemas" }
+
+type workflowMappingIndexModel struct {
+	TenantID        string `gorm:"column:tenant_id;index:idx_wsm_unique,unique,where:deleted_at IS NULL,priority:1"`
+	WorkflowName    string `gorm:"column:workflow_name;index:idx_wsm_unique,unique,where:deleted_at IS NULL,priority:2"`
+	WorkflowVersion int    `gorm:"column:workflow_version;index:idx_wsm_unique,unique,where:deleted_at IS NULL,priority:3"`
+	FromState       string `gorm:"column:from_state;index:idx_wsm_unique,unique,where:deleted_at IS NULL,priority:4"`
+	ToState         string `gorm:"column:to_state;index:idx_wsm_unique,unique,where:deleted_at IS NULL,priority:5"`
+}
+
+func (workflowMappingIndexModel) TableName() string { return "workflow_state_mappings" }
+
+type workflowOutputIndexModel struct {
+	InstanceID  string `gorm:"column:instance_id;index:idx_wso_instance,priority:1"`
+	State       string `gorm:"column:state;index:idx_wso_instance,priority:2"`
+	ExecutionID string `gorm:"column:execution_id;index:idx_wso_execution"`
+}
+
+func (workflowOutputIndexModel) TableName() string { return "workflow_state_outputs" }
+
+type workflowScopeRunIndexModel struct {
+	ParentExecutionID string    `gorm:"column:parent_execution_id;index:idx_wsr_parent_execution_unique,unique,where:deleted_at IS NULL;index:idx_wsr_running,where:status = 'running' AND deleted_at IS NULL,priority:2"`
+	Status            string    `gorm:"column:status;index:idx_wsr_running,where:status = 'running' AND deleted_at IS NULL,priority:1"`
+	CreatedAt         time.Time `gorm:"column:created_at;index:idx_wsr_running,where:status = 'running' AND deleted_at IS NULL,priority:3"`
+}
+
+func (workflowScopeRunIndexModel) TableName() string { return "workflow_scope_runs" }
+
+type workflowSignalWaitIndexModel struct {
+	ExecutionID string    `gorm:"column:execution_id;index:idx_wsw_execution_unique,unique,where:deleted_at IS NULL"`
+	InstanceID  string    `gorm:"column:instance_id;index:idx_wsw_waiting,where:status = 'waiting' AND deleted_at IS NULL,priority:1"`
+	SignalName  string    `gorm:"column:signal_name;index:idx_wsw_waiting,where:status = 'waiting' AND deleted_at IS NULL,priority:2"`
+	TimeoutAt   time.Time `gorm:"column:timeout_at;index:idx_wsw_waiting,where:status = 'waiting' AND deleted_at IS NULL,priority:3"`
+}
+
+func (workflowSignalWaitIndexModel) TableName() string { return "workflow_signal_waits" }
+
+type workflowSignalMessageIndexModel struct {
+	TargetInstanceID string    `gorm:"column:target_instance_id;index:idx_wsm_pending,where:status = 'pending' AND deleted_at IS NULL,priority:1"`
+	SignalName       string    `gorm:"column:signal_name;index:idx_wsm_pending,where:status = 'pending' AND deleted_at IS NULL,priority:2"`
+	CreatedAt        time.Time `gorm:"column:created_at;index:idx_wsm_pending,where:status = 'pending' AND deleted_at IS NULL,priority:3"`
+}
+
+func (workflowSignalMessageIndexModel) TableName() string { return "workflow_signal_messages" }
+
+type workflowRetryPolicyIndexModel struct {
+	TenantID        string `gorm:"column:tenant_id;index:idx_wrp_unique,unique,where:deleted_at IS NULL,priority:1"`
+	WorkflowName    string `gorm:"column:workflow_name;index:idx_wrp_unique,unique,where:deleted_at IS NULL,priority:2"`
+	WorkflowVersion int    `gorm:"column:workflow_version;index:idx_wrp_unique,unique,where:deleted_at IS NULL,priority:3"`
+	State           string `gorm:"column:state;index:idx_wrp_unique,unique,where:deleted_at IS NULL,priority:4"`
+}
+
+func (workflowRetryPolicyIndexModel) TableName() string { return "workflow_retry_policies" }
+
+type workflowAuditEventIndexModel struct {
+	InstanceID string    `gorm:"column:instance_id;index:idx_wae_instance,priority:1"`
+	CreatedAt  time.Time `gorm:"column:created_at;index:idx_wae_instance,priority:2"`
+	EventType  string    `gorm:"column:event_type;index:idx_wae_type"`
+}
+
+func (workflowAuditEventIndexModel) TableName() string { return "workflow_audit_events" }
+
+type eventLogIndexModel struct {
+	TenantID          string    `gorm:"column:tenant_id;index:idx_el_idempotency_tenant,unique,where:idempotency_key IS NOT NULL AND deleted_at IS NULL,priority:1"`
+	PartitionID       string    `gorm:"column:partition_id;index:idx_el_idempotency_tenant,unique,where:idempotency_key IS NOT NULL AND deleted_at IS NULL,priority:2"`
+	IdempotencyKey    string    `gorm:"column:idempotency_key;index:idx_el_idempotency_tenant,unique,where:idempotency_key IS NOT NULL AND deleted_at IS NULL,priority:3"`
+	Published         bool      `gorm:"column:published;index:idx_el_unpublished,where:published = false AND deleted_at IS NULL,priority:1;index:idx_el_claimable,where:published = false AND deleted_at IS NULL,priority:1"`
+	CreatedAt         time.Time `gorm:"column:created_at;index:idx_el_unpublished,where:published = false AND deleted_at IS NULL,priority:2;index:idx_el_claimable,where:published = false AND deleted_at IS NULL,priority:3"`
+	PublishClaimUntil time.Time `gorm:"column:publish_claim_until;index:idx_el_claimable,where:published = false AND deleted_at IS NULL,priority:2"`
+}
+
+func (eventLogIndexModel) TableName() string { return "event_log" }
+
+type triggerBindingIndexModel struct {
+	TenantID  string `gorm:"column:tenant_id;index:idx_tb_event,where:active = true AND deleted_at IS NULL,priority:1"`
+	EventType string `gorm:"column:event_type;index:idx_tb_event,where:active = true AND deleted_at IS NULL,priority:2"`
+}
+
+func (triggerBindingIndexModel) TableName() string { return "trigger_bindings" }
+
+type scheduleDefinitionIndexModel struct {
+	TenantID    string    `gorm:"column:tenant_id;index:idx_sd_tenant,priority:1"`
+	PartitionID string    `gorm:"column:partition_id;index:idx_sd_tenant,priority:2"`
+	NextFireAt  time.Time `gorm:"column:next_fire_at;index:idx_sd_due,where:active = true AND deleted_at IS NULL,priority:1"`
+}
+
+func (scheduleDefinitionIndexModel) TableName() string { return "schedule_definitions" }

@@ -15,6 +15,7 @@ import (
 type InstanceHandler struct {
 	instanceRepo repository.WorkflowInstanceRepository
 	execRepo     repository.WorkflowExecutionRepository
+	runtimeRepo  repository.WorkflowRuntimeRepository
 	auditRepo    repository.AuditEventRepository
 	authz        authz.Middleware
 }
@@ -29,6 +30,7 @@ func NewInstanceHandler(
 	return &InstanceHandler{
 		instanceRepo: instanceRepo,
 		execRepo:     execRepo,
+		runtimeRepo:  repository.NewWorkflowRuntimeRepository(execRepo.Pool()),
 		auditRepo:    auditRepo,
 		authz:        authzMiddleware,
 	}
@@ -114,7 +116,7 @@ func (h *InstanceHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newExec, retryErr := createRetryExecution(ctx, h.execRepo, h.auditRepo, exec, instance)
+	newExec, retryErr := createRetryExecution(ctx, h.execRepo, h.runtimeRepo, h.auditRepo, exec, instance)
 	if retryErr != nil {
 		log.WithError(retryErr).Error("retry instance failed")
 		http.Error(w, retryErr.Error(), http.StatusConflict)

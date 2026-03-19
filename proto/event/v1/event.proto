@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package event.v1;
+
+import "gnostic/openapi/v3/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/antinvestor/service-trustage/gen/go/event/v1;eventv1";
+option java_multiple_files = true;
+option java_package = "eventv1";
+option (gnostic.openapi.v3.document) = {
+  info: {
+    title: "Trustage Event API"
+    version: "v1.0.0"
+    description: "Event ingestion and workflow timeline reads for the Trustage orchestrator."
+  }
+};
+
+service EventService {
+  rpc IngestEvent(IngestEventRequest) returns (IngestEventResponse);
+  rpc GetInstanceTimeline(GetInstanceTimelineRequest) returns (GetInstanceTimelineResponse);
+}
+
+message EventRecord {
+  string event_id = 1;
+  string event_type = 2;
+  string source = 3;
+  string idempotency_key = 4;
+  google.protobuf.Struct payload = 5;
+}
+
+message IngestEventRequest {
+  string event_type = 1;
+  string source = 2;
+  string idempotency_key = 3;
+  google.protobuf.Struct payload = 4;
+}
+
+message IngestEventResponse {
+  EventRecord event = 1;
+  bool idempotent = 2;
+}
+
+message GetInstanceTimelineRequest {
+  string instance_id = 1;
+}
+
+message TimelineEntry {
+  string event_type = 1;
+  string state = 2;
+  string from_state = 3;
+  string to_state = 4;
+  string execution_id = 5;
+  string trace_id = 6;
+  google.protobuf.Struct payload = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message GetInstanceTimelineResponse {
+  repeated TimelineEntry items = 1;
+}

@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package signal.v1;
+
+import "gnostic/openapi/v3/annotations.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/antinvestor/service-trustage/gen/go/signal/v1;signalv1";
+option java_multiple_files = true;
+option java_package = "signalv1";
+option (gnostic.openapi.v3.document) = {
+  info: {
+    title: "Trustage Signal API"
+    version: "v1.0.0"
+    description: "Workflow signal delivery for resuming waiting Trustage executions."
+  }
+};
+
+service SignalService {
+  rpc SendSignal(SendSignalRequest) returns (SendSignalResponse);
+}
+
+message SendSignalRequest {
+  string instance_id = 1;
+  string signal_name = 2;
+  google.protobuf.Struct payload = 3;
+}
+
+message SendSignalResponse {
+  bool delivered = 1;
+}

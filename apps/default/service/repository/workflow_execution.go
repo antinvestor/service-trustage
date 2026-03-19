@@ -9,6 +9,7 @@ import (
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -116,16 +117,16 @@ func (r *workflowExecutionRepository) FindPending(
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
+	if limit <= 0 {
+		limit = 50
+	}
 
 	var execs []*models.WorkflowStateExecution
-
-	result := db.Raw(
-		`SELECT * FROM workflow_state_executions
-		 WHERE status = 'pending' AND deleted_at IS NULL
-		 ORDER BY created_at
-		 FOR UPDATE SKIP LOCKED
-		 LIMIT ?`, limit,
-	).Scan(&execs)
+	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("status = ? AND deleted_at IS NULL", models.ExecStatusPending).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&execs)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("find pending: %w", result.Error)
@@ -140,16 +141,16 @@ func (r *workflowExecutionRepository) FindRetryDue(
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
+	if limit <= 0 {
+		limit = 50
+	}
 
 	var execs []*models.WorkflowStateExecution
-
-	result := db.Raw(
-		`SELECT * FROM workflow_state_executions
-		 WHERE status = 'retry_scheduled' AND next_retry_at <= NOW() AND deleted_at IS NULL
-		 ORDER BY next_retry_at
-		 FOR UPDATE SKIP LOCKED
-		 LIMIT ?`, limit,
-	).Scan(&execs)
+	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("status = ? AND next_retry_at <= ? AND deleted_at IS NULL", models.ExecStatusRetryScheduled, time.Now()).
+		Order("next_retry_at ASC").
+		Limit(limit).
+		Find(&execs)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("find retry due: %w", result.Error)
@@ -165,19 +166,21 @@ func (r *workflowExecutionRepository) FindTimedOut(
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
+	if limit <= 0 {
+		limit = 50
+	}
 
+	deadline := time.Now().Add(-time.Duration(timeoutSeconds) * time.Second)
 	var execs []*models.WorkflowStateExecution
-
-	result := db.Raw(
-		`SELECT * FROM workflow_state_executions
-		 WHERE status = 'dispatched'
-		   AND started_at IS NOT NULL
-		   AND started_at < NOW() - INTERVAL '1 second' * ?
-		   AND deleted_at IS NULL
-		 ORDER BY started_at
-		 FOR UPDATE SKIP LOCKED
-		 LIMIT ?`, timeoutSeconds, limit,
-	).Scan(&execs)
+	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where(
+			"status = ? AND started_at IS NOT NULL AND started_at < ? AND deleted_at IS NULL",
+			models.ExecStatusDispatched,
+			deadline,
+		).
+		Order("started_at ASC").
+		Limit(limit).
+		Find(&execs)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("find timed out: %w", result.Error)
@@ -192,35 +195,20 @@ func (r *workflowExecutionRepository) VerifyAndConsumeToken(
 	executionID, tokenHash string,
 ) (*models.WorkflowStateExecution, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
-
-	var exec models.WorkflowStateExecution
-
-	// SELECT FOR UPDATE to lock the row.
-	result := db.Raw(
-		`SELECT * FROM workflow_state_executions
-		 WHERE id = ? AND execution_token = ? AND status = 'dispatched' AND deleted_at IS NULL
-		 FOR UPDATE`, executionID, tokenHash,
-	).Scan(&exec)
-
-	if result.Error != nil {
-		return nil, fmt.Errorf("verify token: %w", result.Error)
+	var exec *models.WorkflowStateExecution
+	txErr := db.Transaction(func(tx *gorm.DB) error {
+		lockedExec, err := r.VerifyAndConsumeTokenTx(tx, executionID, tokenHash)
+		if err != nil {
+			return err
+		}
+		exec = lockedExec
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
 	}
 
-	if result.RowsAffected == 0 {
-		return nil, errors.New("invalid execution token or execution not in dispatched state")
-	}
-
-	// Atomically consume the token by clearing it.
-	consumeResult := db.Exec(
-		`UPDATE workflow_state_executions SET execution_token = '' WHERE id = ? AND deleted_at IS NULL`,
-		executionID,
-	)
-
-	if consumeResult.Error != nil {
-		return nil, fmt.Errorf("consume token: %w", consumeResult.Error)
-	}
-
-	return &exec, nil
+	return exec, nil
 }
 
 // VerifyAndConsumeTokenTx is the same as VerifyAndConsumeToken but runs within an existing transaction.
@@ -229,26 +217,26 @@ func (r *workflowExecutionRepository) VerifyAndConsumeTokenTx(
 	executionID, tokenHash string,
 ) (*models.WorkflowStateExecution, error) {
 	var exec models.WorkflowStateExecution
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"id = ? AND execution_token = ? AND status = ? AND deleted_at IS NULL",
+			executionID,
+			tokenHash,
+			models.ExecStatusDispatched,
+		).
+		First(&exec)
 
-	result := tx.Raw(
-		`SELECT * FROM workflow_state_executions
-		 WHERE id = ? AND execution_token = ? AND status = 'dispatched' AND deleted_at IS NULL
-		 FOR UPDATE`, executionID, tokenHash,
-	).Scan(&exec)
-
-	if result.Error != nil {
+	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("verify token: %w", result.Error)
 	}
 
-	if result.RowsAffected == 0 {
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) || result.RowsAffected == 0 {
 		return nil, errors.New("invalid execution token or execution not in dispatched state")
 	}
 
-	consumeResult := tx.Exec(
-		`UPDATE workflow_state_executions SET execution_token = '' WHERE id = ? AND deleted_at IS NULL`,
-		executionID,
-	)
-
+	consumeResult := tx.Model(&models.WorkflowStateExecution{}).
+		Where("id = ? AND deleted_at IS NULL", executionID).
+		UpdateColumn("execution_token", "")
 	if consumeResult.Error != nil {
 		return nil, fmt.Errorf("consume token: %w", consumeResult.Error)
 	}

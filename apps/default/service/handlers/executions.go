@@ -14,6 +14,7 @@ import (
 // ExecutionHandler handles execution endpoints.
 type ExecutionHandler struct {
 	execRepo     repository.WorkflowExecutionRepository
+	runtimeRepo  repository.WorkflowRuntimeRepository
 	instanceRepo repository.WorkflowInstanceRepository
 	outputRepo   repository.WorkflowOutputRepository
 	auditRepo    repository.AuditEventRepository
@@ -30,6 +31,7 @@ func NewExecutionHandler(
 ) *ExecutionHandler {
 	return &ExecutionHandler{
 		execRepo:     execRepo,
+		runtimeRepo:  repository.NewWorkflowRuntimeRepository(execRepo.Pool()),
 		instanceRepo: instanceRepo,
 		outputRepo:   outputRepo,
 		auditRepo:    auditRepo,
@@ -186,7 +188,7 @@ func (h *ExecutionHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newExec, retryErr := createRetryExecution(ctx, h.execRepo, h.auditRepo, exec, instance)
+	newExec, retryErr := createRetryExecution(ctx, h.execRepo, h.runtimeRepo, h.auditRepo, exec, instance)
 	if retryErr != nil {
 		log.WithError(retryErr).Error("retry execution failed")
 		http.Error(w, retryErr.Error(), http.StatusConflict)

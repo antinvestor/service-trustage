@@ -63,6 +63,10 @@ func (b *workflowBusiness) CreateWorkflow(
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, result.Error())
 	}
 
+	if execErr := validateExecutableWorkflow(spec); execErr != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, execErr)
+	}
+
 	def := &models.WorkflowDefinition{
 		Name:            spec.Name,
 		WorkflowVersion: 1,
@@ -91,6 +95,30 @@ func (b *workflowBusiness) CreateWorkflow(
 	return def, nil
 }
 
+func validateExecutableWorkflow(spec *dsl.WorkflowSpec) error {
+	for _, step := range dsl.CollectAllSteps(spec) {
+		switch step.Type {
+		case dsl.StepTypeCall,
+			dsl.StepTypeSequence,
+			dsl.StepTypeIf,
+			dsl.StepTypeDelay,
+			dsl.StepTypeParallel,
+			dsl.StepTypeForeach,
+			dsl.StepTypeSignalWait,
+			dsl.StepTypeSignalSend:
+			continue
+		default:
+			return fmt.Errorf(
+				"step %q uses unsupported runtime step type %q",
+				step.ID,
+				step.Type,
+			)
+		}
+	}
+
+	return nil
+}
+
 // registerStepSchemas iterates all steps in the DSL and registers input/output schemas
 // for call steps that define them via their adapter schemas.
 func (b *workflowBusiness) registerStepSchemas(
@@ -98,12 +126,11 @@ func (b *workflowBusiness) registerStepSchemas(
 	spec *dsl.WorkflowSpec,
 ) error {
 	for _, step := range dsl.CollectAllSteps(spec) {
-		if step.Type != dsl.StepTypeCall || step.Call == nil {
+		inputSchema, outputSchema, errorSchema, ok := defaultSchemasForStep(step)
+		if !ok {
 			continue
 		}
 
-		// Register a default input schema for each call step.
-		inputSchema := json.RawMessage(`{"type": "object"}`)
 		if _, err := b.schemaReg.RegisterSchema(
 			ctx, spec.Name, 1, step.ID,
 			models.SchemaTypeInput, inputSchema,
@@ -111,8 +138,6 @@ func (b *workflowBusiness) registerStepSchemas(
 			return fmt.Errorf("register input schema for step %s: %w", step.ID, err)
 		}
 
-		// Register a default output schema for each call step.
-		outputSchema := json.RawMessage(`{"type": "object"}`)
 		if _, err := b.schemaReg.RegisterSchema(
 			ctx, spec.Name, 1, step.ID,
 			models.SchemaTypeOutput, outputSchema,
@@ -120,16 +145,6 @@ func (b *workflowBusiness) registerStepSchemas(
 			return fmt.Errorf("register output schema for step %s: %w", step.ID, err)
 		}
 
-		// Register a default error schema for each call step (ARCHITECTURE.md §4.2).
-		errorSchema := json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"class": {"type": "string"},
-				"code": {"type": "string"},
-				"message": {"type": "string"}
-			},
-			"required": ["class", "code", "message"]
-		}`)
 		if _, err := b.schemaReg.RegisterSchema(
 			ctx, spec.Name, 1, step.ID,
 			models.SchemaTypeError, errorSchema,
@@ -139,6 +154,52 @@ func (b *workflowBusiness) registerStepSchemas(
 	}
 
 	return nil
+}
+
+func defaultSchemasForStep(step *dsl.StepSpec) (json.RawMessage, json.RawMessage, json.RawMessage, bool) {
+	objectSchema := json.RawMessage(`{"type":"object"}`)
+	errorSchema := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"class": {"type": "string"},
+			"code": {"type": "string"},
+			"message": {"type": "string"}
+		},
+		"required": ["class", "code", "message"]
+	}`)
+
+	switch step.Type {
+	case dsl.StepTypeCall, dsl.StepTypeDelay, dsl.StepTypeSequence, dsl.StepTypeSignalSend:
+		return objectSchema, objectSchema, errorSchema, true
+	case dsl.StepTypeParallel:
+		return objectSchema, json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"branches":{"type":"array"}
+			},
+			"required":["branches"]
+		}`), errorSchema, true
+	case dsl.StepTypeForeach:
+		return objectSchema, json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"items":{"type":"array"}
+			},
+			"required":["items"]
+		}`), errorSchema, true
+	case dsl.StepTypeSignalWait:
+		return objectSchema, objectSchema, errorSchema, true
+	case dsl.StepTypeIf:
+		return objectSchema, json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"branch":{"type":"string","enum":["then","else"]}
+			},
+			"required":["branch"]
+		}`), errorSchema, true
+	default:
+		return nil, nil, nil, false
+	}
 }
 
 func (b *workflowBusiness) GetWorkflow(ctx context.Context, id string) (*models.WorkflowDefinition, error) {

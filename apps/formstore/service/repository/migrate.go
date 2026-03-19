@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/util"
@@ -26,20 +27,15 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		return fmt.Errorf("auto-migrate database schema: %w", err)
 	}
 
-	indexes := []string{
-		// Form definitions.
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_fd_form_id ON form_definitions(tenant_id, form_id) WHERE deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_fd_tenant ON form_definitions(tenant_id, partition_id)",
+	for _, indexDef := range migrationIndexes() {
+		for _, indexName := range indexDef.Names {
+			if db.Migrator().HasIndex(indexDef.Model, indexName) {
+				continue
+			}
 
-		// Form submissions.
-		"CREATE INDEX IF NOT EXISTS idx_fs_form_id ON form_submissions(tenant_id, form_id, created_at DESC) WHERE deleted_at IS NULL",
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_fs_idempotency ON form_submissions(tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key != '' AND deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_fs_tenant ON form_submissions(tenant_id, partition_id)",
-	}
-
-	for _, sql := range indexes {
-		if indexErr := db.Exec(sql).Error; indexErr != nil {
-			return fmt.Errorf("create index %q: %w", sql, indexErr)
+			if indexErr := db.Migrator().CreateIndex(indexDef.Model, indexName); indexErr != nil {
+				return fmt.Errorf("create index %s on %T: %w", indexName, indexDef.Model, indexErr)
+			}
 		}
 	}
 
@@ -47,3 +43,39 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 
 	return nil
 }
+
+type migrationIndex struct {
+	Model any
+	Names []string
+}
+
+func migrationIndexes() []migrationIndex {
+	return []migrationIndex{
+		{
+			Model: &formDefinitionIndexModel{},
+			Names: []string{"idx_fd_form_id", "idx_fd_tenant"},
+		},
+		{
+			Model: &formSubmissionIndexModel{},
+			Names: []string{"idx_fs_form_id", "idx_fs_idempotency", "idx_fs_tenant"},
+		},
+	}
+}
+
+type formDefinitionIndexModel struct {
+	TenantID    string `gorm:"column:tenant_id;index:idx_fd_form_id,unique,where:deleted_at IS NULL,priority:1;index:idx_fd_tenant,priority:1"`
+	PartitionID string `gorm:"column:partition_id;index:idx_fd_tenant,priority:2"`
+	FormID      string `gorm:"column:form_id;index:idx_fd_form_id,unique,where:deleted_at IS NULL,priority:2"`
+}
+
+func (formDefinitionIndexModel) TableName() string { return "form_definitions" }
+
+type formSubmissionIndexModel struct {
+	TenantID       string    `gorm:"column:tenant_id;index:idx_fs_form_id,where:deleted_at IS NULL,priority:1;index:idx_fs_idempotency,unique,where:idempotency_key IS NOT NULL AND idempotency_key <> '' AND deleted_at IS NULL,priority:1;index:idx_fs_tenant,priority:1"`
+	PartitionID    string    `gorm:"column:partition_id;index:idx_fs_tenant,priority:2"`
+	FormID         string    `gorm:"column:form_id;index:idx_fs_form_id,where:deleted_at IS NULL,priority:2"`
+	CreatedAt      time.Time `gorm:"column:created_at;index:idx_fs_form_id,sort:desc,where:deleted_at IS NULL,priority:3"`
+	IdempotencyKey string    `gorm:"column:idempotency_key;index:idx_fs_idempotency,unique,where:idempotency_key IS NOT NULL AND idempotency_key <> '' AND deleted_at IS NULL,priority:2"`
+}
+
+func (formSubmissionIndexModel) TableName() string { return "form_submissions" }

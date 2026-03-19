@@ -15,6 +15,7 @@ const (
 
 	EventStateDispatched        = "state.dispatched"
 	EventStateRunning           = "state.running"
+	EventStateWaiting           = "state.waiting"
 	EventStateCompleted         = "state.completed"
 	EventStateFailed            = "state.failed"
 	EventStateRetried           = "state.retried"
@@ -32,6 +33,7 @@ const (
 	EventWorkflowArchived  = "workflow.archived"
 
 	EventTriggerMatched = "trigger.matched"
+	EventTriggerDeduped = "trigger.deduplicated"
 )
 
 // ExecutionMessage is the minimal message sent via NATS for execution dispatch.

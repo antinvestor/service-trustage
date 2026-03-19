@@ -40,6 +40,17 @@ func (s *DefaultServiceSuite) TestSchemaRegistry_RegisterAndValidate() {
 	s.Require().Error(registry.ValidateOutput(ctx, "wf", 1, "step_a", badOutput))
 }
 
+func (s *DefaultServiceSuite) TestSchemaRegistry_MissingSchemasAndOptionalErrorSchema() {
+	ctx := s.tenantCtx()
+	registry := s.schemaRegistry()
+
+	_, err := registry.ValidateInput(ctx, "wf", 1, "missing", json.RawMessage(`{}`))
+	s.Require().Error(err)
+
+	err = registry.ValidateError(ctx, "wf", 1, "missing", json.RawMessage(`{"class":"fatal"}`))
+	s.Require().NoError(err)
+}
+
 func TestJsonSchemaCompilerSimple(t *testing.T) {
 	compiler := jsonschema.NewCompiler()
 	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(`{"type":"object"}`))

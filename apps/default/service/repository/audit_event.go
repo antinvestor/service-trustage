@@ -15,6 +15,7 @@ import (
 type AuditEventRepository interface {
 	Append(ctx context.Context, event *models.WorkflowAuditEvent) error
 	ListByInstance(ctx context.Context, instanceID string) ([]*models.WorkflowAuditEvent, error)
+	ListByInstanceWithLimit(ctx context.Context, instanceID string, limit int) ([]*models.WorkflowAuditEvent, error)
 	// DeleteBefore soft-deletes audit events older than the given time.
 	DeleteBefore(ctx context.Context, before time.Time, limit int) (int64, error)
 }
@@ -48,34 +49,55 @@ func (r *auditEventRepository) DeleteBefore(
 	limit int,
 ) (int64, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
-
-	result := db.Exec(
-		`UPDATE workflow_audit_events
-		 SET deleted_at = NOW()
-		 WHERE id IN (
-		 	SELECT id FROM workflow_audit_events
-		 	WHERE created_at < ? AND deleted_at IS NULL
-		 	LIMIT ?
-		 )`,
-		before, limit,
-	)
-	if result.Error != nil {
-		return 0, fmt.Errorf("delete old audit events: %w", result.Error)
+	if limit <= 0 {
+		limit = 100
 	}
 
-	return result.RowsAffected, nil
+	var ids []string
+	selectResult := db.Model(&models.WorkflowAuditEvent{}).
+		Where("created_at < ? AND deleted_at IS NULL", before).
+		Limit(limit).
+		Pluck("id", &ids)
+	if selectResult.Error != nil {
+		return 0, fmt.Errorf("select old audit events: %w", selectResult.Error)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	if err := r.BaseRepository.DeleteBatch(ctx, ids); err != nil {
+		return 0, fmt.Errorf("delete old audit events: %w", err)
+	}
+
+	return int64(len(ids)), nil
 }
 
 func (r *auditEventRepository) ListByInstance(
 	ctx context.Context,
 	instanceID string,
 ) ([]*models.WorkflowAuditEvent, error) {
+	return r.ListByInstanceWithLimit(ctx, instanceID, maxListLimit)
+}
+
+func (r *auditEventRepository) ListByInstanceWithLimit(
+	ctx context.Context,
+	instanceID string,
+	limit int,
+) ([]*models.WorkflowAuditEvent, error) {
 	db := r.BaseRepository.Pool().DB(ctx, true)
+
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
 
 	var events []*models.WorkflowAuditEvent
 
 	result := db.Where("instance_id = ? AND deleted_at IS NULL", instanceID).
 		Order("created_at ASC").
+		Limit(limit).
 		Find(&events)
 
 	if result.Error != nil {

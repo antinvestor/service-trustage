@@ -10,12 +10,15 @@ import (
 type EventLog struct {
 	data.BaseModel `gorm:"embedded"`
 
-	EventType      string     `gorm:"column:event_type;not null"`
-	Source         string     `gorm:"column:source"`
-	IdempotencyKey string     `gorm:"column:idempotency_key"`
-	Payload        string     `gorm:"column:payload;type:jsonb;not null"`
-	Published      bool       `gorm:"column:published;not null;default:false"`
-	PublishedAt    *time.Time `gorm:"column:published_at"`
+	EventType         string     `gorm:"column:event_type;not null"`
+	Source            string     `gorm:"column:source"`
+	IdempotencyKey    string     `gorm:"column:idempotency_key"`
+	Payload           string     `gorm:"column:payload;type:jsonb;not null"`
+	Published         bool       `gorm:"column:published;not null;default:false"`
+	PublishedAt       *time.Time `gorm:"column:published_at"`
+	PublishClaimUntil *time.Time `gorm:"column:publish_claim_until"`
+	PublishClaimOwner string     `gorm:"column:publish_claim_owner"`
+	PublishAttempts   int        `gorm:"column:publish_attempts;not null;default:0"`
 }
 
 // TableName returns the database table name.

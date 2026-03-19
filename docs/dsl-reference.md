@@ -15,6 +15,11 @@ The Orchestrator DSL (Domain-Specific Language) is a JSON format for defining wo
 - **Validatable**: Static analysis catches errors before execution
 - **AI-friendly**: JSON structured output produces reliable DSL documents
 
+Current runtime support: the grammar accepts all documented step types, and the
+runtime executes `call`, `delay`, `if`, `sequence`, `parallel`, `foreach`,
+`signal_wait`, and `signal_send` with durable waiting, branch reconciliation,
+and signal delivery.
+
 ---
 
 ## Document Structure
@@ -545,8 +550,8 @@ Validation errors are returned with the step ID and a human-readable message.
 | Version | Step Types | Status |
 |---------|-----------|--------|
 | `1.0` | call, delay, if, sequence | Active |
-| `1.1` | + parallel, foreach | Planned |
-| `1.2` | + signal_wait, signal_send | Planned |
+| `1.1` | + parallel, foreach | Active |
+| `1.2` | + signal_wait, signal_send | Active |
 | `1.3` | + sub_workflow, switch | Planned |
 | `2.0` | Reserved for breaking changes | Future |
 

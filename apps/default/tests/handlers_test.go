@@ -20,6 +20,7 @@ func (a allowAllAuthz) CanWorkflowManage(_ context.Context) error { return nil }
 func (a allowAllAuthz) CanWorkflowView(_ context.Context) error   { return nil }
 func (a allowAllAuthz) CanInstanceView(_ context.Context) error   { return nil }
 func (a allowAllAuthz) CanInstanceRetry(_ context.Context) error  { return nil }
+func (a allowAllAuthz) CanInstanceSignal(_ context.Context) error { return nil }
 func (a allowAllAuthz) CanExecutionView(_ context.Context) error  { return nil }
 func (a allowAllAuthz) CanExecutionRetry(_ context.Context) error { return nil }
 

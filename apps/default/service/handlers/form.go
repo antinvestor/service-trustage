@@ -126,7 +126,7 @@ func (h *FormHandler) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info("form submitted",
+	log.Debug("form submitted",
 		"submission_id", eventLog.ID,
 		"form_id", formID,
 	)

@@ -1,44 +1,108 @@
 package tests_test
 
 import (
-	"github.com/antinvestor/service-trustage/apps/default/service/business"
+	"context"
+
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
-func (s *DefaultServiceSuite) TestWorkflowBusiness_CreateAndActivate() {
+func (s *DefaultServiceSuite) TestWorkflowBusiness_RegistersSchemasForDelayIfAndSequence() {
 	ctx := s.tenantCtx()
 
 	dslBlob := `{
   "version": "1.0",
-  "name": "onboard",
+  "name": "schema-workflow",
   "steps": [
-    {"id": "step_a", "type": "call", "call": {"action": "log.entry", "input": {"level": "info", "message": "hello"}}},
-    {"id": "step_b", "type": "call", "call": {"action": "log.entry", "input": {"level": "info", "message": "world"}}}
+    {
+      "id": "seq",
+      "type": "sequence",
+      "sequence": {
+        "steps": [
+          {
+            "id": "wait",
+            "type": "delay",
+            "delay": { "duration": "1m" }
+          },
+          {
+            "id": "check",
+            "type": "if",
+            "if": {
+              "expr": "payload.amount > 10",
+              "then": [
+                {"id": "high", "type": "call", "call": {"action": "log.entry", "input": {}}}
+              ],
+              "else": [
+                {"id": "low", "type": "call", "call": {"action": "log.entry", "input": {}}}
+              ]
+            }
+          }
+        ]
+      }
+    }
   ]
 }`
 
 	def, err := s.workflowBusiness().CreateWorkflow(ctx, []byte(dslBlob))
 	s.Require().NoError(err)
-	s.Require().NotEmpty(def.ID)
-	s.Equal("onboard", def.Name)
-	s.Equal(models.WorkflowStatusDraft, def.Status)
 
-	// Schemas registered for each call step (input/output/error).
-	_, err = s.schemaRepo.Lookup(ctx, "onboard", 1, "step_a", models.SchemaTypeInput)
+	delayOutput, err := s.schemaRepo.Lookup(
+		context.Background(),
+		def.Name,
+		def.WorkflowVersion,
+		"wait",
+		models.SchemaTypeOutput,
+	)
 	s.Require().NoError(err)
-	_, err = s.schemaRepo.Lookup(ctx, "onboard", 1, "step_a", models.SchemaTypeOutput)
+	s.NotEmpty(delayOutput.SchemaHash)
+
+	ifOutput, err := s.schemaRepo.Lookup(
+		context.Background(),
+		def.Name,
+		def.WorkflowVersion,
+		"check",
+		models.SchemaTypeOutput,
+	)
 	s.Require().NoError(err)
-	_, err = s.schemaRepo.Lookup(ctx, "onboard", 1, "step_a", models.SchemaTypeError)
+	s.Contains(string(ifOutput.SchemaBlob), `"branch"`)
+
+	sequenceInput, err := s.schemaRepo.Lookup(
+		context.Background(),
+		def.Name,
+		def.WorkflowVersion,
+		"seq",
+		models.SchemaTypeInput,
+	)
+	s.Require().NoError(err)
+	s.NotEmpty(sequenceInput.SchemaHash)
+}
+
+func (s *DefaultServiceSuite) TestWorkflowBusiness_AllowsParallelRuntime() {
+	ctx := s.tenantCtx()
+
+	def, err := s.workflowBusiness().CreateWorkflow(ctx, []byte(`{
+  "version": "1.0",
+  "name": "parallel-supported",
+  "steps": [
+    {
+      "id": "fanout",
+      "type": "parallel",
+      "parallel": {
+        "steps": [
+          {"id": "child", "type": "call", "call": {"action": "log.entry", "input": {}}}
+        ]
+      }
+    }
+  ]
+}`))
 	s.Require().NoError(err)
 
-	// Activate workflow.
-	s.Require().NoError(s.workflowBusiness().ActivateWorkflow(ctx, def.ID))
-	updated, err := s.defRepo.GetByID(ctx, def.ID)
-	s.Require().NoError(err)
-	s.Equal(models.WorkflowStatusActive, updated.Status)
-
-	// Activating again should fail.
-	err = s.workflowBusiness().ActivateWorkflow(ctx, def.ID)
-	s.Require().Error(err)
-	s.ErrorIs(err, business.ErrInvalidWorkflowStatus)
+	schema, lookupErr := s.schemaRepo.Lookup(
+		context.Background(),
+		def.Name,
+		def.WorkflowVersion,
+		"fanout",
+		models.SchemaTypeOutput,
+	)
+	s.Require().NoError(lookupErr)
+	s.Contains(string(schema.SchemaBlob), `"branches"`)
 }

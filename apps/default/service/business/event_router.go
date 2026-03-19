@@ -104,7 +104,8 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 			continue
 		}
 
-		if instanceErr := r.createInstance(ctx, binding, event); instanceErr != nil {
+		instanceCreated, instanceErr := r.createInstance(ctx, binding, event)
+		if instanceErr != nil {
 			log.WithError(instanceErr).Error("failed to create instance",
 				"binding_id", binding.ID,
 				"workflow", binding.WorkflowName,
@@ -113,7 +114,9 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 			continue
 		}
 
-		created++
+		if instanceCreated {
+			created++
+		}
 	}
 
 	r.metrics.EventsRoutedTotal.Add(ctx, int64(created))
@@ -125,24 +128,24 @@ func (r *eventRouter) createInstance(
 	ctx context.Context,
 	binding *models.TriggerBinding,
 	event *events.IngestedEventMessage,
-) error {
+) (bool, error) {
 	// Load workflow definition to get initial state.
 	def, err := r.defRepo.GetByNameAndVersion(
 		ctx, binding.WorkflowName, binding.WorkflowVersion,
 	)
 	if err != nil {
-		return fmt.Errorf("load workflow: %w", err)
+		return false, fmt.Errorf("load workflow: %w", err)
 	}
 
 	// Parse DSL to find initial state.
 	spec, err := dsl.Parse([]byte(def.DSLBlob))
 	if err != nil {
-		return fmt.Errorf("parse DSL: %w", err)
+		return false, fmt.Errorf("parse DSL: %w", err)
 	}
 
 	initialStep := dsl.InitialStep(spec)
 	if initialStep == nil {
-		return fmt.Errorf("workflow %s has no steps", binding.WorkflowName)
+		return false, fmt.Errorf("workflow %s has no steps", binding.WorkflowName)
 	}
 
 	now := time.Now()
@@ -156,9 +159,34 @@ func (r *eventRouter) createInstance(
 		TriggerEventID:  event.EventID,
 		StartedAt:       &now,
 	}
+	instance.ID = deterministicEventInstanceID(
+		event.TenantID,
+		event.PartitionID,
+		binding.WorkflowName,
+		binding.WorkflowVersion,
+		event.EventID,
+	)
 
 	if err = r.instanceRepo.Create(ctx, instance); err != nil {
-		return fmt.Errorf("create instance: %w", err)
+		if isDuplicateCreateError(err) {
+			existing, lookupErr := r.instanceRepo.FindByTriggerEvent(
+				ctx,
+				binding.WorkflowName,
+				binding.WorkflowVersion,
+				event.EventID,
+			)
+			if lookupErr == nil && existing != nil {
+				_ = r.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
+					InstanceID: existing.ID,
+					EventType:  events.EventTriggerDeduped,
+					State:      existing.CurrentState,
+				})
+
+				return false, nil
+			}
+		}
+
+		return false, fmt.Errorf("create instance: %w", err)
 	}
 
 	// Audit event.
@@ -173,10 +201,10 @@ func (r *eventRouter) createInstance(
 
 	_, execErr := r.engine.CreateInitialExecution(ctx, instance, inputPayload)
 	if execErr != nil {
-		return fmt.Errorf("create initial execution: %w", execErr)
+		return false, fmt.Errorf("create initial execution: %w", execErr)
 	}
 
-	return nil
+	return true, nil
 }
 
 func evaluateTriggerFilter(filter string, payload map[string]any) (bool, error) {

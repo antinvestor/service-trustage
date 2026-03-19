@@ -11,7 +11,23 @@ Foundry implements a three-layer concurrency model using Valkey counters with TT
 The challenge is that rate limiting must happen at multiple points in the execution pipeline. Event ingestion must be limited before events enter NATS. Workflow concurrency must be bounded before the engine schedules new executions. Connector calls must respect per-API rate limits. And the entire pipeline needs back-pressure mechanisms so that bursts are absorbed gracefully rather than causing failures. Each layer protects a different resource and has different failure modes.
 
 ## Decision
-We adopt a four-layer rate limiting architecture, with each layer protecting a specific resource type and using the mechanism best suited to that layer.
+We adopt a layered admission-control architecture, with each layer protecting a
+specific resource type and using the mechanism best suited to that layer.
+
+### Limiter Selection Rules
+
+The service must not treat all overload problems as "rate limiting." Different
+failure modes require different controls:
+
+| Failure mode | Correct mechanism | Why |
+|--------------|-------------------|-----|
+| A tenant or caller can submit too many requests per time window | `frame/ratelimiter.LeasedWindowLimiter` or `WindowLimiter` | Protects a shared distributed request budget |
+| Downstream backlog is already too high | `frame/ratelimiter.QueueDepthLimiter` | Stops admitting more work until the system can drain safely |
+| Too many expensive operations are running at once in a single worker process | `frame/ratelimiter.ConcurrencyLimiter` | Protects local finite execution capacity |
+| Too many active workflow instances exist fleet-wide for a tenant | Distributed Valkey/Postgres-backed concurrency accounting | This is a cross-process business quota, not a local in-process concurrency cap |
+
+These controls are complementary. They should be layered where needed rather
+than forced into one limiter type.
 
 ### Layer 1: Event Ingestion Rate Limiting
 

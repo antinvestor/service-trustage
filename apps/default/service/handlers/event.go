@@ -113,7 +113,7 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info("event ingested", "event_id", eventLog.ID, "event_type", req.EventType)
+	log.Debug("event ingested", "event_id", eventLog.ID, "event_type", req.EventType)
 
 	// Event is stored in the outbox table. The outbox scheduler will publish it
 	// to NATS, where the event router worker will process it. This avoids

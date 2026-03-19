@@ -15,6 +15,7 @@ type WorkflowOutputRepository interface {
 	Store(ctx context.Context, output *models.WorkflowStateOutput) error
 	GetByExecution(ctx context.Context, executionID string) (*models.WorkflowStateOutput, error)
 	GetByInstanceAndState(ctx context.Context, instanceID, state string) (*models.WorkflowStateOutput, error)
+	ListByInstance(ctx context.Context, instanceID string, limit int) ([]*models.WorkflowStateOutput, error)
 }
 
 type workflowOutputRepository struct {
@@ -71,4 +72,30 @@ func (r *workflowOutputRepository) GetByInstanceAndState(
 	}
 
 	return &output, nil
+}
+
+func (r *workflowOutputRepository) ListByInstance(
+	ctx context.Context,
+	instanceID string,
+	limit int,
+) ([]*models.WorkflowStateOutput, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
+
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+
+	var outputs []*models.WorkflowStateOutput
+	result := db.Where("instance_id = ? AND deleted_at IS NULL", instanceID).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&outputs)
+	if result.Error != nil {
+		return nil, fmt.Errorf("list outputs by instance: %w", result.Error)
+	}
+
+	return outputs, nil
 }

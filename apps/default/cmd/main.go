@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"sync"
 
+	"connectrpc.com/connect"
 	"github.com/pitabwire/frame"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/frame/security/authorizer"
+	connectInterceptors "github.com/pitabwire/frame/security/interceptors/connect"
 	securityhttp "github.com/pitabwire/frame/security/interceptors/httptor"
 	"github.com/pitabwire/util"
 
@@ -24,7 +26,15 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/schedulers"
 	"github.com/antinvestor/service-trustage/connector"
 	"github.com/antinvestor/service-trustage/connector/adapters"
+	"github.com/antinvestor/service-trustage/gen/go/event/v1/eventv1connect"
+	"github.com/antinvestor/service-trustage/gen/go/runtime/v1/runtimev1connect"
+	"github.com/antinvestor/service-trustage/gen/go/signal/v1/signalv1connect"
+	"github.com/antinvestor/service-trustage/gen/go/workflow/v1/workflowv1connect"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
+	eventv1spec "github.com/antinvestor/service-trustage/proto/event/v1"
+	runtimev1spec "github.com/antinvestor/service-trustage/proto/runtime/v1"
+	signalv1spec "github.com/antinvestor/service-trustage/proto/signal/v1"
+	workflowv1spec "github.com/antinvestor/service-trustage/proto/workflow/v1"
 )
 
 func main() { //nolint:funlen // main function wiring
@@ -73,6 +83,11 @@ func main() { //nolint:funlen // main function wiring
 	defRepo := repository.NewWorkflowDefinitionRepository(dbPool)
 	instanceRepo := repository.NewWorkflowInstanceRepository(dbPool)
 	execRepo := repository.NewWorkflowExecutionRepository(dbPool)
+	runtimeRepo := repository.NewWorkflowRuntimeRepository(dbPool)
+	timerRepo := repository.NewWorkflowTimerRepository(dbPool)
+	scopeRepo := repository.NewWorkflowScopeRunRepository(dbPool)
+	signalWaitRepo := repository.NewWorkflowSignalWaitRepository(dbPool)
+	signalMsgRepo := repository.NewWorkflowSignalMessageRepository(dbPool)
 	schemaRepo := repository.NewSchemaRegistryRepository(dbPool)
 	outputRepo := repository.NewWorkflowOutputRepository(dbPool)
 	auditRepo := repository.NewAuditEventRepository(dbPool)
@@ -99,6 +114,11 @@ func main() { //nolint:funlen // main function wiring
 	engine := business.NewStateEngine(
 		instanceRepo,
 		execRepo,
+		runtimeRepo,
+		timerRepo,
+		scopeRepo,
+		signalWaitRepo,
+		signalMsgRepo,
 		outputRepo,
 		auditRepo,
 		defRepo,
@@ -114,6 +134,16 @@ func main() { //nolint:funlen // main function wiring
 	auth := sm.GetAuthorizer(ctx)
 	authzMiddleware := authz.NewMiddleware(auth)
 	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
+	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(tenancyAccessChecker)
+
+	defaultInterceptorList, err := connectInterceptors.DefaultList(
+		ctx,
+		sm.GetAuthenticator(ctx),
+		tenancyAccessInterceptor,
+	)
+	if err != nil {
+		log.WithError(err).Fatal("failed to create connect interceptors")
+	}
 
 	// Schedulers (background goroutines with coordinated shutdown).
 	// Schedulers process all tenants, so skip tenancy checks on BaseRepository queries.
@@ -123,6 +153,9 @@ func main() { //nolint:funlen // main function wiring
 
 	dispatchSched := schedulers.NewDispatchScheduler(execRepo, engine, svc.QueueManager(), &cfg, metrics)
 	retrySched := schedulers.NewRetryScheduler(execRepo, instanceRepo, &cfg, metrics)
+	timerSched := schedulers.NewTimerScheduler(timerRepo, engine, &cfg, metrics)
+	signalSched := schedulers.NewSignalScheduler(signalWaitRepo, engine, &cfg)
+	scopeSched := schedulers.NewScopeScheduler(scopeRepo, engine, &cfg)
 	timeoutSched := schedulers.NewTimeoutScheduler(execRepo, instanceRepo, retryPolicyRepo, auditRepo, &cfg, metrics)
 	outboxSched := schedulers.NewOutboxScheduler(eventLogRepo, svc.QueueManager(), &cfg, metrics)
 
@@ -142,40 +175,60 @@ func main() { //nolint:funlen // main function wiring
 
 	startScheduler("dispatch", dispatchSched.Start)
 	startScheduler("retry", retrySched.Start)
+	startScheduler("timer", timerSched.Start)
+	startScheduler("signal", signalSched.Start)
+	startScheduler("scope", scopeSched.Start)
 	startScheduler("timeout", timeoutSched.Start)
 	startScheduler("outbox", outboxSched.Start)
 	startScheduler("cleanup", cleanupSched.Start)
 	startScheduler("cron", cronSched.Start)
 
 	// HTTP handlers.
-	workflowHandler := handlers.NewWorkflowHandler(workflowBiz, authzMiddleware, metrics)
-	rateLimiter := handlers.NewRateLimiter(rawCache, cfg.EventIngestRateLimit)
-	eventHandler := handlers.NewEventHandler(eventLogRepo, auditRepo, authzMiddleware, metrics, rateLimiter)
-	formHandler := handlers.NewFormHandler(eventLogRepo, authzMiddleware, metrics, rateLimiter)
-	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(eventLogRepo, authzMiddleware, metrics, rateLimiter)
-	instanceHandler := handlers.NewInstanceHandler(instanceRepo, execRepo, auditRepo, authzMiddleware)
-	executionHandler := handlers.NewExecutionHandler(execRepo, instanceRepo, outputRepo, auditRepo, authzMiddleware)
+	eventRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:event_ingest", cfg.EventIngestRateLimit)
+	formRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:form_ingress", cfg.EventIngestRateLimit)
+	webhookRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:webhook_ingress", cfg.EventIngestRateLimit)
+
+	formHandler := handlers.NewFormHandler(eventLogRepo, authzMiddleware, metrics, formRateLimiter)
+	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(
+		eventLogRepo,
+		authzMiddleware,
+		metrics,
+		webhookRateLimiter,
+	)
+
+	workflowServer := handlers.NewWorkflowConnectServer(workflowBiz, authzMiddleware)
+	eventServer := handlers.NewEventConnectServer(eventLogRepo, auditRepo, authzMiddleware, metrics, eventRateLimiter)
+	runtimeServer := handlers.NewRuntimeConnectServer(
+		instanceRepo,
+		execRepo,
+		outputRepo,
+		auditRepo,
+		scopeRepo,
+		signalWaitRepo,
+		signalMsgRepo,
+		engine,
+		authzMiddleware,
+	)
+	signalServer := handlers.NewSignalConnectServer(engine, authzMiddleware)
+
+	workflowPath, workflowHandler := workflowv1connect.NewWorkflowServiceHandler(
+		workflowServer,
+		connect.WithInterceptors(defaultInterceptorList...),
+	)
+	eventPath, eventHandler := eventv1connect.NewEventServiceHandler(
+		eventServer,
+		connect.WithInterceptors(defaultInterceptorList...),
+	)
+	runtimePath, runtimeHandler := runtimev1connect.NewRuntimeServiceHandler(
+		runtimeServer,
+		connect.WithInterceptors(defaultInterceptorList...),
+	)
+	signalPath, signalHandler := signalv1connect.NewSignalServiceHandler(
+		signalServer,
+		connect.WithInterceptors(defaultInterceptorList...),
+	)
 
 	protectedMux := http.NewServeMux()
-
-	// Workflow management endpoints.
-	protectedMux.HandleFunc("POST /api/v1/workflows", workflowHandler.CreateWorkflow)
-	protectedMux.HandleFunc("GET /api/v1/workflows/{id}", workflowHandler.GetWorkflow)
-	protectedMux.HandleFunc("POST /api/v1/workflows/{id}/activate", workflowHandler.ActivateWorkflow)
-	protectedMux.HandleFunc("GET /api/v1/workflows", workflowHandler.ListWorkflows)
-
-	// Event ingestion and timeline endpoints.
-	protectedMux.HandleFunc("POST /api/v1/events", eventHandler.IngestEvent)
-	protectedMux.HandleFunc("GET /api/v1/instances/{id}/timeline", eventHandler.GetInstanceTimeline)
-
-	// Instance endpoints.
-	protectedMux.HandleFunc("GET /api/v1/instances", instanceHandler.List)
-	protectedMux.HandleFunc("POST /api/v1/instances/{id}/retry", instanceHandler.Retry)
-
-	// Execution endpoints.
-	protectedMux.HandleFunc("GET /api/v1/executions", executionHandler.List)
-	protectedMux.HandleFunc("GET /api/v1/executions/{id}", executionHandler.Get)
-	protectedMux.HandleFunc("POST /api/v1/executions/{id}/retry", executionHandler.Retry)
 
 	// Form capture endpoint.
 	protectedMux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)
@@ -198,6 +251,14 @@ func main() { //nolint:funlen // main function wiring
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	publicMux.Handle(workflowPath, workflowHandler)
+	publicMux.Handle(eventPath, eventHandler)
+	publicMux.Handle(runtimePath, runtimeHandler)
+	publicMux.Handle(signalPath, signalHandler)
+	publicMux.Handle("/openapi/workflow.yaml", handlers.EmbeddedSpecHandler(workflowv1spec.ApiSpecFile))
+	publicMux.Handle("/openapi/event.yaml", handlers.EmbeddedSpecHandler(eventv1spec.ApiSpecFile))
+	publicMux.Handle("/openapi/runtime.yaml", handlers.EmbeddedSpecHandler(runtimev1spec.ApiSpecFile))
+	publicMux.Handle("/openapi/signal.yaml", handlers.EmbeddedSpecHandler(signalv1spec.ApiSpecFile))
 	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(
 		handlers.RequestIDMiddleware(handlers.LimitBodySize(protectedMux)),
 		tenancyAccessChecker,

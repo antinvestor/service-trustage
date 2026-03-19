@@ -8,6 +8,8 @@ import (
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 )
@@ -67,7 +69,6 @@ func (r *queueItemRepository) GetByID(ctx context.Context, id string) (*models.Q
 }
 
 // FindNextWaiting atomically finds and locks the next waiting item using FOR UPDATE SKIP LOCKED.
-// Uses raw SQL to ensure the lock clause is applied (GORM hints can be silently ignored).
 func (r *queueItemRepository) FindNextWaiting(
 	ctx context.Context,
 	queueID string,
@@ -76,35 +77,22 @@ func (r *queueItemRepository) FindNextWaiting(
 	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	var item models.QueueItem
-
-	var result error
-
+	query := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where(
+			"queue_id = ? AND status = ? AND deleted_at IS NULL",
+			queueID,
+			models.ItemStatusWaiting,
+		)
 	if len(categories) > 0 {
-		result = db.Raw(
-			`SELECT * FROM queue_items
-			 WHERE queue_id = ? AND status = ? AND deleted_at IS NULL AND category = ANY(?)
-			 ORDER BY priority DESC, joined_at ASC
-			 LIMIT 1
-			 FOR UPDATE SKIP LOCKED`,
-			queueID, models.ItemStatusWaiting, categories,
-		).Scan(&item).Error
-	} else {
-		result = db.Raw(
-			`SELECT * FROM queue_items
-			 WHERE queue_id = ? AND status = ? AND deleted_at IS NULL
-			 ORDER BY priority DESC, joined_at ASC
-			 LIMIT 1
-			 FOR UPDATE SKIP LOCKED`,
-			queueID, models.ItemStatusWaiting,
-		).Scan(&item).Error
+		query = query.Where("category IN ?", categories)
 	}
 
-	if result != nil {
-		return nil, fmt.Errorf("find next waiting item: %w", result)
-	}
-
-	if item.ID == "" {
+	result := query.Order("priority DESC, joined_at ASC").First(&item)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return nil, errors.New("find next waiting item: no rows found")
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("find next waiting item: %w", result.Error)
 	}
 
 	return &item, nil
@@ -191,18 +179,20 @@ func (r *queueItemRepository) CountByStatus(
 func (r *queueItemRepository) CountWaitingForUpdate(ctx context.Context, queueID string) (int64, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
 
-	var count int64
-
-	result := db.Raw(
-		`SELECT COUNT(*) FROM queue_items WHERE queue_id = ? AND status = ? AND deleted_at IS NULL FOR UPDATE`,
-		queueID, models.ItemStatusWaiting,
-	).Scan(&count)
-
+	var ids []string
+	result := db.Model(&models.QueueItem{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"queue_id = ? AND status = ? AND deleted_at IS NULL",
+			queueID,
+			models.ItemStatusWaiting,
+		).
+		Pluck("id", &ids)
 	if result.Error != nil {
 		return 0, fmt.Errorf("count waiting for update: %w", result.Error)
 	}
 
-	return count, nil
+	return int64(len(ids)), nil
 }
 
 func (r *queueItemRepository) AvgWaitMinutes(

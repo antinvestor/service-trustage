@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/util"
@@ -27,28 +28,15 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		return fmt.Errorf("auto-migrate database schema: %w", err)
 	}
 
-	indexes := []string{
-		// Queue definitions.
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_qd_name ON queue_definitions(tenant_id, name) WHERE deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_qd_tenant ON queue_definitions(tenant_id, partition_id)",
+	for _, indexDef := range migrationIndexes() {
+		for _, indexName := range indexDef.Names {
+			if db.Migrator().HasIndex(indexDef.Model, indexName) {
+				continue
+			}
 
-		// Queue items — critical for priority queue ordering.
-		"CREATE INDEX IF NOT EXISTS idx_qi_waiting ON queue_items(queue_id, priority DESC, joined_at ASC) WHERE status = 'waiting' AND deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_qi_queue ON queue_items(tenant_id, queue_id, created_at DESC) WHERE deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_qi_tenant ON queue_items(tenant_id, partition_id)",
-		"CREATE INDEX IF NOT EXISTS idx_qi_counter ON queue_items(counter_id) WHERE status = 'serving'",
-
-		// Queue item ticket uniqueness per queue.
-		"CREATE UNIQUE INDEX IF NOT EXISTS idx_qi_ticket ON queue_items(queue_id, ticket_no) WHERE deleted_at IS NULL",
-
-		// Queue counters.
-		"CREATE INDEX IF NOT EXISTS idx_qc_queue ON queue_counters(tenant_id, queue_id) WHERE deleted_at IS NULL",
-		"CREATE INDEX IF NOT EXISTS idx_qc_tenant ON queue_counters(tenant_id, partition_id)",
-	}
-
-	for _, sql := range indexes {
-		if indexErr := db.Exec(sql).Error; indexErr != nil {
-			return fmt.Errorf("create index %q: %w", sql, indexErr)
+			if indexErr := db.Migrator().CreateIndex(indexDef.Model, indexName); indexErr != nil {
+				return fmt.Errorf("create index %s on %T: %w", indexName, indexDef.Model, indexErr)
+			}
 		}
 	}
 
@@ -56,3 +44,54 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 
 	return nil
 }
+
+type migrationIndex struct {
+	Model any
+	Names []string
+}
+
+func migrationIndexes() []migrationIndex {
+	return []migrationIndex{
+		{
+			Model: &queueDefinitionIndexModel{},
+			Names: []string{"idx_qd_name", "idx_qd_tenant"},
+		},
+		{
+			Model: &queueItemIndexModel{},
+			Names: []string{"idx_qi_waiting", "idx_qi_queue", "idx_qi_tenant", "idx_qi_counter", "idx_qi_ticket"},
+		},
+		{
+			Model: &queueCounterIndexModel{},
+			Names: []string{"idx_qc_queue", "idx_qc_tenant"},
+		},
+	}
+}
+
+type queueDefinitionIndexModel struct {
+	TenantID    string `gorm:"column:tenant_id;index:idx_qd_name,unique,where:deleted_at IS NULL,priority:1;index:idx_qd_tenant,priority:1"`
+	PartitionID string `gorm:"column:partition_id;index:idx_qd_tenant,priority:2"`
+	Name        string `gorm:"column:name;index:idx_qd_name,unique,where:deleted_at IS NULL,priority:2"`
+}
+
+func (queueDefinitionIndexModel) TableName() string { return "queue_definitions" }
+
+type queueItemIndexModel struct {
+	TenantID    string    `gorm:"column:tenant_id;index:idx_qi_queue,where:deleted_at IS NULL,priority:1;index:idx_qi_tenant,priority:1"`
+	PartitionID string    `gorm:"column:partition_id;index:idx_qi_tenant,priority:2"`
+	QueueID     string    `gorm:"column:queue_id;index:idx_qi_waiting,where:status = 'waiting' AND deleted_at IS NULL,priority:1;index:idx_qi_queue,where:deleted_at IS NULL,priority:2;index:idx_qi_ticket,unique,where:deleted_at IS NULL,priority:1"`
+	Priority    int       `gorm:"column:priority;index:idx_qi_waiting,sort:desc,where:status = 'waiting' AND deleted_at IS NULL,priority:2"`
+	JoinedAt    time.Time `gorm:"column:joined_at;index:idx_qi_waiting,sort:asc,where:status = 'waiting' AND deleted_at IS NULL,priority:3"`
+	CreatedAt   time.Time `gorm:"column:created_at;index:idx_qi_queue,sort:desc,where:deleted_at IS NULL,priority:3"`
+	CounterID   string    `gorm:"column:counter_id;index:idx_qi_counter,where:status = 'serving'"`
+	TicketNo    string    `gorm:"column:ticket_no;index:idx_qi_ticket,unique,where:deleted_at IS NULL,priority:2"`
+}
+
+func (queueItemIndexModel) TableName() string { return "queue_items" }
+
+type queueCounterIndexModel struct {
+	TenantID    string `gorm:"column:tenant_id;index:idx_qc_queue,where:deleted_at IS NULL,priority:1;index:idx_qc_tenant,priority:1"`
+	PartitionID string `gorm:"column:partition_id;index:idx_qc_tenant,priority:2"`
+	QueueID     string `gorm:"column:queue_id;index:idx_qc_queue,where:deleted_at IS NULL,priority:2"`
+}
+
+func (queueCounterIndexModel) TableName() string { return "queue_counters" }

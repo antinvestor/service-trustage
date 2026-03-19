@@ -98,7 +98,7 @@ func (h *WebhookReceiveHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	log.Info("webhook received",
+	log.Debug("webhook received",
 		"event_id", eventLog.ID,
 		"webhook_id", webhookID,
 	)

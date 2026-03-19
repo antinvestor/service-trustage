@@ -13,6 +13,7 @@ type Middleware interface {
 	CanWorkflowView(ctx context.Context) error
 	CanInstanceView(ctx context.Context) error
 	CanInstanceRetry(ctx context.Context) error
+	CanInstanceSignal(ctx context.Context) error
 	CanExecutionView(ctx context.Context) error
 	CanExecutionRetry(ctx context.Context) error
 }
@@ -43,6 +44,10 @@ func (m *middleware) CanInstanceView(ctx context.Context) error {
 
 func (m *middleware) CanInstanceRetry(ctx context.Context) error {
 	return m.checker.Check(ctx, PermissionInstanceRetry)
+}
+
+func (m *middleware) CanInstanceSignal(ctx context.Context) error {
+	return m.checker.Check(ctx, PermissionInstanceSignal)
 }
 
 func (m *middleware) CanExecutionView(ctx context.Context) error {

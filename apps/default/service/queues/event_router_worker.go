@@ -34,7 +34,7 @@ func (w *EventRouterWorker) Handle(ctx context.Context, _ map[string]string, mes
 		return fmt.Errorf("unmarshal event: %w", err)
 	}
 
-	log.Info("routing event",
+	log.Debug("routing event",
 		"event_id", event.EventID,
 		"event_type", event.EventType,
 		"tenant_id", event.TenantID,
@@ -54,7 +54,7 @@ func (w *EventRouterWorker) Handle(ctx context.Context, _ map[string]string, mes
 	}
 
 	if created > 0 {
-		log.Info("event routed",
+		log.Debug("event routed",
 			"event_id", event.EventID,
 			"instances_created", created,
 		)

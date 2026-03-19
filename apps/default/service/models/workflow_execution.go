@@ -13,6 +13,7 @@ const (
 	ExecStatusPending               ExecutionStatus = "pending"
 	ExecStatusDispatched            ExecutionStatus = "dispatched"
 	ExecStatusRunning               ExecutionStatus = "running"
+	ExecStatusWaiting               ExecutionStatus = "waiting"
 	ExecStatusCompleted             ExecutionStatus = "completed"
 	ExecStatusFailed                ExecutionStatus = "failed"
 	ExecStatusFatal                 ExecutionStatus = "fatal"

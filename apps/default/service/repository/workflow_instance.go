@@ -8,6 +8,7 @@ import (
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
+	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -16,6 +17,13 @@ import (
 type WorkflowInstanceRepository interface {
 	Create(ctx context.Context, inst *models.WorkflowInstance) error
 	GetByID(ctx context.Context, id string) (*models.WorkflowInstance, error)
+	ListByParentExecutionID(ctx context.Context, parentExecutionID string) ([]*models.WorkflowInstance, error)
+	FindByTriggerEvent(
+		ctx context.Context,
+		workflowName string,
+		workflowVersion int,
+		triggerEventID string,
+	) (*models.WorkflowInstance, error)
 	List(ctx context.Context, status, workflowName string, limit int) ([]*models.WorkflowInstance, error)
 	CASTransition(
 		ctx context.Context,
@@ -50,6 +58,45 @@ func (r *workflowInstanceRepository) Create(ctx context.Context, inst *models.Wo
 
 func (r *workflowInstanceRepository) GetByID(ctx context.Context, id string) (*models.WorkflowInstance, error) {
 	return r.BaseRepository.GetByID(ctx, id)
+}
+
+func (r *workflowInstanceRepository) ListByParentExecutionID(
+	ctx context.Context,
+	parentExecutionID string,
+) ([]*models.WorkflowInstance, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
+
+	var children []*models.WorkflowInstance
+	result := db.Model(&models.WorkflowInstance{}).
+		Where("parent_execution_id = ? AND deleted_at IS NULL", parentExecutionID).
+		Order("scope_index ASC").
+		Find(&children)
+	if result.Error != nil {
+		return nil, fmt.Errorf("list instances by parent execution: %w", result.Error)
+	}
+
+	return children, nil
+}
+
+func (r *workflowInstanceRepository) FindByTriggerEvent(
+	ctx context.Context,
+	workflowName string,
+	workflowVersion int,
+	triggerEventID string,
+) (*models.WorkflowInstance, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
+
+	var instance models.WorkflowInstance
+
+	result := db.Where(
+		"workflow_name = ? AND workflow_version = ? AND trigger_event_id = ? AND deleted_at IS NULL",
+		workflowName, workflowVersion, triggerEventID,
+	).First(&instance)
+	if result.Error != nil {
+		return nil, fmt.Errorf("find instance by trigger event: %w", result.Error)
+	}
+
+	return &instance, nil
 }
 
 func (r *workflowInstanceRepository) List(
@@ -93,13 +140,19 @@ func (r *workflowInstanceRepository) CASTransition(
 	newState string,
 ) error {
 	db := r.BaseRepository.Pool().DB(ctx, false)
-
-	result := db.Exec(
-		`UPDATE workflow_instances
-		 SET current_state = ?, revision = revision + 1, modified_at = ?
-		 WHERE id = ? AND current_state = ? AND revision = ? AND status = 'running'`,
-		newState, time.Now(), instanceID, expectedState, expectedRevision,
-	)
+	result := db.Model(&models.WorkflowInstance{}).
+		Where(
+			"id = ? AND current_state = ? AND revision = ? AND status = ? AND deleted_at IS NULL",
+			instanceID,
+			expectedState,
+			expectedRevision,
+			models.InstanceStatusRunning,
+		).
+		UpdateColumns(map[string]any{
+			"current_state": newState,
+			"revision":      gorm.Expr("revision + 1"),
+			"modified_at":   time.Now(),
+		})
 
 	if result.Error != nil {
 		return fmt.Errorf("CAS transition: %w", result.Error)

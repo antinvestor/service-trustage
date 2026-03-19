@@ -8,6 +8,7 @@ import (
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -18,8 +19,9 @@ type EventLogRepository interface {
 	FindByIdempotencyKey(ctx context.Context, key string) (*models.EventLog, error)
 	FindUnpublished(ctx context.Context, limit int) ([]*models.EventLog, error)
 	MarkPublished(ctx context.Context, id string) error
-	// FindAndProcessUnpublished atomically finds unpublished events and processes each one
-	// within a single transaction, ensuring the FOR UPDATE SKIP LOCKED lock is held.
+	ClaimUnpublished(ctx context.Context, limit int, owner string, leaseUntil time.Time) ([]*models.EventLog, error)
+	MarkPublishedByOwner(ctx context.Context, id string, owner string, publishedAt time.Time) error
+	ReleaseClaim(ctx context.Context, id string, owner string) error
 	FindAndProcessUnpublished(ctx context.Context, limit int, fn func(event *models.EventLog) error) (int, error)
 	// DeletePublishedBefore soft-deletes published events older than the given time.
 	DeletePublishedBefore(ctx context.Context, before time.Time, limit int) (int64, error)
@@ -69,16 +71,16 @@ func (r *eventLogRepository) FindByIdempotencyKey(
 // FindUnpublished finds unpublished events using FOR UPDATE SKIP LOCKED.
 func (r *eventLogRepository) FindUnpublished(ctx context.Context, limit int) ([]*models.EventLog, error) {
 	db := r.pool.DB(ctx, false)
+	if limit <= 0 {
+		limit = 50
+	}
 
 	var events []*models.EventLog
-
-	result := db.Raw(
-		`SELECT * FROM event_log
-		 WHERE published = false AND deleted_at IS NULL
-		 ORDER BY created_at
-		 FOR UPDATE SKIP LOCKED
-		 LIMIT ?`, limit,
-	).Scan(&events)
+	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("published = ? AND deleted_at IS NULL", false).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&events)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("find unpublished: %w", result.Error)
@@ -106,6 +108,141 @@ func (r *eventLogRepository) MarkPublished(ctx context.Context, id string) error
 	return nil
 }
 
+func (r *eventLogRepository) ClaimUnpublished(
+	ctx context.Context,
+	limit int,
+	owner string,
+	leaseUntil time.Time,
+) ([]*models.EventLog, error) {
+	db := r.pool.DB(ctx, false)
+
+	claimedAt := time.Now()
+	var events []*models.EventLog
+
+	txErr := db.Transaction(func(tx *gorm.DB) error {
+		if limit <= 0 {
+			limit = 50
+		}
+
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where(
+				"published = ? AND deleted_at IS NULL AND (publish_claim_until IS NULL OR publish_claim_until < ?)",
+				false,
+				claimedAt,
+			).
+			Order("created_at ASC").
+			Limit(limit).
+			Find(&events)
+		if result.Error != nil {
+			return fmt.Errorf("claim unpublished: %w", result.Error)
+		}
+		if len(events) == 0 {
+			return nil
+		}
+
+		ids := make([]string, 0, len(events))
+		for _, event := range events {
+			ids = append(ids, event.ID)
+		}
+
+		updateResult := tx.Model(&models.EventLog{}).
+			Where("id IN ? AND deleted_at IS NULL", ids).
+			Updates(map[string]any{
+				"publish_claim_owner": owner,
+				"publish_claim_until": leaseUntil,
+				"publish_attempts":    gorm.Expr("publish_attempts + 1"),
+			})
+		if updateResult.Error != nil {
+			return fmt.Errorf("claim unpublished: %w", updateResult.Error)
+		}
+
+		for _, event := range events {
+			event.PublishClaimOwner = owner
+			event.PublishClaimUntil = &leaseUntil
+			event.PublishAttempts++
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+
+	return events, nil
+}
+
+func (r *eventLogRepository) MarkPublishedByOwner(
+	ctx context.Context,
+	id string,
+	owner string,
+	publishedAt time.Time,
+) error {
+	db := r.pool.DB(ctx, false)
+
+	result := db.Model(&models.EventLog{}).
+		Where("id = ? AND publish_claim_owner = ? AND deleted_at IS NULL", id, owner).
+		Updates(map[string]any{
+			"published":           true,
+			"published_at":        publishedAt,
+			"publish_claim_owner": "",
+			"publish_claim_until": nil,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark published by owner: %w", result.Error)
+	}
+
+	return nil
+}
+
+func (r *eventLogRepository) ReleaseClaim(ctx context.Context, id string, owner string) error {
+	db := r.pool.DB(ctx, false)
+
+	result := db.Model(&models.EventLog{}).
+		Where("id = ? AND publish_claim_owner = ? AND published = false AND deleted_at IS NULL", id, owner).
+		Updates(map[string]any{
+			"publish_claim_owner": "",
+			"publish_claim_until": nil,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("release event claim: %w", result.Error)
+	}
+
+	return nil
+}
+
+// FindAndProcessUnpublished exists for compatibility with older tests/callers.
+// New code should use ClaimUnpublished plus explicit publish/ack flow.
+func (r *eventLogRepository) FindAndProcessUnpublished(
+	ctx context.Context,
+	limit int,
+	fn func(event *models.EventLog) error,
+) (int, error) {
+	owner := "compat-processor"
+	claimed, err := r.ClaimUnpublished(ctx, limit, owner, time.Now().Add(30*time.Second))
+	if err != nil {
+		return 0, fmt.Errorf("claim unpublished for processing: %w", err)
+	}
+
+	processed := 0
+	now := time.Now()
+
+	for _, event := range claimed {
+		if processErr := fn(event); processErr != nil {
+			_ = r.ReleaseClaim(ctx, event.ID, owner)
+			continue
+		}
+
+		if markErr := r.MarkPublishedByOwner(ctx, event.ID, owner, now); markErr != nil {
+			_ = r.ReleaseClaim(ctx, event.ID, owner)
+			continue
+		}
+
+		processed++
+	}
+
+	return processed, nil
+}
+
 // DeletePublishedBefore soft-deletes published events older than the given time.
 func (r *eventLogRepository) DeletePublishedBefore(
 	ctx context.Context,
@@ -113,74 +250,25 @@ func (r *eventLogRepository) DeletePublishedBefore(
 	limit int,
 ) (int64, error) {
 	db := r.pool.DB(ctx, false)
-
-	result := db.Exec(
-		`UPDATE event_log
-		 SET deleted_at = NOW()
-		 WHERE id IN (
-		 	SELECT id FROM event_log
-		 	WHERE published = true AND published_at < ? AND deleted_at IS NULL
-		 	LIMIT ?
-		 )`, before, limit,
-	)
-	if result.Error != nil {
-		return 0, fmt.Errorf("delete published events: %w", result.Error)
+	if limit <= 0 {
+		limit = 100
 	}
 
-	return result.RowsAffected, nil
-}
-
-// FindAndProcessUnpublished runs a transaction that locks unpublished events with FOR UPDATE SKIP LOCKED,
-// then calls fn for each event. If fn succeeds, the event is marked as published within the same transaction.
-func (r *eventLogRepository) FindAndProcessUnpublished(
-	ctx context.Context,
-	limit int,
-	fn func(event *models.EventLog) error,
-) (int, error) {
-	db := r.pool.DB(ctx, false)
-	published := 0
-
-	txErr := db.Transaction(func(tx *gorm.DB) error {
-		var eventList []*models.EventLog
-
-		result := tx.Raw(
-			`SELECT * FROM event_log
-			 WHERE published = false AND deleted_at IS NULL
-			 ORDER BY created_at
-			 FOR UPDATE SKIP LOCKED
-			 LIMIT ?`, limit,
-		).Scan(&eventList)
-		if result.Error != nil {
-			return fmt.Errorf("find unpublished: %w", result.Error)
-		}
-
-		now := time.Now()
-
-		for _, event := range eventList {
-			if processErr := fn(event); processErr != nil {
-				// Skip this event but continue processing others.
-				continue
-			}
-
-			markResult := tx.Model(&models.EventLog{}).
-				Where("id = ?", event.ID).
-				Updates(map[string]any{
-					"published":    true,
-					"published_at": now,
-				})
-			if markResult.Error != nil {
-				continue
-			}
-
-			published++
-		}
-
-		return nil
-	})
-
-	if txErr != nil {
-		return 0, fmt.Errorf("outbox transaction: %w", txErr)
+	var ids []string
+	selectResult := db.Model(&models.EventLog{}).
+		Where("published = ? AND published_at < ? AND deleted_at IS NULL", true, before).
+		Limit(limit).
+		Pluck("id", &ids)
+	if selectResult.Error != nil {
+		return 0, fmt.Errorf("select published events for delete: %w", selectResult.Error)
+	}
+	if len(ids) == 0 {
+		return 0, nil
 	}
 
-	return published, nil
+	if err := r.BaseRepository.DeleteBatch(ctx, ids); err != nil {
+		return 0, fmt.Errorf("delete published events: %w", err)
+	}
+
+	return int64(len(ids)), nil
 }

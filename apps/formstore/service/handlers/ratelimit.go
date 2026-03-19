@@ -10,27 +10,21 @@ import (
 	"github.com/pitabwire/frame/security"
 )
 
-// RateLimiter enforces per-tenant rate limits using Frame's cache-backed window limiter.
+// RateLimiter enforces per-tenant rate limits with chunked shared-cache reservations.
 type RateLimiter struct {
-	limiter *ratelimiter.WindowLimiter
+	limiter *ratelimiter.LeasedWindowLimiter
 }
 
 // NewRateLimiter creates a new rate limiter.
-// If cache is nil or maxPerWindow <= 0, rate limiting is disabled.
 func NewRateLimiter(raw cache.RawCache, maxPerWindow int) *RateLimiter {
-	if raw == nil || maxPerWindow <= 0 {
-		return &RateLimiter{limiter: nil}
-	}
-
-	cfg := ratelimiter.DefaultWindowConfig()
-	cfg.WindowDuration = time.Minute
-	cfg.MaxPerWindow = maxPerWindow
-	cfg.KeyPrefix = "trustage:formstore:tenant"
-	cfg.FailOpen = true
-
-	limiter, err := ratelimiter.NewWindowLimiter(raw, cfg)
+	limiter, err := ratelimiter.NewLeasedWindowLimiter(raw, &ratelimiter.WindowConfig{
+		WindowDuration: time.Minute,
+		MaxPerWindow:   maxPerWindow,
+		KeyPrefix:      "trustage:formstore:submission",
+		FailOpen:       true,
+	})
 	if err != nil {
-		return &RateLimiter{limiter: nil}
+		return nil
 	}
 
 	return &RateLimiter{limiter: limiter}

@@ -2,9 +2,8 @@ package business
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -15,7 +14,6 @@ import (
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -80,11 +78,41 @@ type StateEngine interface {
 	) (*ExecutionCommand, error)
 	Dispatch(ctx context.Context, execution *models.WorkflowStateExecution) (*ExecutionCommand, error)
 	Commit(ctx context.Context, req *CommitRequest) error
+	ParkExecutionUntil(ctx context.Context, executionID, executionToken string, fireAt time.Time) error
+	ResumeWaitingExecution(ctx context.Context, executionID string, output json.RawMessage) error
+	FailWaitingExecution(
+		ctx context.Context,
+		executionID string,
+		status models.ExecutionStatus,
+		failure *CommitError,
+	) error
+	StartSignalWait(
+		ctx context.Context,
+		cmd *ExecutionCommand,
+		step *dsl.StepSpec,
+	) error
+	SendSignal(
+		ctx context.Context,
+		instanceID string,
+		signalName string,
+		payload json.RawMessage,
+	) (bool, error)
+	StartBranchScope(
+		ctx context.Context,
+		cmd *ExecutionCommand,
+		step *dsl.StepSpec,
+	) error
+	ReconcileBranchScope(ctx context.Context, scopeID string) error
 }
 
 type stateEngine struct {
 	instanceRepo    repository.WorkflowInstanceRepository
 	execRepo        repository.WorkflowExecutionRepository
+	runtimeRepo     repository.WorkflowRuntimeRepository
+	timerRepo       repository.WorkflowTimerRepository
+	scopeRepo       repository.WorkflowScopeRunRepository
+	signalWaitRepo  repository.WorkflowSignalWaitRepository
+	signalMsgRepo   repository.WorkflowSignalMessageRepository
 	outputRepo      repository.WorkflowOutputRepository
 	auditRepo       repository.AuditEventRepository
 	defRepo         repository.WorkflowDefinitionRepository
@@ -98,6 +126,11 @@ type stateEngine struct {
 func NewStateEngine(
 	instanceRepo repository.WorkflowInstanceRepository,
 	execRepo repository.WorkflowExecutionRepository,
+	runtimeRepo repository.WorkflowRuntimeRepository,
+	timerRepo repository.WorkflowTimerRepository,
+	scopeRepo repository.WorkflowScopeRunRepository,
+	signalWaitRepo repository.WorkflowSignalWaitRepository,
+	signalMsgRepo repository.WorkflowSignalMessageRepository,
 	outputRepo repository.WorkflowOutputRepository,
 	auditRepo repository.AuditEventRepository,
 	defRepo repository.WorkflowDefinitionRepository,
@@ -109,6 +142,11 @@ func NewStateEngine(
 	return &stateEngine{
 		instanceRepo:    instanceRepo,
 		execRepo:        execRepo,
+		runtimeRepo:     runtimeRepo,
+		timerRepo:       timerRepo,
+		scopeRepo:       scopeRepo,
+		signalWaitRepo:  signalWaitRepo,
+		signalMsgRepo:   signalMsgRepo,
 		outputRepo:      outputRepo,
 		auditRepo:       auditRepo,
 		defRepo:         defRepo,
@@ -153,6 +191,10 @@ func (e *stateEngine) CreateInitialExecution(
 	if tokenErr != nil {
 		return nil, fmt.Errorf("generate token: %w", tokenErr)
 	}
+	traceID, traceErr := cryptoutil.GenerateToken()
+	if traceErr != nil {
+		return nil, fmt.Errorf("generate trace id: %w", traceErr)
+	}
 
 	tokenHash := cryptoutil.HashToken(rawToken)
 	exec := &models.WorkflowStateExecution{
@@ -163,6 +205,7 @@ func (e *stateEngine) CreateInitialExecution(
 		ExecutionToken:  tokenHash,
 		InputSchemaHash: schemaHash,
 		InputPayload:    string(inputPayload),
+		TraceID:         traceID,
 	}
 
 	if createErr := e.execRepo.Create(ctx, exec); createErr != nil {
@@ -175,6 +218,7 @@ func (e *stateEngine) CreateInitialExecution(
 		ExecutionID: exec.ID,
 		EventType:   events.EventStateDispatched,
 		State:       instance.CurrentState,
+		TraceID:     traceID,
 	})
 
 	return &ExecutionCommand{
@@ -187,6 +231,7 @@ func (e *stateEngine) CreateInitialExecution(
 		InputPayload:    inputPayload,
 		InputSchemaHash: schemaHash,
 		ExecutionToken:  rawToken,
+		TraceID:         traceID,
 	}, nil
 }
 
@@ -303,7 +348,11 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		ctx, instance.WorkflowName,
 		instance.WorkflowVersion, exec.State, req.Output,
 	); validateErr != nil {
-		_ = e.execRepo.UpdateStatus(ctx, req.ExecutionID, models.ExecStatusInvalidOutputContract, nil)
+		_ = e.runtimeRepo.UpdateExecutionStatus(
+			ctx,
+			exec,
+			models.ExecStatusInvalidOutputContract,
+		)
 		e.metrics.ContractViolationsTotal.Add(ctx, 1, metric.WithAttributes(
 			attribute.String(telemetry.AttrViolationType, "output"),
 		))
@@ -313,153 +362,68 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 	}
 
 	// Resolve the next step, evaluating CEL conditions on transitions if defined.
-	var outputData any
-	if unmarshalErr := json.Unmarshal(req.Output, &outputData); unmarshalErr != nil {
-		commitErr = fmt.Errorf("unmarshal output for transition: %w", unmarshalErr)
+	transitionVars, varsErr := transitionVarsFromOutput(req.Output)
+	if varsErr != nil {
+		commitErr = varsErr
 		return commitErr
 	}
 
-	transitionVars := map[string]any{
-		"output": outputData,
-	}
-
-	nextStep, resolveErr := dsl.ResolveNextStep(spec, exec.State, transitionVars)
+	nextStep, resolveErr := resolveNextStepForInstance(spec, instance, exec.State, transitionVars)
 	if resolveErr != nil {
 		commitErr = fmt.Errorf("resolve next step: %w", resolveErr)
 		return commitErr
 	}
 
 	// Evaluate mapping to produce input for the next state.
-	mappedInput, mappingErr := e.evaluateMapping(spec, exec.State, nextStep, req.Output)
+	currentInput := executionInputPayload(exec)
+	mappedInput, mappingErr := e.evaluateMapping(spec, exec.State, nextStep, currentInput, req.Output)
 	if mappingErr != nil {
 		commitErr = fmt.Errorf("evaluate mapping: %w", mappingErr)
 		return commitErr
 	}
 
-	// Run the entire critical section (token verification + state mutation) in one transaction.
-	db := e.execRepo.Pool().DB(ctx, false)
+	nextInputSchemaHash, schemaErr := e.validateNextInput(ctx, instance, nextStep, mappedInput)
+	if schemaErr != nil {
+		commitErr = schemaErr
+		return commitErr
+	}
 
-	txErr := db.Transaction(func(tx *gorm.DB) error {
-		// Verify and consume token INSIDE the transaction — if tx rolls back, token is restored.
-		_, tokenErr := e.execRepo.VerifyAndConsumeTokenTx(tx, req.ExecutionID, tokenHash)
-		if tokenErr != nil {
-			return fmt.Errorf("%w: %w", ErrInvalidToken, tokenErr)
+	nextState := ""
+	nextInputPayload := ""
+	if nextStep != nil {
+		nextState = nextStep.ID
+		nextInputPayload = string(mappedInput)
+	}
+
+	commitReq := &repository.CommitExecutionRequest{
+		Execution:           exec,
+		Instance:            instance,
+		TokenHash:           tokenHash,
+		VerifyToken:         true,
+		OutputPayload:       string(req.Output),
+		ExpectedStatus:      models.ExecStatusDispatched,
+		NextState:           nextState,
+		NextInputPayload:    nextInputPayload,
+		NextInputSchemaHash: nextInputSchemaHash,
+	}
+	if txErr := e.runtimeRepo.CommitExecution(ctx, commitReq); txErr != nil {
+		if errors.Is(txErr, repository.ErrInvalidExecutionToken) {
+			commitErr = fmt.Errorf("%w: %w", ErrInvalidToken, txErr)
+			return commitErr
 		}
-
-		// Store validated output with correct output schema hash.
-		outputSchemaHash := computeOutputSchemaHash(req.Output)
-		if storeErr := tx.Create(&models.WorkflowStateOutput{
-			ExecutionID: req.ExecutionID,
-			InstanceID:  exec.InstanceID,
-			State:       exec.State,
-			SchemaHash:  outputSchemaHash,
-			Payload:     string(req.Output),
-		}).Error; storeErr != nil {
-			return fmt.Errorf("store output: %w", storeErr)
+		if errors.Is(txErr, repository.ErrStaleMutation) {
+			commitErr = ErrStaleExecution
+			return commitErr
 		}
-
-		// Mark execution as completed.
-		now := time.Now()
-		if updateErr := tx.Model(&models.WorkflowStateExecution{}).
-			Where("id = ?", req.ExecutionID).
-			Updates(map[string]any{
-				"status":             string(models.ExecStatusCompleted),
-				"finished_at":        now,
-				"output_schema_hash": outputSchemaHash,
-			}).Error; updateErr != nil {
-			return fmt.Errorf("mark completed: %w", updateErr)
-		}
-
-		if nextStep == nil {
-			// Terminal state — mark workflow instance as completed.
-			result := tx.Exec(
-				`UPDATE workflow_instances
-				 SET status = ?, revision = revision + 1, modified_at = ?, finished_at = ?
-				 WHERE id = ? AND current_state = ? AND status = 'running'`,
-				string(models.InstanceStatusCompleted), now, now,
-				exec.InstanceID, exec.State,
-			)
-
-			if result.Error != nil {
-				return fmt.Errorf("mark instance completed: %w", result.Error)
-			}
-
-			return nil
-		}
-
-		// Non-terminal — CAS transition to next state.
-		casResult := tx.Exec(
-			`UPDATE workflow_instances
-			 SET current_state = ?, revision = revision + 1, modified_at = ?
-			 WHERE id = ? AND current_state = ? AND revision = ? AND status = 'running'`,
-			nextStep.ID, now,
-			exec.InstanceID, exec.State, instance.Revision,
-		)
-
-		if casResult.Error != nil {
-			return fmt.Errorf("CAS transition: %w", casResult.Error)
-		}
-
-		if casResult.RowsAffected == 0 {
-			e.metrics.StaleExecutionsTotal.Add(ctx, 1)
-			return ErrStaleExecution
-		}
-
-		e.metrics.TransitionsTotal.Add(ctx, 1, metric.WithAttributes(
-			attribute.String(telemetry.AttrFromState, exec.State),
-			attribute.String(telemetry.AttrToState, nextStep.ID),
-		))
-
-		// Validate mapped input against the next state's input schema.
-		nextInputSchemaHash := ""
-		if mappedInput != nil {
-			var schemaErr error
-			nextInputSchemaHash, schemaErr = e.schemaReg.ValidateInput(
-				ctx, instance.WorkflowName,
-				instance.WorkflowVersion, nextStep.ID, mappedInput,
-			)
-			if schemaErr != nil {
-				return fmt.Errorf("validate next state input: %w", schemaErr)
-			}
-		}
-
-		// Create execution for next state.
-		rawToken, genErr := cryptoutil.GenerateToken()
-		if genErr != nil {
-			return fmt.Errorf("generate next token: %w", genErr)
-		}
-
-		nextExec := &models.WorkflowStateExecution{
-			InstanceID:      exec.InstanceID,
-			State:           nextStep.ID,
-			Attempt:         1,
-			Status:          models.ExecStatusPending,
-			ExecutionToken:  cryptoutil.HashToken(rawToken),
-			InputSchemaHash: nextInputSchemaHash,
-			InputPayload:    string(mappedInput),
-			TraceID:         exec.TraceID,
-		}
-
-		if createErr := tx.Create(nextExec).Error; createErr != nil {
-			return fmt.Errorf("create next execution: %w", createErr)
-		}
-
-		// Audit: transition committed.
-		_ = tx.Create(&models.WorkflowAuditEvent{
-			InstanceID:  exec.InstanceID,
-			ExecutionID: req.ExecutionID,
-			EventType:   events.EventTransitionCommitted,
-			State:       nextStep.ID,
-			FromState:   exec.State,
-			ToState:     nextStep.ID,
-		}).Error
-
-		return nil
-	})
-
-	if txErr != nil {
 		commitErr = txErr
 		return commitErr
+	}
+
+	if nextState != "" {
+		e.metrics.TransitionsTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String(telemetry.AttrFromState, exec.State),
+			attribute.String(telemetry.AttrToState, nextState),
+		))
 	}
 
 	// Audit: completion event (outside tx, best-effort).
@@ -468,6 +432,8 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 		ExecutionID: req.ExecutionID,
 		EventType:   events.EventStateCompleted,
 		State:       exec.State,
+		TraceID:     exec.TraceID,
+		Payload:     string(req.Output),
 	})
 
 	log.Info("execution committed",
@@ -479,10 +445,186 @@ func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently c
 	return nil
 }
 
-// computeOutputSchemaHash returns the SHA-256 hash of the output payload for storage.
-func computeOutputSchemaHash(output json.RawMessage) string {
-	hash := sha256.Sum256(output)
-	return hex.EncodeToString(hash[:])
+func (e *stateEngine) ParkExecutionUntil(
+	ctx context.Context,
+	executionID, executionToken string,
+	fireAt time.Time,
+) error {
+	exec, err := e.execRepo.GetByID(ctx, executionID)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrExecutionNotFound, err)
+	}
+
+	instance, err := e.instanceRepo.GetByID(ctx, exec.InstanceID)
+	if err != nil {
+		return fmt.Errorf("load instance: %w", err)
+	}
+
+	tokenHash := cryptoutil.HashToken(executionToken)
+	err = e.runtimeRepo.ParkExecution(ctx, &repository.ParkExecutionRequest{
+		Execution:  exec,
+		Instance:   instance,
+		TokenHash:  tokenHash,
+		FireAt:     fireAt,
+		AuditTrace: exec.TraceID,
+	})
+	if errors.Is(err, repository.ErrStaleMutation) {
+		e.metrics.StaleExecutionsTotal.Add(ctx, 1)
+		return ErrStaleExecution
+	}
+	if errors.Is(err, repository.ErrInvalidExecutionToken) {
+		return fmt.Errorf("%w: %w", ErrInvalidToken, err)
+	}
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *stateEngine) ResumeWaitingExecution(
+	ctx context.Context,
+	executionID string,
+	output json.RawMessage,
+) error {
+	exec, err := e.execRepo.GetByID(ctx, executionID)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrExecutionNotFound, err)
+	}
+
+	if exec.Status != models.ExecStatusWaiting {
+		return ErrStaleExecution
+	}
+
+	instance, err := e.instanceRepo.GetByID(ctx, exec.InstanceID)
+	if err != nil {
+		return fmt.Errorf("load instance: %w", err)
+	}
+
+	if instance.Status != models.InstanceStatusRunning {
+		_ = e.runtimeRepo.UpdateExecutionStatus(ctx, exec, models.ExecStatusStale)
+		return nil
+	}
+
+	spec, err := e.loadSpec(ctx, instance.WorkflowName, instance.WorkflowVersion)
+	if err != nil {
+		return err
+	}
+
+	if output == nil {
+		output = json.RawMessage(`{}`)
+	}
+
+	if validateErr := e.schemaReg.ValidateOutput(
+		ctx, instance.WorkflowName,
+		instance.WorkflowVersion, exec.State, output,
+	); validateErr != nil {
+		_ = e.runtimeRepo.UpdateExecutionStatus(
+			ctx,
+			exec,
+			models.ExecStatusInvalidOutputContract,
+		)
+		e.metrics.ContractViolationsTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String(telemetry.AttrViolationType, "output"),
+		))
+
+		return fmt.Errorf("%w: %w", ErrOutputContractViolation, validateErr)
+	}
+
+	transitionVars, err := transitionVarsFromOutput(output)
+	if err != nil {
+		return err
+	}
+
+	nextStep, err := resolveNextStepForInstance(spec, instance, exec.State, transitionVars)
+	if err != nil {
+		return fmt.Errorf("resolve next step: %w", err)
+	}
+
+	currentInput := executionInputPayload(exec)
+	mappedInput, err := e.evaluateMapping(spec, exec.State, nextStep, currentInput, output)
+	if err != nil {
+		return fmt.Errorf("evaluate mapping: %w", err)
+	}
+
+	nextInputSchemaHash, err := e.validateNextInput(ctx, instance, nextStep, mappedInput)
+	if err != nil {
+		return err
+	}
+
+	nextState := ""
+	nextInputPayload := ""
+	if nextStep != nil {
+		nextState = nextStep.ID
+		nextInputPayload = string(mappedInput)
+	}
+
+	if txErr := e.runtimeRepo.CommitExecution(ctx, &repository.CommitExecutionRequest{
+		Execution:           exec,
+		Instance:            instance,
+		ExpectedStatus:      models.ExecStatusWaiting,
+		OutputPayload:       string(output),
+		NextState:           nextState,
+		NextInputPayload:    nextInputPayload,
+		NextInputSchemaHash: nextInputSchemaHash,
+	}); txErr != nil {
+		if errors.Is(txErr, repository.ErrStaleMutation) {
+			return ErrStaleExecution
+		}
+		return txErr
+	}
+
+	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
+		InstanceID:  exec.InstanceID,
+		ExecutionID: exec.ID,
+		EventType:   events.EventStateCompleted,
+		State:       exec.State,
+	})
+
+	return nil
+}
+
+func executionInputPayload(exec *models.WorkflowStateExecution) json.RawMessage {
+	if exec.InputPayload == "" {
+		return json.RawMessage(`{}`)
+	}
+
+	return json.RawMessage(exec.InputPayload)
+}
+
+func transitionVarsFromOutput(output json.RawMessage) (map[string]any, error) {
+	var outputData any
+	if unmarshalErr := json.Unmarshal(output, &outputData); unmarshalErr != nil {
+		return nil, fmt.Errorf("unmarshal output for transition: %w", unmarshalErr)
+	}
+
+	return map[string]any{
+		"output": outputData,
+	}, nil
+}
+
+func (e *stateEngine) validateNextInput(
+	ctx context.Context,
+	instance *models.WorkflowInstance,
+	nextStep *dsl.StepSpec,
+	mappedInput json.RawMessage,
+) (string, error) {
+	if nextStep == nil || mappedInput == nil {
+		return "", nil
+	}
+
+	nextInputSchemaHash, err := e.schemaReg.ValidateInput(
+		ctx,
+		instance.WorkflowName,
+		instance.WorkflowVersion,
+		nextStep.ID,
+		mappedInput,
+	)
+	if err != nil {
+		return "", fmt.Errorf("validate next state input: %w", err)
+	}
+
+	return nextInputSchemaHash, nil
 }
 
 // evaluateMapping evaluates the state mapping from currentState to nextStep.
@@ -491,6 +633,7 @@ func (e *stateEngine) evaluateMapping(
 	spec *dsl.WorkflowSpec,
 	currentState string,
 	nextStep *dsl.StepSpec,
+	currentInput json.RawMessage,
 	output json.RawMessage,
 ) (json.RawMessage, error) {
 	if nextStep == nil {
@@ -503,11 +646,26 @@ func (e *stateEngine) evaluateMapping(
 		return output, nil
 	}
 
-	// Only apply mapping when current step has an output_var and next step has call input.
-	hasOutputVar := currentStep.Type == dsl.StepTypeCall && currentStep.Call != nil && currentStep.Call.OutputVar != ""
+	switch currentStep.Type { //nolint:exhaustive // only explicit control-flow cases override default passthrough
+	case dsl.StepTypeSequence, dsl.StepTypeIf, dsl.StepTypeDelay:
+		return currentInput, nil
+	}
+
+	// Only apply mapping when current step exposes an output_var and next step has call input.
+	outputVar := ""
+	switch currentStep.Type { //nolint:exhaustive
+	case dsl.StepTypeCall:
+		if currentStep.Call != nil {
+			outputVar = currentStep.Call.OutputVar
+		}
+	case dsl.StepTypeSignalWait:
+		if currentStep.SignalWait != nil {
+			outputVar = currentStep.SignalWait.OutputVar
+		}
+	}
 	hasNextInput := nextStep.Type == dsl.StepTypeCall && nextStep.Call != nil && len(nextStep.Call.Input) > 0
 
-	if !hasOutputVar || !hasNextInput {
+	if outputVar == "" || !hasNextInput {
 		return output, nil
 	}
 
@@ -517,7 +675,7 @@ func (e *stateEngine) evaluateMapping(
 	}
 
 	vars := map[string]any{
-		currentStep.Call.OutputVar: outputData,
+		outputVar: outputData,
 	}
 
 	resolved, resolveErr := dsl.ResolveTemplateValue(nextStep.Call.Input, vars)
@@ -541,14 +699,6 @@ func (e *stateEngine) commitError(
 	instance *models.WorkflowInstance,
 ) error {
 	log := util.Log(ctx)
-
-	// Verify and consume the execution token to prevent unauthorized error commits.
-	tokenHash := cryptoutil.HashToken(req.ExecutionToken)
-
-	_, tokenErr := e.execRepo.VerifyAndConsumeToken(ctx, req.ExecutionID, tokenHash)
-	if tokenErr != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidToken, tokenErr)
-	}
 
 	// Validate error payload against registered error schema (best-effort).
 	errorPayload, _ := json.Marshal(req.Error)
@@ -581,28 +731,32 @@ func (e *stateEngine) commitError(
 		}
 	}
 
-	// Fatal or exhausted retries — mark as fatal.
 	status := models.ExecStatusFatal
-	updateErr := e.execRepo.UpdateStatus(ctx, req.ExecutionID, status, map[string]any{
-		"error_class":   req.Error.Class,
-		"error_message": req.Error.Message,
-	})
-
-	if updateErr != nil {
-		return fmt.Errorf("update failed status: %w", updateErr)
+	if req.Error.Class == "timeout" {
+		status = models.ExecStatusTimedOut
 	}
 
-	// Mark workflow instance as failed.
-	_ = e.instanceRepo.UpdateStatus(ctx, exec.InstanceID, models.InstanceStatusFailed)
-
-	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-		InstanceID:  exec.InstanceID,
-		ExecutionID: req.ExecutionID,
-		EventType:   events.EventStateFailed,
-		State:       exec.State,
+	tokenHash := cryptoutil.HashToken(req.ExecutionToken)
+	failErr := e.runtimeRepo.FailExecution(ctx, &repository.FailExecutionRequest{
+		Execution:      exec,
+		Instance:       instance,
+		TokenHash:      tokenHash,
+		VerifyToken:    true,
+		ExpectedStatus: models.ExecStatusDispatched,
+		Status:         status,
+		ErrorClass:     req.Error.Class,
+		ErrorMessage:   req.Error.Message,
+		AuditTrace:     exec.TraceID,
+		AuditPayload:   string(errorPayload),
 	})
+	if errors.Is(failErr, repository.ErrStaleMutation) {
+		return ErrStaleExecution
+	}
+	if failErr != nil && errors.Is(failErr, repository.ErrInvalidExecutionToken) {
+		return fmt.Errorf("%w: %w", ErrInvalidToken, failErr)
+	}
 
-	return nil
+	return failErr
 }
 
 // scheduleRetryIfAllowed checks retry policy and schedules a retry with backoff.
@@ -647,6 +801,13 @@ func (e *stateEngine) scheduleRetryIfAllowed(
 		ExecutionID: req.ExecutionID,
 		EventType:   events.EventStateRetried,
 		State:       exec.State,
+		TraceID:     exec.TraceID,
+		Payload: fmt.Sprintf(
+			`{"next_retry_at":"%s","attempt":%d,"max_attempts":%d}`,
+			nextRetryAt.UTC().Format(time.RFC3339),
+			exec.Attempt+1,
+			policy.MaxAttempts,
+		),
 	})
 
 	return true, nil

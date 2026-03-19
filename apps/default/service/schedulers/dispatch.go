@@ -53,7 +53,7 @@ func (s *DispatchScheduler) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			dispatched := s.RunOnce(ctx)
+			dispatched := s.RunUntilDrained(ctx)
 			if dispatched > 0 {
 				log.Info("dispatch scheduler completed", "dispatched", dispatched)
 			}
@@ -62,6 +62,26 @@ func (s *DispatchScheduler) Start(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// RunUntilDrained drains multiple dispatch batches in one scheduler wakeup.
+func (s *DispatchScheduler) RunUntilDrained(ctx context.Context) int {
+	maxBatches := s.cfg.DispatchMaxBatchesPerSweep
+	if maxBatches <= 0 {
+		maxBatches = 1
+	}
+
+	totalDispatched := 0
+
+	for range maxBatches {
+		dispatched := s.RunOnce(ctx)
+		totalDispatched += dispatched
+		if dispatched < s.cfg.DispatchBatchSize {
+			break
+		}
+	}
+
+	return totalDispatched
 }
 
 // RunOnce performs a single dispatch sweep.

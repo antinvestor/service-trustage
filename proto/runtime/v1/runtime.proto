@@ -1,0 +1,237 @@
+syntax = "proto3";
+
+package runtime.v1;
+
+import "gnostic/openapi/v3/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/antinvestor/service-trustage/gen/go/runtime/v1;runtimev1";
+option java_multiple_files = true;
+option java_package = "runtimev1";
+option (gnostic.openapi.v3.document) = {
+  info: {
+    title: "Trustage Runtime API"
+    version: "v1.0.0"
+    description: "Workflow instance and execution runtime reads and operator retries for Trustage."
+  }
+};
+
+service RuntimeService {
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+  rpc RetryInstance(RetryInstanceRequest) returns (RetryInstanceResponse);
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
+  rpc RetryExecution(RetryExecutionRequest) returns (RetryExecutionResponse);
+  rpc ResumeExecution(ResumeExecutionRequest) returns (ResumeExecutionResponse);
+  rpc GetInstanceRun(GetInstanceRunRequest) returns (GetInstanceRunResponse);
+}
+
+enum InstanceStatus {
+  INSTANCE_STATUS_UNSPECIFIED = 0;
+  INSTANCE_STATUS_RUNNING = 1;
+  INSTANCE_STATUS_COMPLETED = 2;
+  INSTANCE_STATUS_FAILED = 3;
+  INSTANCE_STATUS_CANCELLED = 4;
+  INSTANCE_STATUS_SUSPENDED = 5;
+}
+
+enum ExecutionStatus {
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  EXECUTION_STATUS_PENDING = 1;
+  EXECUTION_STATUS_DISPATCHED = 2;
+  EXECUTION_STATUS_RUNNING = 3;
+  EXECUTION_STATUS_COMPLETED = 4;
+  EXECUTION_STATUS_FAILED = 5;
+  EXECUTION_STATUS_FATAL = 6;
+  EXECUTION_STATUS_TIMED_OUT = 7;
+  EXECUTION_STATUS_INVALID_INPUT_CONTRACT = 8;
+  EXECUTION_STATUS_INVALID_OUTPUT_CONTRACT = 9;
+  EXECUTION_STATUS_STALE = 10;
+  EXECUTION_STATUS_RETRY_SCHEDULED = 11;
+  EXECUTION_STATUS_WAITING = 12;
+}
+
+message WorkflowInstance {
+  string id = 1;
+  string workflow_name = 2;
+  int32 workflow_version = 3;
+  string current_state = 4;
+  InstanceStatus status = 5;
+  int64 revision = 6;
+  string trigger_event_id = 7;
+  google.protobuf.Struct metadata = 8;
+  google.protobuf.Timestamp started_at = 9;
+  google.protobuf.Timestamp finished_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  string parent_instance_id = 13;
+  string parent_execution_id = 14;
+  string scope_type = 15;
+  string scope_parent_state = 16;
+  string scope_entry_state = 17;
+  int32 scope_index = 18;
+}
+
+message WorkflowExecution {
+  string id = 1;
+  string instance_id = 2;
+  string state = 3;
+  int32 state_version = 4;
+  int32 attempt = 5;
+  ExecutionStatus status = 6;
+  string error_class = 7;
+  string error_message = 8;
+  google.protobuf.Timestamp next_retry_at = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp finished_at = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  string trace_id = 14;
+  string input_schema_hash = 15;
+  string output_schema_hash = 16;
+  google.protobuf.Struct input_payload = 17;
+  google.protobuf.Struct output = 18;
+}
+
+message ListInstancesRequest {
+  string workflow_name = 1;
+  InstanceStatus status = 2;
+  int32 limit = 3;
+}
+
+message ListInstancesResponse {
+  repeated WorkflowInstance items = 1;
+}
+
+message RetryInstanceRequest {
+  string instance_id = 1;
+}
+
+message RetryInstanceResponse {
+  WorkflowExecution execution = 1;
+}
+
+message ListExecutionsRequest {
+  string instance_id = 1;
+  ExecutionStatus status = 2;
+  int32 limit = 3;
+}
+
+message ListExecutionsResponse {
+  repeated WorkflowExecution items = 1;
+}
+
+message GetExecutionRequest {
+  string execution_id = 1;
+  bool include_output = 2;
+}
+
+message GetExecutionResponse {
+  WorkflowExecution execution = 1;
+}
+
+message RetryExecutionRequest {
+  string execution_id = 1;
+}
+
+message RetryExecutionResponse {
+  WorkflowExecution execution = 1;
+}
+
+message ResumeExecutionRequest {
+  string execution_id = 1;
+  google.protobuf.Struct payload = 2;
+}
+
+message ResumeExecutionResponse {
+  WorkflowExecution execution = 1;
+  string action = 2;
+}
+
+message RunTimelineEntry {
+  string event_type = 1;
+  string state = 2;
+  string from_state = 3;
+  string to_state = 4;
+  string execution_id = 5;
+  string trace_id = 6;
+  google.protobuf.Struct payload = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message StateOutput {
+  string execution_id = 1;
+  string state = 2;
+  string schema_hash = 3;
+  google.protobuf.Struct payload = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ScopeRun {
+  string id = 1;
+  string parent_execution_id = 2;
+  string parent_state = 3;
+  string scope_type = 4;
+  string status = 5;
+  bool wait_all = 6;
+  int32 total_children = 7;
+  int32 completed_children = 8;
+  int32 failed_children = 9;
+  int32 next_child_index = 10;
+  int32 max_concurrency = 11;
+  string item_var = 12;
+  string index_var = 13;
+  google.protobuf.Struct items_payload = 14;
+  google.protobuf.Struct results_payload = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp updated_at = 17;
+}
+
+message SignalWait {
+  string id = 1;
+  string execution_id = 2;
+  string state = 3;
+  string signal_name = 4;
+  string output_var = 5;
+  string status = 6;
+  google.protobuf.Timestamp timeout_at = 7;
+  google.protobuf.Timestamp matched_at = 8;
+  google.protobuf.Timestamp timed_out_at = 9;
+  string message_id = 10;
+  int32 attempts = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message SignalMessage {
+  string id = 1;
+  string signal_name = 2;
+  google.protobuf.Struct payload = 3;
+  string status = 4;
+  google.protobuf.Timestamp delivered_at = 5;
+  string wait_id = 6;
+  int32 attempts = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message GetInstanceRunRequest {
+  string instance_id = 1;
+  bool include_payloads = 2;
+  int32 execution_limit = 3;
+  int32 timeline_limit = 4;
+}
+
+message GetInstanceRunResponse {
+  WorkflowInstance instance = 1;
+  WorkflowExecution latest_execution = 2;
+  string trace_id = 3;
+  string resume_strategy = 4;
+  repeated WorkflowExecution executions = 5;
+  repeated RunTimelineEntry timeline = 6;
+  repeated StateOutput outputs = 7;
+  repeated ScopeRun scope_runs = 8;
+  repeated SignalWait signal_waits = 9;
+  repeated SignalMessage signal_messages = 10;
+}

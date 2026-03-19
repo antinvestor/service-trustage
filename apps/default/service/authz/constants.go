@@ -19,6 +19,7 @@ const (
 	PermissionWorkflowView   = "workflow_view"
 	PermissionInstanceView   = "instance_view"
 	PermissionInstanceRetry  = "instance_retry"
+	PermissionInstanceSignal = "instance_signal"
 	PermissionExecutionView  = "execution_view"
 	PermissionExecutionRetry = "execution_retry"
 )
@@ -36,21 +37,21 @@ func RolePermissions() map[string][]string {
 	return map[string][]string{
 		RoleOwner: {
 			PermissionEventIngest, PermissionWorkflowManage, PermissionWorkflowView,
-			PermissionInstanceView, PermissionInstanceRetry,
+			PermissionInstanceView, PermissionInstanceRetry, PermissionInstanceSignal,
 			PermissionExecutionView, PermissionExecutionRetry,
 		},
 		RoleAdmin: {
 			PermissionEventIngest, PermissionWorkflowManage, PermissionWorkflowView,
-			PermissionInstanceView, PermissionInstanceRetry,
+			PermissionInstanceView, PermissionInstanceRetry, PermissionInstanceSignal,
 			PermissionExecutionView, PermissionExecutionRetry,
 		},
 		RoleMember: {
 			PermissionEventIngest, PermissionWorkflowView,
-			PermissionInstanceView, PermissionExecutionView,
+			PermissionInstanceView, PermissionInstanceSignal, PermissionExecutionView,
 		},
 		RoleService: {
 			PermissionEventIngest, PermissionWorkflowManage, PermissionWorkflowView,
-			PermissionInstanceView, PermissionInstanceRetry,
+			PermissionInstanceView, PermissionInstanceRetry, PermissionInstanceSignal,
 			PermissionExecutionView, PermissionExecutionRetry,
 		},
 	}

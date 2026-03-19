@@ -23,6 +23,7 @@ type OutboxScheduler struct {
 	queueMgr  queue.Manager
 	cfg       *config.Config
 	metrics   *telemetry.Metrics
+	owner     string
 }
 
 // NewOutboxScheduler creates a new OutboxScheduler.
@@ -37,6 +38,7 @@ func NewOutboxScheduler(
 		queueMgr:  queueMgr,
 		cfg:       cfg,
 		metrics:   metrics,
+		owner:     "outbox-" + util.IDString(),
 	}
 }
 
@@ -53,7 +55,7 @@ func (s *OutboxScheduler) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			published := s.RunOnce(ctx)
+			published := s.RunUntilDrained(ctx)
 			if published > 0 {
 				log.Info("outbox scheduler completed", "published", published)
 			}
@@ -64,47 +66,90 @@ func (s *OutboxScheduler) Start(ctx context.Context) {
 	}
 }
 
-// RunOnce performs a single outbox publish sweep within a single transaction
-// to ensure FOR UPDATE SKIP LOCKED locks are held across the entire batch.
+// RunUntilDrained drains multiple outbox batches in one scheduler wakeup.
+func (s *OutboxScheduler) RunUntilDrained(ctx context.Context) int {
+	maxBatches := s.cfg.OutboxMaxBatchesPerSweep
+	if maxBatches <= 0 {
+		maxBatches = 1
+	}
+
+	totalPublished := 0
+
+	for range maxBatches {
+		published := s.RunOnce(ctx)
+		totalPublished += published
+		if published < s.cfg.OutboxBatchSize {
+			break
+		}
+	}
+
+	return totalPublished
+}
+
+// RunOnce performs a single outbox publish sweep using claim/publish/ack flow.
 func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, telemetry.SpanSchedulerOutbox)
 	defer telemetry.EndSpan(span, nil)
 
 	log := util.Log(ctx)
 
-	// Record outbox lag gauge (count from last batch for visibility).
-	published, err := s.eventRepo.FindAndProcessUnpublished(ctx, s.cfg.OutboxBatchSize,
-		func(event *models.EventLog) error {
-			// Build proper IngestedEventMessage for the event router worker.
-			var payload map[string]any
-			if unmarshalErr := json.Unmarshal([]byte(event.Payload), &payload); unmarshalErr != nil {
-				return fmt.Errorf("unmarshal payload: %w", unmarshalErr)
-			}
+	leaseTTL := time.Duration(s.cfg.OutboxClaimTTLSeconds) * time.Second
+	if leaseTTL <= 0 {
+		leaseTTL = 30 * time.Second
+	}
 
-			msg := &events.IngestedEventMessage{
-				EventID:     event.ID,
-				TenantID:    event.TenantID,
-				PartitionID: event.PartitionID,
-				EventType:   event.EventType,
-				Source:      event.Source,
-				Payload:     payload,
-			}
-
-			// Publish to NATS event stream.
-			if publishErr := s.queueMgr.Publish(ctx, s.cfg.QueueEventIngestName, msg); publishErr != nil {
-				return fmt.Errorf("publish: %w", publishErr)
-			}
-
-			return nil
-		},
-	)
+	claimed, err := s.eventRepo.ClaimUnpublished(ctx, s.cfg.OutboxBatchSize, s.owner, time.Now().Add(leaseTTL))
 	if err != nil {
-		log.WithError(err).Error("outbox scheduler: sweep failed")
+		log.WithError(err).Error("outbox scheduler: claim failed")
 		return 0
 	}
 
-	s.metrics.SchedulerOutboxGauge.Record(ctx, int64(published))
-	span.SetAttributes(attribute.Int("published_count", published))
+	s.metrics.SchedulerOutboxGauge.Record(ctx, int64(len(claimed)))
+
+	published := 0
+
+	for _, event := range claimed {
+		msg, buildErr := buildIngestedEventMessage(event)
+		if buildErr != nil {
+			log.WithError(buildErr).Error("outbox scheduler: build message failed", "event_id", event.ID)
+			_ = s.eventRepo.ReleaseClaim(ctx, event.ID, s.owner)
+			continue
+		}
+
+		if publishErr := s.queueMgr.Publish(ctx, s.cfg.QueueEventIngestName, msg); publishErr != nil {
+			log.WithError(publishErr).Error("outbox scheduler: publish failed", "event_id", event.ID)
+			_ = s.eventRepo.ReleaseClaim(ctx, event.ID, s.owner)
+			continue
+		}
+
+		if ackErr := s.eventRepo.MarkPublishedByOwner(ctx, event.ID, s.owner, time.Now()); ackErr != nil {
+			log.WithError(ackErr).Error("outbox scheduler: mark published failed", "event_id", event.ID)
+			continue
+		}
+
+		published++
+	}
+
+	span.SetAttributes(
+		attribute.Int("claimed_count", len(claimed)),
+		attribute.Int("published_count", published),
+	)
 
 	return published
+}
+
+func buildIngestedEventMessage(event *models.EventLog) (*events.IngestedEventMessage, error) {
+	var payload map[string]any
+	if unmarshalErr := json.Unmarshal([]byte(event.Payload), &payload); unmarshalErr != nil {
+		return nil, fmt.Errorf("unmarshal payload: %w", unmarshalErr)
+	}
+
+	return &events.IngestedEventMessage{
+		EventID:     event.ID,
+		TenantID:    event.TenantID,
+		PartitionID: event.PartitionID,
+		EventType:   event.EventType,
+		Source:      event.Source,
+		Payload:     payload,
+	}, nil
 }

@@ -2,9 +2,13 @@ package dsl
 
 import "fmt"
 
-// FindStep returns the top-level step with the given ID, or nil if not found.
+// FindStep returns the step with the given ID, including nested steps.
 func FindStep(spec *WorkflowSpec, stepID string) *StepSpec {
-	for _, step := range spec.Steps {
+	if spec == nil {
+		return nil
+	}
+
+	for _, step := range CollectAllSteps(spec) {
 		if step.ID == stepID {
 			return step
 		}
@@ -13,15 +17,20 @@ func FindStep(spec *WorkflowSpec, stepID string) *StepSpec {
 	return nil
 }
 
-// FindNextStep returns the top-level step that should execute after the given step ID.
-// Returns nil if the step is the last one (terminal).
-// This follows the implicit ordering of top-level steps, ignoring any conditional transitions.
-// Use ResolveNextStep for conditional transition evaluation.
+// FindNextStep returns the next step in depth-first workflow order.
+// Returns nil if the step is terminal.
+// This follows the implicit ordering of the full step tree, ignoring any
+// conditional transitions. Use ResolveNextStep for transition-aware navigation.
 func FindNextStep(spec *WorkflowSpec, currentStepID string) *StepSpec {
-	for i, step := range spec.Steps {
+	if spec == nil {
+		return nil
+	}
+
+	steps := CollectAllSteps(spec)
+	for i, step := range steps {
 		if step.ID == currentStepID {
-			if i+1 < len(spec.Steps) {
-				return spec.Steps[i+1]
+			if i+1 < len(steps) {
+				return steps[i+1]
 			}
 
 			return nil
@@ -37,28 +46,93 @@ func FindNextStep(spec *WorkflowSpec, currentStepID string) *StepSpec {
 // The vars map is used for CEL expression evaluation in conditional transitions.
 // Returns nil (no error) when the current step is terminal.
 func ResolveNextStep(spec *WorkflowSpec, currentStepID string, vars map[string]any) (*StepSpec, error) {
-	currentStep := FindStep(spec, currentStepID)
-	if currentStep == nil {
-		return nil, nil //nolint:nilnil // nil step = terminal, not an error
+	if spec == nil {
+		return nil, nil //nolint:nilnil // nil spec = no next step
 	}
 
-	// If no explicit transition, fall back to implicit sequential ordering.
-	if currentStep.OnSuccess.IsEmpty() {
-		return FindNextStep(spec, currentStepID), nil
+	next, found, err := resolveNextInSteps(spec, spec.Steps, currentStepID, vars)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil //nolint:nilnil // unknown current step behaves as terminal
 	}
 
-	// Static transition: simple step ID.
-	if currentStep.OnSuccess.Static != "" {
-		target := FindStep(spec, currentStep.OnSuccess.Static)
-		if target == nil {
-			return nil, fmt.Errorf("transition target step %q not found", currentStep.OnSuccess.Static)
+	return next, nil
+}
+
+// ResolveNextStepInSubtree determines the next step inside the subtree rooted at rootStepID.
+// When the current step exhausts the subtree, nil is returned instead of bubbling into parent siblings.
+func ResolveNextStepInSubtree(
+	spec *WorkflowSpec,
+	rootStepID string,
+	currentStepID string,
+	vars map[string]any,
+) (*StepSpec, error) {
+	if spec == nil {
+		return nil, nil //nolint:nilnil
+	}
+
+	root := FindStep(spec, rootStepID)
+	if root == nil {
+		return nil, fmt.Errorf("root step %q not found", rootStepID)
+	}
+
+	next, found, err := resolveNextInSteps(spec, []*StepSpec{root}, currentStepID, vars)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil //nolint:nilnil
+	}
+
+	return next, nil
+}
+
+// ResolveNextStepInContainer determines the next step inside the named container step only.
+// Supported containers are sequence, parallel, and foreach.
+func ResolveNextStepInContainer(
+	spec *WorkflowSpec,
+	containerStepID string,
+	currentStepID string,
+	vars map[string]any,
+) (*StepSpec, error) {
+	if spec == nil {
+		return nil, nil //nolint:nilnil
+	}
+
+	container := FindStep(spec, containerStepID)
+	if container == nil {
+		return nil, fmt.Errorf("container step %q not found", containerStepID)
+	}
+
+	var steps []*StepSpec
+	switch container.Type { //nolint:exhaustive
+	case StepTypeSequence:
+		if container.Sequence != nil {
+			steps = container.Sequence.Steps
 		}
-
-		return target, nil
+	case StepTypeParallel:
+		if container.Parallel != nil {
+			steps = container.Parallel.Steps
+		}
+	case StepTypeForeach:
+		if container.Foreach != nil {
+			steps = container.Foreach.Steps
+		}
+	default:
+		return nil, fmt.Errorf("step %q is not a supported container", containerStepID)
 	}
 
-	// Conditional transitions: evaluate CEL conditions in order.
-	return resolveConditionalTransition(spec, currentStep.OnSuccess.Conditional, vars)
+	next, found, err := resolveNextInSteps(spec, steps, currentStepID, vars)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil //nolint:nilnil
+	}
+
+	return next, nil
 }
 
 // resolveConditionalTransition evaluates each conditional target in order and returns the first match.
@@ -109,7 +183,8 @@ func resolveConditionalTransition(
 
 // IsTerminalStep returns true if there is no next step after the given step.
 func IsTerminalStep(spec *WorkflowSpec, stepID string) bool {
-	return FindNextStep(spec, stepID) == nil
+	next, err := ResolveNextStep(spec, stepID, nil)
+	return err == nil && next == nil
 }
 
 // InitialStep returns the first top-level step, or nil if there are no steps.
@@ -119,4 +194,140 @@ func InitialStep(spec *WorkflowSpec) *StepSpec {
 	}
 
 	return spec.Steps[0]
+}
+
+func resolveNextInSteps(
+	spec *WorkflowSpec,
+	steps []*StepSpec,
+	currentStepID string,
+	vars map[string]any,
+) (*StepSpec, bool, error) {
+	for i, step := range steps {
+		if step.ID == currentStepID {
+			next, err := resolveCurrentStepNext(spec, steps, i, vars)
+			return next, true, err
+		}
+
+		next, found, err := resolveNextWithinStep(spec, step, currentStepID, vars)
+		if err != nil {
+			return nil, true, err
+		}
+		if !found {
+			continue
+		}
+		if next != nil {
+			return next, true, nil
+		}
+		if i+1 < len(steps) {
+			return steps[i+1], true, nil
+		}
+
+		return nil, true, nil
+	}
+
+	return nil, false, nil
+}
+
+func resolveNextWithinStep(
+	spec *WorkflowSpec,
+	step *StepSpec,
+	currentStepID string,
+	vars map[string]any,
+) (*StepSpec, bool, error) {
+	switch step.Type { //nolint:exhaustive // only composite types contain substeps
+	case StepTypeSequence:
+		if step.Sequence == nil {
+			return nil, false, nil
+		}
+		return resolveNextInSteps(spec, step.Sequence.Steps, currentStepID, vars)
+	case StepTypeIf:
+		if step.If == nil {
+			return nil, false, nil
+		}
+
+		if next, found, err := resolveNextInSteps(spec, step.If.Then, currentStepID, vars); found || err != nil {
+			return next, found, err
+		}
+
+		return resolveNextInSteps(spec, step.If.Else, currentStepID, vars)
+	case StepTypeParallel:
+		if step.Parallel == nil {
+			return nil, false, nil
+		}
+		return resolveNextInSteps(spec, step.Parallel.Steps, currentStepID, vars)
+	case StepTypeForeach:
+		if step.Foreach == nil {
+			return nil, false, nil
+		}
+		return resolveNextInSteps(spec, step.Foreach.Steps, currentStepID, vars)
+	default:
+		return nil, false, nil
+	}
+}
+
+func resolveCurrentStepNext(
+	spec *WorkflowSpec,
+	siblings []*StepSpec,
+	index int,
+	vars map[string]any,
+) (*StepSpec, error) {
+	currentStep := siblings[index]
+
+	if !currentStep.OnSuccess.IsEmpty() {
+		return resolveExplicitTransition(spec, currentStep.OnSuccess, vars)
+	}
+
+	switch currentStep.Type { //nolint:exhaustive // only special implicit semantics handled here
+	case StepTypeSequence:
+		if currentStep.Sequence != nil && len(currentStep.Sequence.Steps) > 0 {
+			return currentStep.Sequence.Steps[0], nil
+		}
+	case StepTypeIf:
+		branch, err := resolveIfBranch(currentStep, vars)
+		if err != nil {
+			return nil, err
+		}
+		switch branch {
+		case "then":
+			if currentStep.If != nil && len(currentStep.If.Then) > 0 {
+				return currentStep.If.Then[0], nil
+			}
+		case "else":
+			if currentStep.If != nil && len(currentStep.If.Else) > 0 {
+				return currentStep.If.Else[0], nil
+			}
+		}
+	}
+
+	if index+1 < len(siblings) {
+		return siblings[index+1], nil
+	}
+
+	return nil, nil //nolint:nilnil // terminal within this container
+}
+
+func resolveExplicitTransition(
+	spec *WorkflowSpec,
+	transition TransitionTarget,
+	vars map[string]any,
+) (*StepSpec, error) {
+	if transition.Static != "" {
+		target := FindStep(spec, transition.Static)
+		if target == nil {
+			return nil, fmt.Errorf("transition target step %q not found", transition.Static)
+		}
+
+		return target, nil
+	}
+
+	return resolveConditionalTransition(spec, transition.Conditional, vars)
+}
+
+func resolveIfBranch(step *StepSpec, vars map[string]any) (string, error) {
+	output, _ := vars["output"].(map[string]any)
+	if branch, ok := output["branch"].(string); ok && (branch == "then" || branch == "else") {
+		return branch, nil
+	}
+
+	return "", fmt.Errorf("if step %q did not provide resolved branch", step.ID)
 }

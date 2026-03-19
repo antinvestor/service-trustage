@@ -214,6 +214,11 @@ When a workflow is created, the DSL is validated for:
 
 ## 4. Step Types
 
+Runtime note: the DSL parser and validator understand all declared step types,
+and the current production runtime executes `call`, `delay`, `if`,
+`sequence`, `parallel`, `foreach`, `signal_wait`, and `signal_send`
+semantics with durable waiting, branch reconciliation, and signal delivery.
+
 ### `call` — Invoke a Connector Adapter
 
 Executes an external operation via a registered connector adapter.

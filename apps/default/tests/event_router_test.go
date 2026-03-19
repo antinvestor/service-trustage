@@ -102,3 +102,48 @@ func (s *DefaultServiceSuite) TestEventRouter_FilterHandlesInvalidExpression() {
 	s.Require().NoError(err)
 	s.Equal(0, created)
 }
+
+func (s *DefaultServiceSuite) TestEventRouter_DeduplicatesDuplicateDeliveries() {
+	ctx := s.tenantCtx()
+	def := s.createWorkflow(ctx, s.sampleDSL())
+	s.createTrigger(ctx, "user.created", def)
+
+	msg := &events.IngestedEventMessage{
+		EventID:     "evt-dedupe-001",
+		EventType:   "user.created",
+		TenantID:    testTenantID,
+		PartitionID: testPartitionID,
+		Payload: map[string]any{
+			"user_id": "user-1",
+		},
+	}
+
+	created, err := s.eventRouter().RouteEvent(ctx, msg)
+	s.Require().NoError(err)
+	s.Equal(1, created)
+
+	created, err = s.eventRouter().RouteEvent(ctx, msg)
+	s.Require().NoError(err)
+	s.Equal(0, created)
+
+	instances, err := s.instanceRepo.List(ctx, "", "", 10)
+	s.Require().NoError(err)
+	s.Len(instances, 1)
+
+	execs, err := s.execRepo.List(ctx, "", instances[0].ID, 10)
+	s.Require().NoError(err)
+	s.Len(execs, 1)
+
+	auditEvents, err := s.auditRepo.ListByInstance(ctx, instances[0].ID)
+	s.Require().NoError(err)
+
+	foundDedup := false
+	for _, auditEvent := range auditEvents {
+		if auditEvent.EventType == events.EventTriggerDeduped {
+			foundDedup = true
+			break
+		}
+	}
+
+	s.True(foundDedup)
+}

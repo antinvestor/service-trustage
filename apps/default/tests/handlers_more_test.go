@@ -574,6 +574,7 @@ func (d denyAuthz) CanWorkflowManage(_ context.Context) error { return errDenied
 func (d denyAuthz) CanWorkflowView(_ context.Context) error   { return errDenied }
 func (d denyAuthz) CanInstanceView(_ context.Context) error   { return errDenied }
 func (d denyAuthz) CanInstanceRetry(_ context.Context) error  { return errDenied }
+func (d denyAuthz) CanInstanceSignal(_ context.Context) error { return errDenied }
 func (d denyAuthz) CanExecutionView(_ context.Context) error  { return errDenied }
 func (d denyAuthz) CanExecutionRetry(_ context.Context) error { return errDenied }
 

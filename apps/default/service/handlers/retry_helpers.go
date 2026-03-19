@@ -2,10 +2,8 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"time"
-
-	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -26,11 +24,13 @@ var retryableStatuses = map[models.ExecutionStatus]bool{
 	models.ExecStatusInvalidOutputContract: true,
 	models.ExecStatusStale:                 false,
 	models.ExecStatusRetryScheduled:        true,
+	models.ExecStatusWaiting:               false,
 }
 
 func createRetryExecution(
 	ctx context.Context,
 	execRepo repository.WorkflowExecutionRepository,
+	runtimeRepo repository.WorkflowRuntimeRepository,
 	auditRepo repository.AuditEventRepository,
 	exec *models.WorkflowStateExecution,
 	instance *models.WorkflowInstance,
@@ -56,36 +56,23 @@ func createRetryExecution(
 		TraceID:         exec.TraceID,
 	}
 
-	db := execRepo.Pool().DB(ctx, false)
-
-	txErr := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(newExec).Error; err != nil {
-			return fmt.Errorf("create retry execution: %w", err)
+	if _, err := runtimeRepo.CreateRetryExecution(ctx, &repository.CreateRetryExecutionRequest{
+		Execution:    exec,
+		Instance:     instance,
+		NewExecution: newExec,
+	}); err != nil {
+		if errors.Is(err, repository.ErrStaleMutation) {
+			return nil, fmt.Errorf("reset instance for retry: %w", err)
 		}
-
-		now := time.Now()
-		updateErr := tx.Exec(
-			`UPDATE workflow_instances
-			 SET status = ?, current_state = ?, modified_at = ?, revision = revision + 1
-			 WHERE id = ? AND deleted_at IS NULL`,
-			string(models.InstanceStatusRunning), exec.State, now, instance.ID,
-		).Error
-		if updateErr != nil {
-			return fmt.Errorf("update instance state: %w", updateErr)
-		}
-
-		return nil
-	})
-	if txErr != nil {
-		return nil, txErr
+		return nil, err
 	}
-
 	if auditRepo != nil {
 		_ = auditRepo.Append(ctx, &models.WorkflowAuditEvent{
 			InstanceID:  exec.InstanceID,
 			ExecutionID: newExec.ID,
 			EventType:   events.EventStateRetried,
 			State:       exec.State,
+			TraceID:     exec.TraceID,
 		})
 	}
 
