@@ -21,7 +21,9 @@ COPY ./apps/default ./apps/default
 COPY ./baml_client ./baml_client
 COPY ./dsl ./dsl
 COPY ./connector ./connector
+COPY ./gen ./gen
 COPY ./pkg ./pkg
+COPY ./proto ./proto
 
 # BAML requires CGO; build a dynamically-linked binary for glibc runtime.
 RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
