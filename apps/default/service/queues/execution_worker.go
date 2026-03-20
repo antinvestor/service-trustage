@@ -290,8 +290,8 @@ func (w *ExecutionWorker) executeSignalSendStep(
 		return nil
 	}
 
-	if _, err := w.engine.SendSignal(ctx, targetInstanceID, step.SignalSend.SignalName, payload); err != nil {
-		return fmt.Errorf("send signal: %w", err)
+	if _, sendErr := w.engine.SendSignal(ctx, targetInstanceID, step.SignalSend.SignalName, payload); sendErr != nil {
+		return fmt.Errorf("send signal: %w", sendErr)
 	}
 
 	return w.commitSuccess(ctx, cmd, json.RawMessage(`{}`))
@@ -448,7 +448,12 @@ func resolveStepInput(stepInput map[string]any, inputPayload json.RawMessage) (m
 	}
 
 	if len(stepInput) == 0 {
-		return payloadMap["payload"].(map[string]any), nil
+		payload, ok := payloadMap["payload"].(map[string]any)
+		if !ok {
+			return nil, errors.New("resolved payload was not an object")
+		}
+
+		return payload, nil
 	}
 
 	resolved, err := dsl.ResolveTemplateValue(stepInput, payloadMap)

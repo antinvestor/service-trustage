@@ -29,7 +29,6 @@ var retryableStatuses = map[models.ExecutionStatus]bool{
 
 func createRetryExecution(
 	ctx context.Context,
-	execRepo repository.WorkflowExecutionRepository,
 	runtimeRepo repository.WorkflowRuntimeRepository,
 	auditRepo repository.AuditEventRepository,
 	exec *models.WorkflowStateExecution,

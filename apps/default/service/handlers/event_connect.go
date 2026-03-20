@@ -53,82 +53,30 @@ func (s *EventConnectServer) IngestEvent(
 ) (*connect.Response[eventv1.IngestEventResponse], error) {
 	log := util.Log(ctx)
 
-	if err := requireConnectAuth(ctx); err != nil {
+	if err := s.validateIngestEventRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
-	if s.authz != nil {
-		if err := s.authz.CanEventIngest(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
-	}
-
-	if s.rateLimiter != nil && !s.rateLimiter.Allow(ctx) {
-		return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("rate limit exceeded"))
-	}
-
-	if req.Msg.GetEventType() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("event_type is required"))
-	}
-
-	if req.Msg.GetIdempotencyKey() != "" {
-		existing, err := s.eventRepo.FindByIdempotencyKey(ctx, req.Msg.GetIdempotencyKey())
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
-		}
-
-		if existing != nil {
-			var payload map[string]any
-			_ = json.Unmarshal([]byte(existing.Payload), &payload)
-
-			return connect.NewResponse(&eventv1.IngestEventResponse{
-				Event: eventRecordToProto(
-					existing.ID,
-					existing.EventType,
-					existing.Source,
-					existing.IdempotencyKey,
-					payload,
-				),
-				Idempotent: true,
-			}), nil
-		}
-	}
-
-	payload := req.Msg.GetPayload().AsMap()
-	payloadBytes, err := json.Marshal(payload)
+	idempotentResponse, found, err := s.lookupExistingEventResponse(ctx, req.Msg.GetIdempotencyKey())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, err
+	}
+	if found {
+		return idempotentResponse, nil
 	}
 
-	eventLog := &models.EventLog{
-		EventType:      req.Msg.GetEventType(),
-		Source:         req.Msg.GetSource(),
-		IdempotencyKey: req.Msg.GetIdempotencyKey(),
-		Payload:        string(payloadBytes),
+	eventLog, payload, err := buildEventLogFromRequest(req.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("marshal event payload: %w", err))
 	}
 
-	if err := s.eventRepo.Create(ctx, eventLog); err != nil {
-		if req.Msg.GetIdempotencyKey() != "" && isDuplicateRecordError(err) {
-			existing, lookupErr := s.eventRepo.FindByIdempotencyKey(ctx, req.Msg.GetIdempotencyKey())
-			if lookupErr == nil && existing != nil {
-				var payload map[string]any
-				_ = json.Unmarshal([]byte(existing.Payload), &payload)
-
-				return connect.NewResponse(&eventv1.IngestEventResponse{
-					Event: eventRecordToProto(
-						existing.ID,
-						existing.EventType,
-						existing.Source,
-						existing.IdempotencyKey,
-						payload,
-					),
-					Idempotent: true,
-				}), nil
-			}
-		}
-
-		log.WithError(err).Error("failed to store event")
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+	duplicateResponse, duplicated, createErr := s.storeEventWithDuplicateRecovery(ctx, eventLog)
+	if createErr != nil {
+		log.WithError(createErr).Error("failed to store event")
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", createErr))
+	}
+	if duplicated {
+		return duplicateResponse, nil
 	}
 
 	return connect.NewResponse(&eventv1.IngestEventResponse{
@@ -140,6 +88,100 @@ func (s *EventConnectServer) IngestEvent(
 			payload,
 		),
 	}), nil
+}
+
+func (s *EventConnectServer) validateIngestEventRequest(
+	ctx context.Context,
+	req *connect.Request[eventv1.IngestEventRequest],
+) error {
+	if err := requireConnectAuth(ctx); err != nil {
+		return err
+	}
+	if s.authz != nil {
+		if err := s.authz.CanEventIngest(ctx); err != nil {
+			return authorizer.ToConnectError(err)
+		}
+	}
+	if s.rateLimiter != nil && !s.rateLimiter.Allow(ctx) {
+		return connect.NewError(connect.CodeResourceExhausted, errors.New("rate limit exceeded"))
+	}
+	if req.Msg.GetEventType() == "" {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("event_type is required"))
+	}
+
+	return nil
+}
+
+func buildEventLogFromRequest(
+	msg *eventv1.IngestEventRequest,
+) (*models.EventLog, map[string]any, error) {
+	payload := msg.GetPayload().AsMap()
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &models.EventLog{
+		EventType:      msg.GetEventType(),
+		Source:         msg.GetSource(),
+		IdempotencyKey: msg.GetIdempotencyKey(),
+		Payload:        string(payloadBytes),
+	}, payload, nil
+}
+
+func (s *EventConnectServer) lookupExistingEventResponse(
+	ctx context.Context,
+	idempotencyKey string,
+) (*connect.Response[eventv1.IngestEventResponse], bool, error) {
+	if idempotencyKey == "" {
+		return nil, false, nil
+	}
+
+	existing, err := s.eventRepo.FindByIdempotencyKey(ctx, idempotencyKey)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+	}
+	if existing == nil {
+		return nil, false, nil
+	}
+
+	return duplicateEventResponse(existing), true, nil
+}
+
+func (s *EventConnectServer) storeEventWithDuplicateRecovery(
+	ctx context.Context,
+	eventLog *models.EventLog,
+) (*connect.Response[eventv1.IngestEventResponse], bool, error) {
+	if createErr := s.eventRepo.Create(ctx, eventLog); createErr != nil {
+		if eventLog.IdempotencyKey != "" && isDuplicateRecordError(createErr) {
+			existing, lookupErr := s.eventRepo.FindByIdempotencyKey(ctx, eventLog.IdempotencyKey)
+			if lookupErr == nil && existing != nil {
+				return duplicateEventResponse(existing), true, nil
+			}
+		}
+
+		return nil, false, createErr
+	}
+
+	return nil, false, nil
+}
+
+func duplicateEventResponse(
+	existing *models.EventLog,
+) *connect.Response[eventv1.IngestEventResponse] {
+	var payload map[string]any
+	_ = json.Unmarshal([]byte(existing.Payload), &payload)
+
+	return connect.NewResponse(&eventv1.IngestEventResponse{
+		Event: eventRecordToProto(
+			existing.ID,
+			existing.EventType,
+			existing.Source,
+			existing.IdempotencyKey,
+			payload,
+		),
+		Idempotent: true,
+	})
 }
 
 func (s *EventConnectServer) GetInstanceTimeline(

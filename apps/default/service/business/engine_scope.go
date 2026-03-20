@@ -41,28 +41,9 @@ func (e *stateEngine) StartBranchScope(
 	cmd *ExecutionCommand,
 	step *dsl.StepSpec,
 ) error {
-	if step == nil {
-		return errors.New("branch scope step is required")
-	}
-	if step.Type != dsl.StepTypeParallel && step.Type != dsl.StepTypeForeach {
-		return fmt.Errorf("unsupported branch scope type %q", step.Type)
-	}
-
-	exec, err := e.execRepo.GetByID(ctx, cmd.ExecutionID)
+	exec, instance, err := e.loadBranchScopeParent(ctx, cmd, step)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrExecutionNotFound, err)
-	}
-	instance, err := e.instanceRepo.GetByID(ctx, exec.InstanceID)
-	if err != nil {
-		return fmt.Errorf("load instance: %w", err)
-	}
-
-	scope := &models.WorkflowScopeRun{
-		ParentExecutionID: exec.ID,
-		ParentInstanceID:  instance.ID,
-		ParentState:       exec.State,
-		ScopeType:         string(step.Type),
-		Status:            "running",
+		return err
 	}
 
 	childDefs, err := branchChildrenFromStep(step, cmd.InputPayload, instance.ID, exec.ID)
@@ -70,60 +51,20 @@ func (e *stateEngine) StartBranchScope(
 		return err
 	}
 
-	scope.TotalChildren = len(childDefs)
-	resultsPayload, err := marshalEmptyResults(scope.TotalChildren)
+	scope, err := initializeBranchScope(step, exec, instance, childDefs)
 	if err != nil {
 		return err
 	}
-	scope.ResultsPayload = string(resultsPayload)
 
-	switch step.Type {
-	case dsl.StepTypeParallel:
-		scope.WaitAll = step.Parallel.WaitAll
-		scope.MaxConcurrency = len(childDefs)
-	case dsl.StepTypeForeach:
-		scope.WaitAll = true
-		scope.MaxConcurrency = step.Foreach.MaxConcurrency
-		if scope.MaxConcurrency <= 0 {
-			scope.MaxConcurrency = 1
-		}
-
-		scope.ItemVar = step.Foreach.ItemVar
-		if scope.ItemVar == "" {
-			scope.ItemVar = "item"
-		}
-		scope.IndexVar = step.Foreach.IndexVar
-		if scope.IndexVar == "" {
-			scope.IndexVar = "index"
-		}
-
-		itemsPayload, marshalErr := json.Marshal(extractForeachItems(childDefs))
-		if marshalErr != nil {
-			return fmt.Errorf("marshal foreach items: %w", marshalErr)
-		}
-		scope.ItemsPayload = string(itemsPayload)
+	childRecords, err := e.prepareBranchScopeLaunch(ctx, instance, exec, step, scope, childDefs)
+	if err != nil {
+		return err
 	}
 
-	tokenHash := cryptoutil.HashToken(cmd.ExecutionToken)
-	launchCount := len(childDefs)
-	if step.Type == dsl.StepTypeForeach && launchCount > scope.MaxConcurrency {
-		launchCount = scope.MaxConcurrency
-	}
-
-	childRecords := make([]*repository.ScopedChildRecord, 0, launchCount)
-	for i := range launchCount {
-		record, recordErr := e.buildScopedChildRecord(ctx, instance, exec, step, childDefs[i])
-		if recordErr != nil {
-			return recordErr
-		}
-		childRecords = append(childRecords, record)
-	}
-
-	scope.NextChildIndex = launchCount
 	if txErr := e.runtimeRepo.StartBranchScope(ctx, &repository.StartBranchScopeRequest{
 		Execution:      exec,
 		Instance:       instance,
-		TokenHash:      tokenHash,
+		TokenHash:      cryptoutil.HashToken(cmd.ExecutionToken),
 		Scope:          scope,
 		LaunchChildren: childRecords,
 		AuditTrace:     exec.TraceID,
@@ -144,157 +85,136 @@ func (e *stateEngine) StartBranchScope(
 	return nil
 }
 
-func (e *stateEngine) ReconcileBranchScope(ctx context.Context, scopeID string) error {
-	scope, err := e.scopeRepo.GetByID(ctx, scopeID)
-	if err != nil {
-		return fmt.Errorf("load workflow scope: %w", err)
+func (e *stateEngine) loadBranchScopeParent(
+	ctx context.Context,
+	cmd *ExecutionCommand,
+	step *dsl.StepSpec,
+) (*models.WorkflowStateExecution, *models.WorkflowInstance, error) {
+	if step == nil {
+		return nil, nil, errors.New("branch scope step is required")
 	}
-	if scope.Status != "running" {
+	if step.Type != dsl.StepTypeParallel && step.Type != dsl.StepTypeForeach {
+		return nil, nil, fmt.Errorf("unsupported branch scope type %q", step.Type)
+	}
+
+	exec, err := e.execRepo.GetByID(ctx, cmd.ExecutionID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrExecutionNotFound, err)
+	}
+	instance, err := e.instanceRepo.GetByID(ctx, exec.InstanceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load instance: %w", err)
+	}
+
+	return exec, instance, nil
+}
+
+func initializeBranchScope(
+	step *dsl.StepSpec,
+	exec *models.WorkflowStateExecution,
+	instance *models.WorkflowInstance,
+	childDefs []scopedChildDefinition,
+) (*models.WorkflowScopeRun, error) {
+	scope := &models.WorkflowScopeRun{
+		ParentExecutionID: exec.ID,
+		ParentInstanceID:  instance.ID,
+		ParentState:       exec.State,
+		ScopeType:         string(step.Type),
+		Status:            "running",
+		TotalChildren:     len(childDefs),
+	}
+
+	resultsPayload, err := marshalEmptyResults(scope.TotalChildren)
+	if err != nil {
+		return nil, err
+	}
+	scope.ResultsPayload = string(resultsPayload)
+
+	switch step.Type {
+	case dsl.StepTypeParallel:
+		scope.WaitAll = step.Parallel.WaitAll
+		scope.MaxConcurrency = len(childDefs)
+	case dsl.StepTypeForeach:
+		scope.WaitAll = true
+		scope.MaxConcurrency = defaultForeachConcurrency(step.Foreach.MaxConcurrency)
+		scope.ItemVar = defaultForeachItemVar(step.Foreach.ItemVar)
+		scope.IndexVar = defaultForeachIndexVar(step.Foreach.IndexVar)
+
+		itemsPayload, marshalErr := json.Marshal(extractForeachItems(childDefs))
+		if marshalErr != nil {
+			return nil, fmt.Errorf("marshal foreach items: %w", marshalErr)
+		}
+		scope.ItemsPayload = string(itemsPayload)
+	case dsl.StepTypeCall,
+		dsl.StepTypeDelay,
+		dsl.StepTypeIf,
+		dsl.StepTypeSequence,
+		dsl.StepTypeSignalWait,
+		dsl.StepTypeSignalSend:
+		return nil, fmt.Errorf("unsupported branch scope type %q", step.Type)
+	default:
+		return nil, fmt.Errorf("unsupported branch scope type %q", step.Type)
+	}
+
+	return scope, nil
+}
+
+func (e *stateEngine) prepareBranchScopeLaunch(
+	ctx context.Context,
+	instance *models.WorkflowInstance,
+	exec *models.WorkflowStateExecution,
+	step *dsl.StepSpec,
+	scope *models.WorkflowScopeRun,
+	childDefs []scopedChildDefinition,
+) ([]*repository.ScopedChildRecord, error) {
+	launchCount := len(childDefs)
+	if step.Type == dsl.StepTypeForeach && launchCount > scope.MaxConcurrency {
+		launchCount = scope.MaxConcurrency
+	}
+
+	childRecords := make([]*repository.ScopedChildRecord, 0, launchCount)
+	for _, child := range childDefs[:launchCount] {
+		record, err := e.buildScopedChildRecord(ctx, instance, exec, step, child)
+		if err != nil {
+			return nil, err
+		}
+		childRecords = append(childRecords, record)
+	}
+
+	scope.NextChildIndex = launchCount
+	return childRecords, nil
+}
+
+func (e *stateEngine) ReconcileBranchScope(
+	ctx context.Context,
+	scopeID string,
+) error {
+	scopeCtx, err := e.loadScopeContext(ctx, scopeID)
+	if err != nil {
+		return err
+	}
+	if scopeCtx.scope.Status != "running" {
 		return nil
-	}
-
-	parentExec, err := e.execRepo.GetByID(ctx, scope.ParentExecutionID)
-	if err != nil {
-		return fmt.Errorf("load parent execution: %w", err)
-	}
-	parentInstance, err := e.instanceRepo.GetByID(ctx, scope.ParentInstanceID)
-	if err != nil {
-		return fmt.Errorf("load parent instance: %w", err)
-	}
-
-	spec, err := e.loadSpec(ctx, parentInstance.WorkflowName, parentInstance.WorkflowVersion)
-	if err != nil {
-		return err
-	}
-
-	parentStep := dsl.FindStep(spec, scope.ParentState)
-	if parentStep == nil {
-		return fmt.Errorf("scope parent step %q not found", scope.ParentState)
-	}
-
-	children, err := e.instanceRepo.ListByParentExecutionID(ctx, scope.ParentExecutionID)
-	if err != nil {
-		return err
 	}
 
 	results, completedCount, failedCount, runningCount, failure, err := e.collectScopeResults(
 		ctx,
-		children,
-		scope.TotalChildren,
+		scopeCtx.children,
+		scopeCtx.scope.TotalChildren,
 	)
 	if err != nil {
 		return err
 	}
 
-	nextChildIndex := scope.NextChildIndex
-	if scope.ScopeType == string(dsl.StepTypeForeach) && failedCount == 0 && nextChildIndex < scope.TotalChildren {
-		capacity := scope.MaxConcurrency - runningCount
-		if capacity < 0 {
-			capacity = 0
-		}
-		if capacity > 0 {
-			childDefs, childErr := branchChildrenFromStep(
-				parentStep,
-				json.RawMessage(parentExec.InputPayload),
-				parentInstance.ID,
-				parentExec.ID,
-			)
-			if childErr != nil {
-				return childErr
-			}
-
-			launchUntil := nextChildIndex + capacity
-			if launchUntil > len(childDefs) {
-				launchUntil = len(childDefs)
-			}
-
-			childRecords := make([]*repository.ScopedChildRecord, 0, launchUntil-nextChildIndex)
-			for _, child := range childDefs[nextChildIndex:launchUntil] {
-				record, recordErr := e.buildScopedChildRecord(ctx, parentInstance, parentExec, parentStep, child)
-				if recordErr != nil {
-					return recordErr
-				}
-				childRecords = append(childRecords, record)
-			}
-
-			if txErr := e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
-				ScopeID:           scope.ID,
-				Status:            "running",
-				CompletedChildren: completedCount,
-				FailedChildren:    failedCount,
-				NextChildIndex:    launchUntil,
-				ResultsPayload:    string(results),
-				ReleaseClaim:      true,
-				LaunchChildren:    childRecords,
-			}); txErr != nil {
-				if errors.Is(txErr, repository.ErrStaleMutation) {
-					return ErrStaleExecution
-				}
-				return txErr
-			}
-
-			return nil
-		}
+	launched, err := e.tryLaunchMoreForeachChildren(ctx, scopeCtx, results, completedCount, failedCount, runningCount)
+	if err != nil {
+		return err
+	}
+	if launched {
+		return nil
 	}
 
-	successOutput, shouldResume := evaluateScopeSuccess(*scope, results, completedCount, failedCount)
-	shouldFail := failedCount > 0
-
-	if shouldFail {
-		if failure == nil {
-			failure = &CommitError{
-				Class:   "fatal",
-				Code:    "branch_failed",
-				Message: "one or more scoped child workflows failed",
-			}
-		}
-
-		failErr := e.FailWaitingExecution(ctx, parentExec.ID, models.ExecStatusFatal, failure)
-		if failErr != nil && !errors.Is(failErr, ErrStaleExecution) {
-			return failErr
-		}
-
-		return e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
-			ScopeID:               scope.ID,
-			Status:                "failed",
-			CompletedChildren:     completedCount,
-			FailedChildren:        failedCount,
-			NextChildIndex:        scope.NextChildIndex,
-			ResultsPayload:        string(results),
-			ReleaseClaim:          true,
-			CancelRunningChildren: true,
-			ParentExecutionID:     scope.ParentExecutionID,
-		})
-	}
-
-	if shouldResume {
-		resumeErr := e.ResumeWaitingExecution(ctx, parentExec.ID, successOutput)
-		if resumeErr != nil && !errors.Is(resumeErr, ErrStaleExecution) {
-			return resumeErr
-		}
-
-		return e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
-			ScopeID:               scope.ID,
-			Status:                "completed",
-			CompletedChildren:     completedCount,
-			FailedChildren:        failedCount,
-			NextChildIndex:        scope.NextChildIndex,
-			ResultsPayload:        string(results),
-			ReleaseClaim:          true,
-			CancelRunningChildren: scope.ScopeType == string(dsl.StepTypeParallel) && !scope.WaitAll,
-			ParentExecutionID:     scope.ParentExecutionID,
-		})
-	}
-
-	return e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
-		ScopeID:           scope.ID,
-		Status:            "running",
-		CompletedChildren: completedCount,
-		FailedChildren:    failedCount,
-		NextChildIndex:    scope.NextChildIndex,
-		ResultsPayload:    string(results),
-		ReleaseClaim:      true,
-	})
+	return e.finalizeBranchScope(ctx, scopeCtx, results, completedCount, failedCount, failure)
 }
 
 type scopedChildDefinition struct {
@@ -312,75 +232,330 @@ func branchChildrenFromStep(
 ) ([]scopedChildDefinition, error) {
 	switch step.Type {
 	case dsl.StepTypeParallel:
-		if step.Parallel == nil {
-			return nil, errors.New("parallel step is missing parallel configuration")
-		}
-
-		baseInput, err := augmentInputPayload(inputPayload, map[string]any{
-			"parent_instance_id":  parentInstanceID,
-			"parent_execution_id": parentExecutionID,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		children := make([]scopedChildDefinition, 0, len(step.Parallel.Steps))
-		for index, child := range step.Parallel.Steps {
-			children = append(children, scopedChildDefinition{
-				Index:      index,
-				EntryState: child.ID,
-				Input:      baseInput,
-			})
-		}
-
-		return children, nil
+		return parallelChildrenFromStep(step, inputPayload, parentInstanceID, parentExecutionID)
 	case dsl.StepTypeForeach:
-		if step.Foreach == nil {
-			return nil, errors.New("foreach step is missing foreach configuration")
-		}
-		if len(step.Foreach.Steps) == 0 {
-			return nil, nil
-		}
-
-		items, err := evaluateForeachItems(step.Foreach, inputPayload)
-		if err != nil {
-			return nil, err
-		}
-
-		itemVar := step.Foreach.ItemVar
-		if itemVar == "" {
-			itemVar = "item"
-		}
-		indexVar := step.Foreach.IndexVar
-		if indexVar == "" {
-			indexVar = "index"
-		}
-
-		children := make([]scopedChildDefinition, 0, len(items))
-		for index, item := range items {
-			childInput, inputErr := augmentInputPayload(inputPayload, map[string]any{
-				"parent_instance_id":  parentInstanceID,
-				"parent_execution_id": parentExecutionID,
-				itemVar:               item,
-				indexVar:              index,
-				"scope_index":         index,
-			})
-			if inputErr != nil {
-				return nil, inputErr
-			}
-
-			children = append(children, scopedChildDefinition{
-				Index:      index,
-				EntryState: step.Foreach.Steps[0].ID,
-				Input:      childInput,
-				Item:       item,
-			})
-		}
-
-		return children, nil
+		return foreachChildrenFromStep(step, inputPayload, parentInstanceID, parentExecutionID)
+	case dsl.StepTypeCall,
+		dsl.StepTypeDelay,
+		dsl.StepTypeIf,
+		dsl.StepTypeSequence,
+		dsl.StepTypeSignalWait,
+		dsl.StepTypeSignalSend:
+		return nil, fmt.Errorf("unsupported scope type %q", step.Type)
 	default:
 		return nil, fmt.Errorf("unsupported scope type %q", step.Type)
 	}
+}
+
+type branchScopeContext struct {
+	scope          *models.WorkflowScopeRun
+	parentExec     *models.WorkflowStateExecution
+	parentInstance *models.WorkflowInstance
+	parentStep     *dsl.StepSpec
+	children       []*models.WorkflowInstance
+}
+
+func (e *stateEngine) loadScopeContext(ctx context.Context, scopeID string) (*branchScopeContext, error) {
+	scope, err := e.scopeRepo.GetByID(ctx, scopeID)
+	if err != nil {
+		return nil, fmt.Errorf("load workflow scope: %w", err)
+	}
+	parentExec, err := e.execRepo.GetByID(ctx, scope.ParentExecutionID)
+	if err != nil {
+		return nil, fmt.Errorf("load parent execution: %w", err)
+	}
+	parentInstance, err := e.instanceRepo.GetByID(ctx, scope.ParentInstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("load parent instance: %w", err)
+	}
+	spec, err := e.loadSpec(ctx, parentInstance.WorkflowName, parentInstance.WorkflowVersion)
+	if err != nil {
+		return nil, err
+	}
+	parentStep := dsl.FindStep(spec, scope.ParentState)
+	if parentStep == nil {
+		return nil, fmt.Errorf("scope parent step %q not found", scope.ParentState)
+	}
+	children, err := e.instanceRepo.ListByParentExecutionID(ctx, scope.ParentExecutionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &branchScopeContext{
+		scope:          scope,
+		parentExec:     parentExec,
+		parentInstance: parentInstance,
+		parentStep:     parentStep,
+		children:       children,
+	}, nil
+}
+
+func (e *stateEngine) tryLaunchMoreForeachChildren(
+	ctx context.Context,
+	scopeCtx *branchScopeContext,
+	results []byte,
+	completedCount int,
+	failedCount int,
+	runningCount int,
+) (bool, error) {
+	if scopeCtx.scope.ScopeType != string(dsl.StepTypeForeach) || failedCount > 0 ||
+		scopeCtx.scope.NextChildIndex >= scopeCtx.scope.TotalChildren {
+		return false, nil
+	}
+
+	capacity := scopeCtx.scope.MaxConcurrency - runningCount
+	if capacity <= 0 {
+		return false, nil
+	}
+
+	launchUntil, childRecords, err := e.buildForeachLaunchRecords(ctx, scopeCtx, capacity)
+	if err != nil {
+		return false, err
+	}
+	if len(childRecords) == 0 {
+		return false, nil
+	}
+
+	if txErr := e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
+		ScopeID:           scopeCtx.scope.ID,
+		Status:            "running",
+		CompletedChildren: completedCount,
+		FailedChildren:    failedCount,
+		NextChildIndex:    launchUntil,
+		ResultsPayload:    string(results),
+		ReleaseClaim:      true,
+		LaunchChildren:    childRecords,
+	}); txErr != nil {
+		if errors.Is(txErr, repository.ErrStaleMutation) {
+			return false, ErrStaleExecution
+		}
+		return false, txErr
+	}
+
+	return true, nil
+}
+
+func (e *stateEngine) buildForeachLaunchRecords(
+	ctx context.Context,
+	scopeCtx *branchScopeContext,
+	capacity int,
+) (int, []*repository.ScopedChildRecord, error) {
+	childDefs, err := branchChildrenFromStep(
+		scopeCtx.parentStep,
+		json.RawMessage(scopeCtx.parentExec.InputPayload),
+		scopeCtx.parentInstance.ID,
+		scopeCtx.parentExec.ID,
+	)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	launchUntil := scopeCtx.scope.NextChildIndex + capacity
+	if launchUntil > len(childDefs) {
+		launchUntil = len(childDefs)
+	}
+
+	childRecords := make([]*repository.ScopedChildRecord, 0, launchUntil-scopeCtx.scope.NextChildIndex)
+	for _, child := range childDefs[scopeCtx.scope.NextChildIndex:launchUntil] {
+		record, buildErr := e.buildScopedChildRecord(
+			ctx,
+			scopeCtx.parentInstance,
+			scopeCtx.parentExec,
+			scopeCtx.parentStep,
+			child,
+		)
+		if buildErr != nil {
+			return 0, nil, buildErr
+		}
+		childRecords = append(childRecords, record)
+	}
+
+	return launchUntil, childRecords, nil
+}
+
+func (e *stateEngine) finalizeBranchScope(
+	ctx context.Context,
+	scopeCtx *branchScopeContext,
+	results []byte,
+	completedCount int,
+	failedCount int,
+	failure *CommitError,
+) error {
+	successOutput, shouldResume := evaluateScopeSuccess(*scopeCtx.scope, results, completedCount, failedCount)
+	if failedCount > 0 {
+		return e.failBranchScopeExecution(ctx, scopeCtx, results, completedCount, failedCount, failure)
+	}
+	if shouldResume {
+		return e.completeBranchScopeExecution(ctx, scopeCtx, results, completedCount, failedCount, successOutput)
+	}
+
+	return e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
+		ScopeID:           scopeCtx.scope.ID,
+		Status:            "running",
+		CompletedChildren: completedCount,
+		FailedChildren:    failedCount,
+		NextChildIndex:    scopeCtx.scope.NextChildIndex,
+		ResultsPayload:    string(results),
+		ReleaseClaim:      true,
+	})
+}
+
+func (e *stateEngine) failBranchScopeExecution(
+	ctx context.Context,
+	scopeCtx *branchScopeContext,
+	results []byte,
+	completedCount int,
+	failedCount int,
+	failure *CommitError,
+) error {
+	if failure == nil {
+		failure = &CommitError{
+			Class:   "fatal",
+			Code:    "branch_failed",
+			Message: "one or more scoped child workflows failed",
+		}
+	}
+
+	failErr := e.FailWaitingExecution(ctx, scopeCtx.parentExec.ID, models.ExecStatusFatal, failure)
+	if failErr != nil && !errors.Is(failErr, ErrStaleExecution) {
+		return failErr
+	}
+
+	return e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
+		ScopeID:               scopeCtx.scope.ID,
+		Status:                "failed",
+		CompletedChildren:     completedCount,
+		FailedChildren:        failedCount,
+		NextChildIndex:        scopeCtx.scope.NextChildIndex,
+		ResultsPayload:        string(results),
+		ReleaseClaim:          true,
+		CancelRunningChildren: true,
+		ParentExecutionID:     scopeCtx.scope.ParentExecutionID,
+	})
+}
+
+func (e *stateEngine) completeBranchScopeExecution(
+	ctx context.Context,
+	scopeCtx *branchScopeContext,
+	results []byte,
+	completedCount int,
+	failedCount int,
+	successOutput json.RawMessage,
+) error {
+	resumeErr := e.ResumeWaitingExecution(ctx, scopeCtx.parentExec.ID, successOutput)
+	if resumeErr != nil && !errors.Is(resumeErr, ErrStaleExecution) {
+		return resumeErr
+	}
+
+	return e.runtimeRepo.UpdateScope(ctx, &repository.UpdateScopeRequest{
+		ScopeID:               scopeCtx.scope.ID,
+		Status:                "completed",
+		CompletedChildren:     completedCount,
+		FailedChildren:        failedCount,
+		NextChildIndex:        scopeCtx.scope.NextChildIndex,
+		ResultsPayload:        string(results),
+		ReleaseClaim:          true,
+		CancelRunningChildren: scopeCtx.scope.ScopeType == string(dsl.StepTypeParallel) && !scopeCtx.scope.WaitAll,
+		ParentExecutionID:     scopeCtx.scope.ParentExecutionID,
+	})
+}
+
+func defaultForeachConcurrency(value int) int {
+	if value <= 0 {
+		return 1
+	}
+
+	return value
+}
+
+func defaultForeachItemVar(value string) string {
+	if value == "" {
+		return "item"
+	}
+
+	return value
+}
+
+func defaultForeachIndexVar(value string) string {
+	if value == "" {
+		return "index"
+	}
+
+	return value
+}
+
+func parallelChildrenFromStep(
+	step *dsl.StepSpec,
+	inputPayload json.RawMessage,
+	parentInstanceID string,
+	parentExecutionID string,
+) ([]scopedChildDefinition, error) {
+	if step.Parallel == nil {
+		return nil, errors.New("parallel step is missing parallel configuration")
+	}
+
+	baseInput, err := augmentInputPayload(inputPayload, map[string]any{
+		"parent_instance_id":  parentInstanceID,
+		"parent_execution_id": parentExecutionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	children := make([]scopedChildDefinition, 0, len(step.Parallel.Steps))
+	for index, child := range step.Parallel.Steps {
+		children = append(children, scopedChildDefinition{
+			Index:      index,
+			EntryState: child.ID,
+			Input:      baseInput,
+		})
+	}
+
+	return children, nil
+}
+
+func foreachChildrenFromStep(
+	step *dsl.StepSpec,
+	inputPayload json.RawMessage,
+	parentInstanceID string,
+	parentExecutionID string,
+) ([]scopedChildDefinition, error) {
+	if step.Foreach == nil {
+		return nil, errors.New("foreach step is missing foreach configuration")
+	}
+	if len(step.Foreach.Steps) == 0 {
+		return nil, nil
+	}
+
+	items, err := evaluateForeachItems(step.Foreach, inputPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	itemVar := defaultForeachItemVar(step.Foreach.ItemVar)
+	indexVar := defaultForeachIndexVar(step.Foreach.IndexVar)
+	children := make([]scopedChildDefinition, 0, len(items))
+	for index, item := range items {
+		childInput, inputErr := augmentInputPayload(inputPayload, map[string]any{
+			"parent_instance_id":  parentInstanceID,
+			"parent_execution_id": parentExecutionID,
+			itemVar:               item,
+			indexVar:              index,
+			"scope_index":         index,
+		})
+		if inputErr != nil {
+			return nil, inputErr
+		}
+
+		children = append(children, scopedChildDefinition{
+			Index:      index,
+			EntryState: step.Foreach.Steps[0].ID,
+			Input:      childInput,
+			Item:       item,
+		})
+	}
+
+	return children, nil
 }
 
 func (e *stateEngine) buildScopedChildRecord(
@@ -523,6 +698,15 @@ func emptyScopeOutput(stepType dsl.StepType) json.RawMessage {
 	switch stepType {
 	case dsl.StepTypeForeach:
 		return json.RawMessage(`{"items":[]}`)
+	case dsl.StepTypeParallel:
+		return json.RawMessage(`{"branches":[]}`)
+	case dsl.StepTypeCall,
+		dsl.StepTypeDelay,
+		dsl.StepTypeIf,
+		dsl.StepTypeSequence,
+		dsl.StepTypeSignalWait,
+		dsl.StepTypeSignalSend:
+		return json.RawMessage(`{}`)
 	default:
 		return json.RawMessage(`{"branches":[]}`)
 	}
@@ -568,6 +752,8 @@ func (e *stateEngine) collectScopeResults(
 					}
 				}
 			}
+		case models.InstanceStatusRunning, models.InstanceStatusSuspended:
+			runningCount++
 		default:
 			runningCount++
 		}

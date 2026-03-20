@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests exercise unexported engine internals intentionally.
 package business
 
 import (
@@ -19,11 +20,11 @@ import (
 func (s *BusinessSuite) TestStateEngine_CreateDispatchCommitAndTerminalPaths() {
 	tenantCtx := s.tenantCtx()
 	ctx := context.Background()
-	def := s.createWorkflow(tenantCtx, s.sampleDSL())
+	definition := s.createWorkflow(tenantCtx, s.sampleDSL())
 
 	instance := &models.WorkflowInstance{
-		WorkflowName:    def.Name,
-		WorkflowVersion: def.WorkflowVersion,
+		WorkflowName:    definition.Name,
+		WorkflowVersion: definition.WorkflowVersion,
 		CurrentState:    "log_step",
 		Status:          models.InstanceStatusRunning,
 		Revision:        1,
@@ -61,7 +62,7 @@ func (s *BusinessSuite) TestStateEngine_CreateDispatchCommitAndTerminalPaths() {
 func (s *BusinessSuite) TestStateEngine_CommitRetryAndFatal() {
 	tenantCtx := s.tenantCtx()
 	ctx := context.Background()
-	def := s.createWorkflow(tenantCtx, s.sampleDSL())
+	var definition *models.WorkflowDefinition
 
 	cases := []struct {
 		name          string
@@ -78,10 +79,10 @@ func (s *BusinessSuite) TestStateEngine_CommitRetryAndFatal() {
 
 	for _, tc := range cases {
 		s.SetupTest()
-		def = s.createWorkflow(tenantCtx, s.sampleDSL())
+		definition = s.createWorkflow(tenantCtx, s.sampleDSL())
 		s.Require().NoError(s.retryRepo.Store(tenantCtx, &models.WorkflowRetryPolicy{
-			WorkflowName:    def.Name,
-			WorkflowVersion: def.WorkflowVersion,
+			WorkflowName:    definition.Name,
+			WorkflowVersion: definition.WorkflowVersion,
 			State:           "log_step",
 			MaxAttempts:     3,
 			InitialDelayMs:  10,
@@ -89,8 +90,8 @@ func (s *BusinessSuite) TestStateEngine_CommitRetryAndFatal() {
 			BackoffStrategy: "exponential",
 		}))
 		instance := &models.WorkflowInstance{
-			WorkflowName:    def.Name,
-			WorkflowVersion: def.WorkflowVersion,
+			WorkflowName:    definition.Name,
+			WorkflowVersion: definition.WorkflowVersion,
 			CurrentState:    "log_step",
 			Status:          models.InstanceStatusRunning,
 			Revision:        1,

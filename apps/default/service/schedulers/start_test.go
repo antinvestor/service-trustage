@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local scheduler tests exercise unexported startup helpers intentionally.
 package schedulers
 
 import (

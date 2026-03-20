@@ -16,9 +16,11 @@ type listCursor struct {
 	ID        string    `json:"id"`
 }
 
+const defaultListLimit = 50
+
 func normalizeListLimit(limit int) int {
 	if limit <= 0 {
-		return 50
+		return defaultListLimit
 	}
 	if limit > maxListLimit {
 		return maxListLimit
@@ -29,7 +31,7 @@ func normalizeListLimit(limit int) int {
 
 func decodeListCursor(raw string) (*listCursor, error) {
 	if strings.TrimSpace(raw) == "" {
-		return nil, nil
+		return &listCursor{}, nil
 	}
 
 	blob, err := base64.RawURLEncoding.DecodeString(raw)
@@ -69,7 +71,7 @@ func applyDescendingCreatedAtCursor(query *gorm.DB, raw string) (*gorm.DB, error
 	if err != nil {
 		return nil, err
 	}
-	if cursor == nil {
+	if cursor.ID == "" || cursor.CreatedAt.IsZero() {
 		return query, nil
 	}
 

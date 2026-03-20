@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests cover unexported transport helpers intentionally.
 package handlers
 
 import (
@@ -89,225 +90,226 @@ func TestConnectHelpers_AuthAndErrors(t *testing.T) {
 	})
 }
 
-func TestConnectHelpers_JSONAndStatusConversions(t *testing.T) {
+func TestConnectHelpers_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	t.Run("raw json roundtrip", func(t *testing.T) {
-		t.Parallel()
-		value, err := structpb.NewStruct(map[string]any{"name": "alice"})
-		if err != nil {
-			t.Fatalf("NewStruct() error = %v", err)
-		}
+	value, err := structpb.NewStruct(map[string]any{"name": "alice"})
+	if err != nil {
+		t.Fatalf("NewStruct() error = %v", err)
+	}
 
-		raw, err := rawJSONFromStruct(value)
-		if err != nil {
-			t.Fatalf("rawJSONFromStruct() error = %v", err)
-		}
+	raw, err := rawJSONFromStruct(value)
+	if err != nil {
+		t.Fatalf("rawJSONFromStruct() error = %v", err)
+	}
 
-		decoded, err := structFromJSONString(string(raw))
-		if err != nil {
-			t.Fatalf("structFromJSONString() error = %v", err)
-		}
-		if decoded.GetFields()["name"].GetStringValue() != "alice" {
-			t.Fatalf("decoded = %+v", decoded)
-		}
-	})
+	decoded, err := structFromJSONString(string(raw))
+	if err != nil {
+		t.Fatalf("structFromJSONString() error = %v", err)
+	}
+	if decoded.GetFields()["name"].GetStringValue() != "alice" {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+}
 
-	t.Run("lossy fallback preserves invalid json", func(t *testing.T) {
-		t.Parallel()
-		value := lossyStructFromJSONString("{bad")
-		if value == nil || value.GetFields()["raw_json"].GetStringValue() != "{bad" {
-			t.Fatalf("lossyStructFromJSONString() = %+v", value)
-		}
-	})
+func TestConnectHelpers_LossyFallbackPreservesInvalidJSON(t *testing.T) {
+	t.Parallel()
 
-	t.Run("status conversions cover defaults", func(t *testing.T) {
-		t.Parallel()
-		if workflowStatusToProto(models.WorkflowStatusArchived) == 0 {
-			t.Fatal("archived should map to a non-default enum")
-		}
-		if filter, err := workflowStatusFilter(0); err != nil || filter != "" {
-			t.Fatal("unspecified workflow filter should be empty")
-		}
-		if instanceStatusFilter(0) != "" {
-			t.Fatal("unspecified instance filter should be empty")
-		}
-		if executionStatusFilter(0) != "" {
-			t.Fatal("unspecified execution filter should be empty")
-		}
-		if _, err := workflowStatusFilter(999); connect.CodeOf(err) != connect.CodeInvalidArgument {
-			t.Fatalf("workflowStatusFilter invalid code = %v", connect.CodeOf(err))
-		}
-	})
+	value := lossyStructFromJSONString("{bad")
+	if value == nil || value.GetFields()["raw_json"].GetStringValue() != "{bad" {
+		t.Fatalf("lossyStructFromJSONString() = %+v", value)
+	}
+}
 
-	t.Run("instance status mappings cover all cases", func(t *testing.T) {
-		t.Parallel()
+func TestConnectHelpers_WorkflowStatusConversions(t *testing.T) {
+	t.Parallel()
 
-		cases := []struct {
-			name       string
-			model      models.WorkflowInstanceStatus
-			proto      int32
-			filterFrom int32
-			wantFilter string
-		}{
-			{
-				name:       "running",
-				model:      models.InstanceStatusRunning,
-				proto:      int32(instanceStatusToProto(models.InstanceStatusRunning)),
-				filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_RUNNING),
-				wantFilter: string(models.InstanceStatusRunning),
-			},
-			{
-				name:       "completed",
-				model:      models.InstanceStatusCompleted,
-				proto:      int32(instanceStatusToProto(models.InstanceStatusCompleted)),
-				filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_COMPLETED),
-				wantFilter: string(models.InstanceStatusCompleted),
-			},
-			{
-				name:       "failed",
-				model:      models.InstanceStatusFailed,
-				proto:      int32(instanceStatusToProto(models.InstanceStatusFailed)),
-				filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_FAILED),
-				wantFilter: string(models.InstanceStatusFailed),
-			},
-			{
-				name:       "cancelled",
-				model:      models.InstanceStatusCancelled,
-				proto:      int32(instanceStatusToProto(models.InstanceStatusCancelled)),
-				filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_CANCELLED),
-				wantFilter: string(models.InstanceStatusCancelled),
-			},
-			{
-				name:       "suspended",
-				model:      models.InstanceStatusSuspended,
-				proto:      int32(instanceStatusToProto(models.InstanceStatusSuspended)),
-				filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_SUSPENDED),
-				wantFilter: string(models.InstanceStatusSuspended),
-			},
-			{
-				name:       "default",
-				model:      "unknown",
-				proto:      int32(runtimev1.InstanceStatus_INSTANCE_STATUS_UNSPECIFIED),
-				filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_UNSPECIFIED),
-				wantFilter: "",
-			},
-		}
+	if workflowStatusToProto(models.WorkflowStatusArchived) == 0 {
+		t.Fatal("archived should map to a non-default enum")
+	}
+	if filter, err := workflowStatusFilter(0); err != nil || filter != "" {
+		t.Fatal("unspecified workflow filter should be empty")
+	}
+	if _, err := workflowStatusFilter(999); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("workflowStatusFilter invalid code = %v", connect.CodeOf(err))
+	}
+}
 
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				if got := instanceStatusToProto(tc.model); int32(got) != tc.proto {
-					t.Fatalf("instanceStatusToProto() = %v want %v", got, tc.proto)
-				}
-				if got := instanceStatusFilter(runtimev1.InstanceStatus(tc.filterFrom)); got != tc.wantFilter {
-					t.Fatalf("instanceStatusFilter() = %q want %q", got, tc.wantFilter)
-				}
-			})
-		}
-	})
+func TestConnectHelpers_InstanceStatusMappings(t *testing.T) {
+	t.Parallel()
 
-	t.Run("execution status mappings cover all cases", func(t *testing.T) {
-		t.Parallel()
+	if instanceStatusFilter(0) != "" {
+		t.Fatal("unspecified instance filter should be empty")
+	}
 
-		cases := []struct {
-			name       string
-			model      models.ExecutionStatus
-			proto      runtimev1.ExecutionStatus
-			wantFilter string
-		}{
-			{
-				name:       "pending",
-				model:      models.ExecStatusPending,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_PENDING,
-				wantFilter: string(models.ExecStatusPending),
-			},
-			{
-				name:       "dispatched",
-				model:      models.ExecStatusDispatched,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_DISPATCHED,
-				wantFilter: string(models.ExecStatusDispatched),
-			},
-			{
-				name:       "running",
-				model:      models.ExecStatusRunning,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_RUNNING,
-				wantFilter: string(models.ExecStatusRunning),
-			},
-			{
-				name:       "completed",
-				model:      models.ExecStatusCompleted,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_COMPLETED,
-				wantFilter: string(models.ExecStatusCompleted),
-			},
-			{
-				name:       "failed",
-				model:      models.ExecStatusFailed,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_FAILED,
-				wantFilter: string(models.ExecStatusFailed),
-			},
-			{
-				name:       "fatal",
-				model:      models.ExecStatusFatal,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_FATAL,
-				wantFilter: string(models.ExecStatusFatal),
-			},
-			{
-				name:       "timed out",
-				model:      models.ExecStatusTimedOut,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_TIMED_OUT,
-				wantFilter: string(models.ExecStatusTimedOut),
-			},
-			{
-				name:       "invalid input",
-				model:      models.ExecStatusInvalidInputContract,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_INVALID_INPUT_CONTRACT,
-				wantFilter: string(models.ExecStatusInvalidInputContract),
-			},
-			{
-				name:       "invalid output",
-				model:      models.ExecStatusInvalidOutputContract,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_INVALID_OUTPUT_CONTRACT,
-				wantFilter: string(models.ExecStatusInvalidOutputContract),
-			},
-			{
-				name:       "stale",
-				model:      models.ExecStatusStale,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_STALE,
-				wantFilter: string(models.ExecStatusStale),
-			},
-			{
-				name:       "retry scheduled",
-				model:      models.ExecStatusRetryScheduled,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_RETRY_SCHEDULED,
-				wantFilter: string(models.ExecStatusRetryScheduled),
-			},
-			{
-				name:       "waiting",
-				model:      models.ExecStatusWaiting,
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_WAITING,
-				wantFilter: string(models.ExecStatusWaiting),
-			},
-			{
-				name:       "default",
-				model:      "unknown",
-				proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_UNSPECIFIED,
-				wantFilter: "",
-			},
-		}
+	cases := []struct {
+		name       string
+		model      models.WorkflowInstanceStatus
+		proto      int32
+		filterFrom int32
+		wantFilter string
+	}{
+		{
+			name:       "running",
+			model:      models.InstanceStatusRunning,
+			proto:      int32(instanceStatusToProto(models.InstanceStatusRunning)),
+			filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_RUNNING),
+			wantFilter: string(models.InstanceStatusRunning),
+		},
+		{
+			name:       "completed",
+			model:      models.InstanceStatusCompleted,
+			proto:      int32(instanceStatusToProto(models.InstanceStatusCompleted)),
+			filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_COMPLETED),
+			wantFilter: string(models.InstanceStatusCompleted),
+		},
+		{
+			name:       "failed",
+			model:      models.InstanceStatusFailed,
+			proto:      int32(instanceStatusToProto(models.InstanceStatusFailed)),
+			filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_FAILED),
+			wantFilter: string(models.InstanceStatusFailed),
+		},
+		{
+			name:       "cancelled",
+			model:      models.InstanceStatusCancelled,
+			proto:      int32(instanceStatusToProto(models.InstanceStatusCancelled)),
+			filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_CANCELLED),
+			wantFilter: string(models.InstanceStatusCancelled),
+		},
+		{
+			name:       "suspended",
+			model:      models.InstanceStatusSuspended,
+			proto:      int32(instanceStatusToProto(models.InstanceStatusSuspended)),
+			filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_SUSPENDED),
+			wantFilter: string(models.InstanceStatusSuspended),
+		},
+		{
+			name:       "default",
+			model:      "unknown",
+			proto:      int32(runtimev1.InstanceStatus_INSTANCE_STATUS_UNSPECIFIED),
+			filterFrom: int32(runtimev1.InstanceStatus_INSTANCE_STATUS_UNSPECIFIED),
+			wantFilter: "",
+		},
+	}
 
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				if got := executionStatusToProto(tc.model); got != tc.proto {
-					t.Fatalf("executionStatusToProto() = %v want %v", got, tc.proto)
-				}
-				if got := executionStatusFilter(tc.proto); got != tc.wantFilter {
-					t.Fatalf("executionStatusFilter() = %q want %q", got, tc.wantFilter)
-				}
-			})
-		}
-	})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := instanceStatusToProto(tc.model); int32(got) != tc.proto {
+				t.Fatalf("instanceStatusToProto() = %v want %v", got, tc.proto)
+			}
+			if got := instanceStatusFilter(runtimev1.InstanceStatus(tc.filterFrom)); got != tc.wantFilter {
+				t.Fatalf("instanceStatusFilter() = %q want %q", got, tc.wantFilter)
+			}
+		})
+	}
+}
+
+func TestConnectHelpers_ExecutionStatusMappings(t *testing.T) {
+	t.Parallel()
+
+	if executionStatusFilter(0) != "" {
+		t.Fatal("unspecified execution filter should be empty")
+	}
+
+	cases := []struct {
+		name       string
+		model      models.ExecutionStatus
+		proto      runtimev1.ExecutionStatus
+		wantFilter string
+	}{
+		{
+			name:       "pending",
+			model:      models.ExecStatusPending,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_PENDING,
+			wantFilter: string(models.ExecStatusPending),
+		},
+		{
+			name:       "dispatched",
+			model:      models.ExecStatusDispatched,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_DISPATCHED,
+			wantFilter: string(models.ExecStatusDispatched),
+		},
+		{
+			name:       "running",
+			model:      models.ExecStatusRunning,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_RUNNING,
+			wantFilter: string(models.ExecStatusRunning),
+		},
+		{
+			name:       "completed",
+			model:      models.ExecStatusCompleted,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_COMPLETED,
+			wantFilter: string(models.ExecStatusCompleted),
+		},
+		{
+			name:       "failed",
+			model:      models.ExecStatusFailed,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_FAILED,
+			wantFilter: string(models.ExecStatusFailed),
+		},
+		{
+			name:       "fatal",
+			model:      models.ExecStatusFatal,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_FATAL,
+			wantFilter: string(models.ExecStatusFatal),
+		},
+		{
+			name:       "timed out",
+			model:      models.ExecStatusTimedOut,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_TIMED_OUT,
+			wantFilter: string(models.ExecStatusTimedOut),
+		},
+		{
+			name:       "invalid input",
+			model:      models.ExecStatusInvalidInputContract,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_INVALID_INPUT_CONTRACT,
+			wantFilter: string(models.ExecStatusInvalidInputContract),
+		},
+		{
+			name:       "invalid output",
+			model:      models.ExecStatusInvalidOutputContract,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_INVALID_OUTPUT_CONTRACT,
+			wantFilter: string(models.ExecStatusInvalidOutputContract),
+		},
+		{
+			name:       "stale",
+			model:      models.ExecStatusStale,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_STALE,
+			wantFilter: string(models.ExecStatusStale),
+		},
+		{
+			name:       "retry scheduled",
+			model:      models.ExecStatusRetryScheduled,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_RETRY_SCHEDULED,
+			wantFilter: string(models.ExecStatusRetryScheduled),
+		},
+		{
+			name:       "waiting",
+			model:      models.ExecStatusWaiting,
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_WAITING,
+			wantFilter: string(models.ExecStatusWaiting),
+		},
+		{
+			name:       "default",
+			model:      "unknown",
+			proto:      runtimev1.ExecutionStatus_EXECUTION_STATUS_UNSPECIFIED,
+			wantFilter: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := executionStatusToProto(tc.model); got != tc.proto {
+				t.Fatalf("executionStatusToProto() = %v want %v", got, tc.proto)
+			}
+			if got := executionStatusFilter(tc.proto); got != tc.wantFilter {
+				t.Fatalf("executionStatusFilter() = %q want %q", got, tc.wantFilter)
+			}
+		})
+	}
 }
 
 func TestConnectHelpers_ProtoConversions(t *testing.T) {

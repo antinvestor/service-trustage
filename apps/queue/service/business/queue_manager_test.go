@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local queue tests exercise unexported business helpers intentionally.
 package business
 
 import (

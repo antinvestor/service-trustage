@@ -60,51 +60,51 @@ func authCtx() context.Context {
 	return claims.ClaimsToContext(context.Background())
 }
 
-func TestGrantedRelationAndRolePermissions(t *testing.T) {
+func TestGrantedRelation(t *testing.T) {
 	t.Parallel()
 
-	t.Run("granted relation prefixes permission", func(t *testing.T) {
-		t.Parallel()
-		if got := authz.GrantedRelation(authz.PermissionExecutionRetry); got != "granted_execution_retry" {
-			t.Fatalf("GrantedRelation() = %q", got)
-		}
-	})
+	if got := authz.GrantedRelation(authz.PermissionExecutionRetry); got != "granted_execution_retry" {
+		t.Fatalf("GrantedRelation() = %q", got)
+	}
+}
 
-	t.Run("all roles expose expected permissions", func(t *testing.T) {
-		t.Parallel()
+func TestRolePermissions(t *testing.T) {
+	t.Parallel()
 
-		perms := authz.RolePermissions()
-		cases := []struct {
-			role       string
-			minimumLen int
-			mustHave   string
-		}{
-			{role: authz.RoleOwner, minimumLen: 8, mustHave: authz.PermissionWorkflowManage},
-			{role: authz.RoleAdmin, minimumLen: 8, mustHave: authz.PermissionInstanceRetry},
-			{role: authz.RoleMember, minimumLen: 5, mustHave: authz.PermissionInstanceSignal},
-			{role: authz.RoleService, minimumLen: 8, mustHave: authz.PermissionExecutionView},
-		}
+	perms := authz.RolePermissions()
+	cases := []struct {
+		role       string
+		minimumLen int
+		mustHave   string
+	}{
+		{role: authz.RoleOwner, minimumLen: 8, mustHave: authz.PermissionWorkflowManage},
+		{role: authz.RoleAdmin, minimumLen: 8, mustHave: authz.PermissionInstanceRetry},
+		{role: authz.RoleMember, minimumLen: 5, mustHave: authz.PermissionInstanceSignal},
+		{role: authz.RoleService, minimumLen: 8, mustHave: authz.PermissionExecutionView},
+	}
 
-		for _, tc := range cases {
-			t.Run(tc.role, func(t *testing.T) {
-				t.Parallel()
-				rolePerms := perms[tc.role]
-				if len(rolePerms) < tc.minimumLen {
-					t.Fatalf("role %s permissions too short: %v", tc.role, rolePerms)
-				}
-				found := false
-				for _, perm := range rolePerms {
-					if perm == tc.mustHave {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Fatalf("role %s missing permission %s", tc.role, tc.mustHave)
-				}
-			})
+	for _, tc := range cases {
+		t.Run(tc.role, func(t *testing.T) {
+			t.Parallel()
+			rolePerms := perms[tc.role]
+			if len(rolePerms) < tc.minimumLen {
+				t.Fatalf("role %s permissions too short: %v", tc.role, rolePerms)
+			}
+			assertRoleHasPermission(t, tc.role, rolePerms, tc.mustHave)
+		})
+	}
+}
+
+func assertRoleHasPermission(t *testing.T, role string, permissions []string, permission string) {
+	t.Helper()
+
+	for _, candidate := range permissions {
+		if candidate == permission {
+			return
 		}
-	})
+	}
+
+	t.Fatalf("role %s missing permission %s", role, permission)
 }
 
 func TestBuildTuples(t *testing.T) {

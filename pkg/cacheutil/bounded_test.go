@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests exercise unexported cache helpers intentionally.
 package cacheutil
 
 import "testing"

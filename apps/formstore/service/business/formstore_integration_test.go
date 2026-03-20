@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local integration tests use unexported business fixtures intentionally.
 package business
 
 import (

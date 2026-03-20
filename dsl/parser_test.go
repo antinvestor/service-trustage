@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local DSL tests exercise unexported parser helpers intentionally.
 package dsl
 
 import "testing"

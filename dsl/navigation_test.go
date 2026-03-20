@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local DSL tests exercise unexported navigation helpers intentionally.
 package dsl
 
 import "testing"
@@ -130,7 +131,7 @@ func TestResolveNextStepIfBranchesAndMissingBranchError(t *testing.T) {
 		t.Fatalf("expected else_step, got %#v", next)
 	}
 
-	if _, err := ResolveNextStep(spec, "check", map[string]any{"output": map[string]any{}}); err == nil {
+	if _, resolveErr := ResolveNextStep(spec, "check", map[string]any{"output": map[string]any{}}); resolveErr == nil {
 		t.Fatal("expected missing branch error")
 	}
 }

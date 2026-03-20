@@ -186,7 +186,10 @@ func (r *workflowRuntimeRepository) UpdateExecutionStatus(
 	return nil
 }
 
-func (r *workflowRuntimeRepository) CommitExecution(ctx context.Context, req *CommitExecutionRequest) error {
+func (r *workflowRuntimeRepository) CommitExecution(
+	ctx context.Context,
+	req *CommitExecutionRequest,
+) error {
 	if req == nil || req.Execution == nil || req.Instance == nil {
 		return errors.New("commit execution request requires execution and instance")
 	}
@@ -195,90 +198,121 @@ func (r *workflowRuntimeRepository) CommitExecution(ctx context.Context, req *Co
 	outputSchemaHash := computeOutputSchemaHash(req.OutputPayload)
 
 	return r.BaseRepository.Pool().DB(ctx, false).Transaction(func(tx *gorm.DB) error {
-		if req.VerifyToken {
-			if _, err := lockExecutionByToken(tx, req.Execution.ID, req.TokenHash, req.ExpectedStatus); err != nil {
-				return err
-			}
-		} else {
-			if _, err := lockExecutionByStatus(tx, req.Execution.ID, req.ExpectedStatus); err != nil {
-				return err
-			}
-		}
-
-		output := &models.WorkflowStateOutput{
-			ExecutionID: req.Execution.ID,
-			InstanceID:  req.Execution.InstanceID,
-			State:       req.Execution.State,
-			SchemaHash:  outputSchemaHash,
-			Payload:     req.OutputPayload,
-		}
-		if err := tx.Create(output).Error; err != nil {
-			return fmt.Errorf("store output: %w", err)
-		}
-
-		now := time.Now()
-		execUpdates := map[string]any{
-			"status":             models.ExecStatusCompleted,
-			"output_schema_hash": outputSchemaHash,
-			"execution_token":    "",
-			"modified_at":        now,
-			"finished_at":        now,
-		}
-		if err := updateExecutionByID(tx, req.Execution.ID, execUpdates); err != nil {
+		if err := verifyCommitExecutionLock(tx, req); err != nil {
 			return err
 		}
-
-		if _, err := lockInstanceForMutation(
-			tx,
-			req.Instance.ID,
-			req.Execution.State,
-			req.Instance.Revision,
-		); err != nil {
+		if err := storeCommitExecutionOutput(tx, req, outputSchemaHash); err != nil {
 			return err
 		}
-
+		if err := markExecutionCommitted(tx, req.Execution.ID, outputSchemaHash); err != nil {
+			return err
+		}
+		if err := lockCommitInstance(tx, req); err != nil {
+			return err
+		}
 		if req.NextState == "" {
 			return completeInstance(tx, req.Instance.ID)
 		}
 
-		if err := transitionInstance(tx, req.Instance.ID, req.NextState); err != nil {
-			return err
-		}
-
-		nextToken, err := cryptoutil.GenerateToken()
-		if err != nil {
-			return fmt.Errorf("generate next execution token: %w", err)
-		}
-
-		nextExec := &models.WorkflowStateExecution{
-			InstanceID:      req.Execution.InstanceID,
-			State:           req.NextState,
-			Attempt:         1,
-			Status:          models.ExecStatusPending,
-			ExecutionToken:  cryptoutil.HashToken(nextToken),
-			InputSchemaHash: req.NextInputSchemaHash,
-			InputPayload:    req.NextInputPayload,
-			TraceID:         req.Execution.TraceID,
-		}
-		if err := tx.Create(nextExec).Error; err != nil {
-			return fmt.Errorf("create next execution: %w", err)
-		}
-
-		audit := &models.WorkflowAuditEvent{
-			InstanceID:  req.Execution.InstanceID,
-			ExecutionID: req.Execution.ID,
-			EventType:   events.EventTransitionCommitted,
-			State:       req.NextState,
-			FromState:   req.Execution.State,
-			ToState:     req.NextState,
-			TraceID:     req.Execution.TraceID,
-		}
-		if err := tx.Create(audit).Error; err != nil {
-			return fmt.Errorf("append transition audit: %w", err)
-		}
-
-		return nil
+		return createCommitNextExecution(tx, req)
 	})
+}
+
+func verifyCommitExecutionLock(tx *gorm.DB, req *CommitExecutionRequest) error {
+	if req.VerifyToken {
+		_, err := lockExecutionByToken(tx, req.Execution.ID, req.TokenHash, req.ExpectedStatus)
+		return err
+	}
+
+	_, err := lockExecutionByStatus(tx, req.Execution.ID, req.ExpectedStatus)
+	return err
+}
+
+func storeCommitExecutionOutput(
+	tx *gorm.DB,
+	req *CommitExecutionRequest,
+	outputSchemaHash string,
+) error {
+	output := &models.WorkflowStateOutput{
+		ExecutionID: req.Execution.ID,
+		InstanceID:  req.Execution.InstanceID,
+		State:       req.Execution.State,
+		SchemaHash:  outputSchemaHash,
+		Payload:     req.OutputPayload,
+	}
+	if err := tx.Create(output).Error; err != nil {
+		return fmt.Errorf("store output: %w", err)
+	}
+
+	return nil
+}
+
+func markExecutionCommitted(tx *gorm.DB, executionID, outputSchemaHash string) error {
+	now := time.Now()
+	execUpdates := map[string]any{
+		"status":             models.ExecStatusCompleted,
+		"output_schema_hash": outputSchemaHash,
+		"execution_token":    "",
+		"modified_at":        now,
+		"finished_at":        now,
+	}
+
+	return updateExecutionByID(tx, executionID, execUpdates)
+}
+
+func lockCommitInstance(tx *gorm.DB, req *CommitExecutionRequest) error {
+	_, err := lockInstanceForMutation(
+		tx,
+		req.Instance.ID,
+		req.Execution.State,
+		req.Instance.Revision,
+	)
+
+	return err
+}
+
+func createCommitNextExecution(tx *gorm.DB, req *CommitExecutionRequest) error {
+	if err := transitionInstance(tx, req.Instance.ID, req.NextState); err != nil {
+		return err
+	}
+
+	nextToken, err := cryptoutil.GenerateToken()
+	if err != nil {
+		return fmt.Errorf("generate next execution token: %w", err)
+	}
+
+	nextExec := &models.WorkflowStateExecution{
+		InstanceID:      req.Execution.InstanceID,
+		State:           req.NextState,
+		Attempt:         1,
+		Status:          models.ExecStatusPending,
+		ExecutionToken:  cryptoutil.HashToken(nextToken),
+		InputSchemaHash: req.NextInputSchemaHash,
+		InputPayload:    req.NextInputPayload,
+		TraceID:         req.Execution.TraceID,
+	}
+	if createErr := tx.Create(nextExec).Error; createErr != nil {
+		return fmt.Errorf("create next execution: %w", createErr)
+	}
+
+	return appendCommitTransitionAudit(tx, req)
+}
+
+func appendCommitTransitionAudit(tx *gorm.DB, req *CommitExecutionRequest) error {
+	audit := &models.WorkflowAuditEvent{
+		InstanceID:  req.Execution.InstanceID,
+		ExecutionID: req.Execution.ID,
+		EventType:   events.EventTransitionCommitted,
+		State:       req.NextState,
+		FromState:   req.Execution.State,
+		ToState:     req.NextState,
+		TraceID:     req.Execution.TraceID,
+	}
+	if err := tx.Create(audit).Error; err != nil {
+		return fmt.Errorf("append transition audit: %w", err)
+	}
+
+	return nil
 }
 
 func (r *workflowRuntimeRepository) ParkExecution(ctx context.Context, req *ParkExecutionRequest) error {
@@ -396,104 +430,29 @@ func (r *workflowRuntimeRepository) ClaimSignalDelivery(
 
 	claim := &SignalDeliveryClaim{}
 	txErr := r.BaseRepository.Pool().DB(ctx, false).Transaction(func(tx *gorm.DB) error {
-		message := &models.WorkflowSignalMessage{}
-		messageResult := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where(
-				"target_instance_id = ? AND signal_name = ? AND status = ? AND deleted_at IS NULL",
-				req.InstanceID,
-				req.SignalName,
-				"pending",
-			).
-			Order("created_at ASC").
-			First(message)
-		if errors.Is(messageResult.Error, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if messageResult.Error != nil {
-			return fmt.Errorf("claim signal message: %w", messageResult.Error)
-		}
-
 		now := time.Now()
-		messageUpdates := map[string]any{
-			"claim_owner": req.Owner,
-			"claim_until": req.LeaseUntil,
-			"attempts":    gorm.Expr("attempts + ?", 1),
-			"modified_at": now,
+		message, foundMessage, err := claimPendingSignalMessage(tx, req, now)
+		if err != nil {
+			return err
 		}
-		if err := tx.Model(&models.WorkflowSignalMessage{}).
-			Where("id = ? AND deleted_at IS NULL", message.ID).
-			Updates(messageUpdates).Error; err != nil {
-			return fmt.Errorf("lease signal message: %w", err)
-		}
-		message.ClaimOwner = req.Owner
-		message.ClaimUntil = &req.LeaseUntil
-		message.Attempts++
-		claim.Message = message
-
-		wait := &models.WorkflowSignalWait{}
-		waitResult := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where(
-				"instance_id = ? AND signal_name = ? AND status = ? AND deleted_at IS NULL",
-				req.InstanceID,
-				req.SignalName,
-				"waiting",
-			).
-			Order("created_at ASC").
-			First(wait)
-		if errors.Is(waitResult.Error, gorm.ErrRecordNotFound) {
+		if !foundMessage {
 			return nil
 		}
-		if waitResult.Error != nil {
-			return fmt.Errorf("load signal wait: %w", waitResult.Error)
+
+		wait, foundWait, waitErr := loadWaitingSignalWait(tx, req)
+		if waitErr != nil {
+			return waitErr
+		}
+		if !foundWait {
+			return nil
 		}
 
-		waitUpdates := map[string]any{
-			"status":      "matched",
-			"matched_at":  now,
-			"message_id":  message.ID,
-			"modified_at": now,
-		}
-		if err := tx.Model(&models.WorkflowSignalWait{}).
-			Where("id = ? AND status = ? AND deleted_at IS NULL", wait.ID, "waiting").
-			Updates(waitUpdates).Error; err != nil {
-			return fmt.Errorf("mark signal wait matched: %w", err)
+		if finalizeErr := finalizeSignalDeliveryClaim(tx, req, message, wait, now); finalizeErr != nil {
+			return finalizeErr
 		}
 
-		deliveredUpdates := map[string]any{
-			"status":       "delivered",
-			"delivered_at": now,
-			"wait_id":      wait.ID,
-			"claim_owner":  "",
-			"claim_until":  nil,
-			"modified_at":  now,
-		}
-		if err := tx.Model(&models.WorkflowSignalMessage{}).
-			Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", message.ID, req.Owner, "pending").
-			Updates(deliveredUpdates).Error; err != nil {
-			return fmt.Errorf("mark signal delivered: %w", err)
-		}
-
-		audit := &models.WorkflowAuditEvent{
-			InstanceID:  wait.InstanceID,
-			ExecutionID: wait.ExecutionID,
-			EventType:   events.EventSignalReceived,
-			State:       wait.State,
-			Payload:     message.Payload,
-		}
-		if err := tx.Create(audit).Error; err != nil {
-			return fmt.Errorf("append signal delivery audit: %w", err)
-		}
-
-		wait.Status = "matched"
-		wait.MatchedAt = &now
-		wait.MessageID = message.ID
-		message.Status = "delivered"
-		message.DeliveredAt = &now
-		message.WaitID = wait.ID
-		message.ClaimOwner = ""
-		message.ClaimUntil = nil
+		claim.Message = message
 		claim.Wait = wait
-
 		return nil
 	})
 	if txErr != nil {
@@ -501,10 +460,129 @@ func (r *workflowRuntimeRepository) ClaimSignalDelivery(
 	}
 
 	if claim.Message == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil claim means there is currently no deliverable signal/message pair.
 	}
 
 	return claim, nil
+}
+
+func claimPendingSignalMessage(
+	tx *gorm.DB,
+	req *ClaimSignalDeliveryRequest,
+	now time.Time,
+) (*models.WorkflowSignalMessage, bool, error) {
+	message := &models.WorkflowSignalMessage{}
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where(
+			"target_instance_id = ? AND signal_name = ? AND status = ? AND deleted_at IS NULL",
+			req.InstanceID,
+			req.SignalName,
+			"pending",
+		).
+		Order("created_at ASC").
+		First(message)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if result.Error != nil {
+		return nil, false, fmt.Errorf("claim signal message: %w", result.Error)
+	}
+
+	messageUpdates := map[string]any{
+		"claim_owner": req.Owner,
+		"claim_until": req.LeaseUntil,
+		"attempts":    gorm.Expr("attempts + ?", 1),
+		"modified_at": now,
+	}
+	if err := tx.Model(&models.WorkflowSignalMessage{}).
+		Where("id = ? AND deleted_at IS NULL", message.ID).
+		Updates(messageUpdates).Error; err != nil {
+		return nil, false, fmt.Errorf("lease signal message: %w", err)
+	}
+
+	message.ClaimOwner = req.Owner
+	message.ClaimUntil = &req.LeaseUntil
+	message.Attempts++
+	return message, true, nil
+}
+
+func loadWaitingSignalWait(
+	tx *gorm.DB,
+	req *ClaimSignalDeliveryRequest,
+) (*models.WorkflowSignalWait, bool, error) {
+	wait := &models.WorkflowSignalWait{}
+	result := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where(
+			"instance_id = ? AND signal_name = ? AND status = ? AND deleted_at IS NULL",
+			req.InstanceID,
+			req.SignalName,
+			"waiting",
+		).
+		Order("created_at ASC").
+		First(wait)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if result.Error != nil {
+		return nil, false, fmt.Errorf("load signal wait: %w", result.Error)
+	}
+
+	return wait, true, nil
+}
+
+func finalizeSignalDeliveryClaim(
+	tx *gorm.DB,
+	req *ClaimSignalDeliveryRequest,
+	message *models.WorkflowSignalMessage,
+	wait *models.WorkflowSignalWait,
+	now time.Time,
+) error {
+	waitUpdates := map[string]any{
+		"status":      "matched",
+		"matched_at":  now,
+		"message_id":  message.ID,
+		"modified_at": now,
+	}
+	if err := tx.Model(&models.WorkflowSignalWait{}).
+		Where("id = ? AND status = ? AND deleted_at IS NULL", wait.ID, "waiting").
+		Updates(waitUpdates).Error; err != nil {
+		return fmt.Errorf("mark signal wait matched: %w", err)
+	}
+
+	deliveredUpdates := map[string]any{
+		"status":       "delivered",
+		"delivered_at": now,
+		"wait_id":      wait.ID,
+		"claim_owner":  "",
+		"claim_until":  nil,
+		"modified_at":  now,
+	}
+	if err := tx.Model(&models.WorkflowSignalMessage{}).
+		Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", message.ID, req.Owner, "pending").
+		Updates(deliveredUpdates).Error; err != nil {
+		return fmt.Errorf("mark signal delivered: %w", err)
+	}
+
+	audit := &models.WorkflowAuditEvent{
+		InstanceID:  wait.InstanceID,
+		ExecutionID: wait.ExecutionID,
+		EventType:   events.EventSignalReceived,
+		State:       wait.State,
+		Payload:     message.Payload,
+	}
+	if err := tx.Create(audit).Error; err != nil {
+		return fmt.Errorf("append signal delivery audit: %w", err)
+	}
+
+	wait.Status = "matched"
+	wait.MatchedAt = &now
+	wait.MessageID = message.ID
+	message.Status = "delivered"
+	message.DeliveredAt = &now
+	message.WaitID = wait.ID
+	message.ClaimOwner = ""
+	message.ClaimUntil = nil
+	return nil
 }
 
 func (r *workflowRuntimeRepository) FailExecution(ctx context.Context, req *FailExecutionRequest) error {

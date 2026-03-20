@@ -14,6 +14,8 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
+const outboxLeaseTTL = 30 * time.Second
+
 // EventLogRepository manages event log persistence for the outbox pattern.
 type EventLogRepository interface {
 	Create(ctx context.Context, event *models.EventLog) error
@@ -228,7 +230,7 @@ func (r *eventLogRepository) FindAndProcessUnpublished(
 	fn func(event *models.EventLog) error,
 ) (int, error) {
 	owner := "compat-processor"
-	claimed, err := r.ClaimUnpublished(ctx, limit, owner, time.Now().Add(30*time.Second))
+	claimed, err := r.ClaimUnpublished(ctx, limit, owner, time.Now().Add(outboxLeaseTTL))
 	if err != nil {
 		return 0, fmt.Errorf("claim unpublished for processing: %w", err)
 	}

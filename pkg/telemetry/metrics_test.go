@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests exercise unexported telemetry helpers intentionally.
 package telemetry
 
 import (

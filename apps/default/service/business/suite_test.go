@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local suite wires unexported business constructors and helpers intentionally.
 package business
 
 import (

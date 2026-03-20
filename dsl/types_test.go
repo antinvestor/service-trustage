@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local DSL tests exercise unexported type helpers intentionally.
 package dsl
 
 import (
@@ -17,8 +18,8 @@ func TestTransitionTargetMarshalAndUnmarshal(t *testing.T) {
 	}
 
 	var decodedStatic TransitionTarget
-	if err := json.Unmarshal(blob, &decodedStatic); err != nil {
-		t.Fatalf("unmarshal static target: %v", err)
+	if unmarshalErr := json.Unmarshal(blob, &decodedStatic); unmarshalErr != nil {
+		t.Fatalf("unmarshal static target: %v", unmarshalErr)
 	}
 	if decodedStatic.Static != "next" {
 		t.Fatalf("expected static target, got %#v", decodedStatic)
@@ -31,15 +32,15 @@ func TestTransitionTargetMarshalAndUnmarshal(t *testing.T) {
 	}
 
 	var decodedConditional TransitionTarget
-	if err := json.Unmarshal(blob, &decodedConditional); err != nil {
-		t.Fatalf("unmarshal conditional target: %v", err)
+	if unmarshalErr := json.Unmarshal(blob, &decodedConditional); unmarshalErr != nil {
+		t.Fatalf("unmarshal conditional target: %v", unmarshalErr)
 	}
 	if len(decodedConditional.Conditional) != 1 || decodedConditional.Conditional[0].Target != "then" {
 		t.Fatalf("expected conditional target, got %#v", decodedConditional)
 	}
 
 	var invalid TransitionTarget
-	if err := json.Unmarshal([]byte(`123`), &invalid); err == nil {
+	if unmarshalErr := json.Unmarshal([]byte(`123`), &invalid); unmarshalErr == nil {
 		t.Fatal("expected invalid transition target error")
 	}
 }
@@ -64,15 +65,15 @@ func TestStepTypeAndSubsteps(t *testing.T) {
 
 func TestDurationJSONAndParsing(t *testing.T) {
 	var duration Duration
-	if err := json.Unmarshal([]byte(`"2d"`), &duration); err != nil {
-		t.Fatalf("unmarshal string duration: %v", err)
+	if unmarshalErr := json.Unmarshal([]byte(`"2d"`), &duration); unmarshalErr != nil {
+		t.Fatalf("unmarshal string duration: %v", unmarshalErr)
 	}
 	if duration.Duration != 48*time.Hour {
 		t.Fatalf("expected 48h, got %s", duration.Duration)
 	}
 
-	if err := json.Unmarshal([]byte(`3000000000`), &duration); err != nil {
-		t.Fatalf("unmarshal numeric duration: %v", err)
+	if unmarshalErr := json.Unmarshal([]byte(`3000000000`), &duration); unmarshalErr != nil {
+		t.Fatalf("unmarshal numeric duration: %v", unmarshalErr)
 	}
 
 	blob, err := json.Marshal(Duration{Duration: 90 * time.Second})
@@ -83,7 +84,7 @@ func TestDurationJSONAndParsing(t *testing.T) {
 		t.Fatal("expected marshaled duration")
 	}
 
-	if _, err := ParseDuration("bad"); err == nil {
+	if _, parseErr := ParseDuration("bad"); parseErr == nil {
 		t.Fatal("expected parse duration error")
 	}
 }

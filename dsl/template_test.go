@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local DSL tests exercise unexported template helpers intentionally.
 package dsl
 
 import (

@@ -224,7 +224,7 @@ func (s *DefaultServiceSuite) createTrigger(
 	ctx context.Context,
 	eventType string,
 	def *models.WorkflowDefinition,
-) *models.TriggerBinding {
+) {
 	binding := &models.TriggerBinding{
 		EventType:       eventType,
 		WorkflowName:    def.Name,
@@ -233,7 +233,6 @@ func (s *DefaultServiceSuite) createTrigger(
 		Active:          true,
 	}
 	s.Require().NoError(s.triggerRepo.Create(ctx, binding))
-	return binding
 }
 
 func (s *DefaultServiceSuite) sampleDSL() string {

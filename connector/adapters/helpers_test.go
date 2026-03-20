@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local adapter tests exercise unexported helpers intentionally.
 package adapters
 
 import (

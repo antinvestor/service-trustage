@@ -21,6 +21,8 @@ type WorkflowConnectServer struct {
 	workflowv1connect.UnimplementedWorkflowServiceHandler
 }
 
+const defaultWorkflowPageLimit = 50
+
 // NewWorkflowConnectServer creates a new Connect workflow server.
 func NewWorkflowConnectServer(
 	biz business.WorkflowBusiness,
@@ -112,7 +114,7 @@ func (s *WorkflowConnectServer) ListWorkflows(
 		return nil, err
 	}
 
-	pageLimit := searchLimit(req.Msg.GetSearch(), 50)
+	pageLimit := searchLimit(req.Msg.GetSearch(), defaultWorkflowPageLimit)
 	page, err := s.workflowBiz.SearchWorkflows(ctx, business.WorkflowListFilter{
 		Name:    req.Msg.GetName(),
 		Query:   searchQuery(req.Msg.GetSearch()),

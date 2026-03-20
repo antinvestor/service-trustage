@@ -17,6 +17,8 @@ import (
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
 )
 
+const defaultOutboxLeaseTTL = 30 * time.Second
+
 // OutboxScheduler publishes unpublished events from the event_log table to NATS.
 type OutboxScheduler struct {
 	eventRepo repository.EventLogRepository
@@ -95,7 +97,7 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 
 	leaseTTL := time.Duration(s.cfg.OutboxClaimTTLSeconds) * time.Second
 	if leaseTTL <= 0 {
-		leaseTTL = 30 * time.Second
+		leaseTTL = defaultOutboxLeaseTTL
 	}
 
 	claimed, err := s.eventRepo.ClaimUnpublished(ctx, s.cfg.OutboxBatchSize, s.owner, time.Now().Add(leaseTTL))

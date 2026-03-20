@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests exercise unexported business helpers intentionally.
 package business
 
 import (
@@ -161,8 +162,7 @@ func (s *BusinessSuite) TestSchemaRegistry_RegisterValidateAndCache() {
 	s.Equal(hash, gotHash)
 
 	err = s.schemaRegistry().ValidateOutput(ctx, "payments", 1, "step_a", json.RawMessage(`{"bad":true}`))
-	s.Require().Error(err)
-	s.ErrorIs(err, ErrSchemaNotFound)
+	s.Require().ErrorIs(err, ErrSchemaNotFound)
 
 	_, err = s.schemaRegistry().ValidateInput(ctx, "payments", 1, "step_a", json.RawMessage(`{"amount":"bad"}`))
 	s.Require().Error(err)

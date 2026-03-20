@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local repository tests exercise unexported helpers intentionally.
 package repository
 
 import (

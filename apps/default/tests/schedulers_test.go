@@ -471,8 +471,8 @@ func (s *DefaultServiceSuite) TestScopeScheduler_RunOnce_ParallelWaitAll() {
 	s.Require().Len(childInstances, 2)
 
 	for index, child := range childInstances {
-		childExec, err := s.execRepo.GetLatestByInstance(ctx, child.ID)
-		s.Require().NoError(err)
+		childExec, getErr := s.execRepo.GetLatestByInstance(ctx, child.ID)
+		s.Require().NoError(getErr)
 
 		now := time.Now()
 		s.execRepo.Pool().DB(ctx, false).Exec(

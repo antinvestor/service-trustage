@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local adapter tests exercise unexported helpers intentionally.
 package adapters
 
 import (
@@ -240,9 +241,9 @@ func TestLogAndAIHelpers(t *testing.T) {
 	for _, tc := range classCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			execErr := classifyBAMLError(tc.err)
-			if execErr == nil || execErr.Code != tc.code {
-				t.Fatalf("classifyBAMLError() = %+v", execErr)
+			classifiedErr := classifyBAMLError(tc.err)
+			if classifiedErr == nil || classifiedErr.Code != tc.code {
+				t.Fatalf("classifyBAMLError() = %+v", classifiedErr)
 			}
 		})
 	}

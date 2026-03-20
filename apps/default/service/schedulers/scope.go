@@ -69,8 +69,8 @@ func (s *ScopeScheduler) RunOnce(ctx context.Context) int {
 
 	reconciled := 0
 	for _, scope := range scopes {
-		if err := s.engine.ReconcileBranchScope(ctx, scope.ID); err != nil {
-			log.WithError(err).Error("scope scheduler: reconcile failed", "scope_id", scope.ID)
+		if reconcileErr := s.engine.ReconcileBranchScope(ctx, scope.ID); reconcileErr != nil {
+			log.WithError(reconcileErr).Error("scope scheduler: reconcile failed", "scope_id", scope.ID)
 			_ = s.scopeRepo.ReleaseClaim(ctx, scope.ID, owner)
 			continue
 		}

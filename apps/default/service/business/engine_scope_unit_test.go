@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests exercise unexported scope helpers intentionally.
 package business
 
 import (
@@ -54,8 +55,8 @@ func TestBranchChildrenFromStepParallelAndForeach(t *testing.T) {
 	}
 
 	var payload map[string]any
-	if err := json.Unmarshal(children[1].Input, &payload); err != nil {
-		t.Fatalf("unmarshal child input: %v", err)
+	if unmarshalErr := json.Unmarshal(children[1].Input, &payload); unmarshalErr != nil {
+		t.Fatalf("unmarshal child input: %v", unmarshalErr)
 	}
 	if payload["item"] != "b" || payload["idx"].(float64) != 1 || payload["scope_index"].(float64) != 1 {
 		t.Fatalf("foreach payload = %+v", payload)

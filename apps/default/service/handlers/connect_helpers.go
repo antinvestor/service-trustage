@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -84,7 +85,7 @@ func isDuplicateRecordError(err error) bool {
 
 func rawJSONFromStruct(value *structpb.Struct) (json.RawMessage, error) {
 	if value == nil {
-		return nil, nil
+		return json.RawMessage(`{}`), nil
 	}
 
 	raw, err := protojson.Marshal(value)
@@ -98,7 +99,7 @@ func rawJSONFromStruct(value *structpb.Struct) (json.RawMessage, error) {
 func structFromJSONString(raw string) (*structpb.Struct, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // empty persisted payload maps to an absent struct payload for transport callers.
 	}
 
 	out := &structpb.Struct{}
@@ -209,7 +210,18 @@ func nextCursorProto(token string, limit int) *commonv1.PageCursor {
 
 	return &commonv1.PageCursor{
 		Page:  token,
-		Limit: int32(limit),
+		Limit: safeInt32(limit),
+	}
+}
+
+func safeInt32(value int) int32 {
+	switch {
+	case value > math.MaxInt32:
+		return math.MaxInt32
+	case value < math.MinInt32:
+		return math.MinInt32
+	default:
+		return int32(value)
 	}
 }
 
@@ -230,12 +242,16 @@ func workflowStatusFilter(status workflowv1.WorkflowStatus) (string, error) {
 	switch status {
 	case workflowv1.WorkflowStatus_WORKFLOW_STATUS_UNSPECIFIED:
 		return "", nil
+	case workflowv1.WorkflowStatus_WORKFLOW_STATUS_DRAFT:
+		return string(models.WorkflowStatusDraft), nil
 	case workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE:
 		return string(models.WorkflowStatusActive), nil
+	case workflowv1.WorkflowStatus_WORKFLOW_STATUS_ARCHIVED:
+		return string(models.WorkflowStatusArchived), nil
 	default:
 		return "", connect.NewError(
 			connect.CodeInvalidArgument,
-			errors.New("only active workflow filtering is supported"),
+			fmt.Errorf("unsupported workflow status filter %s", status.String()),
 		)
 	}
 }
@@ -259,6 +275,8 @@ func instanceStatusToProto(status models.WorkflowInstanceStatus) runtimev1.Insta
 
 func instanceStatusFilter(status runtimev1.InstanceStatus) string {
 	switch status {
+	case runtimev1.InstanceStatus_INSTANCE_STATUS_UNSPECIFIED:
+		return ""
 	case runtimev1.InstanceStatus_INSTANCE_STATUS_RUNNING:
 		return string(models.InstanceStatusRunning)
 	case runtimev1.InstanceStatus_INSTANCE_STATUS_COMPLETED:
@@ -307,6 +325,8 @@ func executionStatusToProto(status models.ExecutionStatus) runtimev1.ExecutionSt
 
 func executionStatusFilter(status runtimev1.ExecutionStatus) string {
 	switch status {
+	case runtimev1.ExecutionStatus_EXECUTION_STATUS_UNSPECIFIED:
+		return ""
 	case runtimev1.ExecutionStatus_EXECUTION_STATUS_PENDING:
 		return string(models.ExecStatusPending)
 	case runtimev1.ExecutionStatus_EXECUTION_STATUS_DISPATCHED:
@@ -344,7 +364,7 @@ func workflowDefinitionToProto(def *models.WorkflowDefinition) *workflowv1.Workf
 	return &workflowv1.WorkflowDefinition{
 		Id:              def.ID,
 		Name:            def.Name,
-		Version:         int32(def.WorkflowVersion),
+		Version:         safeInt32(def.WorkflowVersion),
 		Status:          workflowStatusToProto(def.Status),
 		Dsl:             lossyStructFromJSONString(def.DSLBlob),
 		InputSchemaHash: def.InputSchemaHash,
@@ -392,7 +412,7 @@ func workflowInstanceToProto(instance *models.WorkflowInstance) *runtimev1.Workf
 	return &runtimev1.WorkflowInstance{
 		Id:                instance.ID,
 		WorkflowName:      instance.WorkflowName,
-		WorkflowVersion:   int32(instance.WorkflowVersion),
+		WorkflowVersion:   safeInt32(instance.WorkflowVersion),
 		CurrentState:      instance.CurrentState,
 		Status:            instanceStatusToProto(instance.Status),
 		Revision:          instance.Revision,
@@ -407,7 +427,7 @@ func workflowInstanceToProto(instance *models.WorkflowInstance) *runtimev1.Workf
 		ScopeType:         instance.ScopeType,
 		ScopeParentState:  instance.ScopeParentState,
 		ScopeEntryState:   instance.ScopeEntryState,
-		ScopeIndex:        int32(instance.ScopeIndex),
+		ScopeIndex:        safeInt32(instance.ScopeIndex),
 	}
 }
 
@@ -424,8 +444,8 @@ func workflowExecutionToProto(
 		Id:               exec.ID,
 		InstanceId:       exec.InstanceID,
 		State:            exec.State,
-		StateVersion:     int32(exec.StateVersion),
-		Attempt:          int32(exec.Attempt),
+		StateVersion:     safeInt32(exec.StateVersion),
+		Attempt:          safeInt32(exec.Attempt),
 		Status:           executionStatusToProto(exec.Status),
 		ErrorClass:       exec.ErrorClass,
 		ErrorMessage:     exec.ErrorMessage,
@@ -498,11 +518,11 @@ func scopeRunToProto(scope *models.WorkflowScopeRun, includePayloads bool) *runt
 		ScopeType:         scope.ScopeType,
 		Status:            scope.Status,
 		WaitAll:           scope.WaitAll,
-		TotalChildren:     int32(scope.TotalChildren),
-		CompletedChildren: int32(scope.CompletedChildren),
-		FailedChildren:    int32(scope.FailedChildren),
-		NextChildIndex:    int32(scope.NextChildIndex),
-		MaxConcurrency:    int32(scope.MaxConcurrency),
+		TotalChildren:     safeInt32(scope.TotalChildren),
+		CompletedChildren: safeInt32(scope.CompletedChildren),
+		FailedChildren:    safeInt32(scope.FailedChildren),
+		NextChildIndex:    safeInt32(scope.NextChildIndex),
+		MaxConcurrency:    safeInt32(scope.MaxConcurrency),
 		ItemVar:           scope.ItemVar,
 		IndexVar:          scope.IndexVar,
 		CreatedAt:         timestampFromValue(scope.CreatedAt),
@@ -532,7 +552,7 @@ func signalWaitToProto(wait *models.WorkflowSignalWait) *runtimev1.SignalWait {
 		MatchedAt:   timestampFromPtr(wait.MatchedAt),
 		TimedOutAt:  timestampFromPtr(wait.TimedOutAt),
 		MessageId:   wait.MessageID,
-		Attempts:    int32(wait.Attempts),
+		Attempts:    safeInt32(wait.Attempts),
 		CreatedAt:   timestampFromValue(wait.CreatedAt),
 		UpdatedAt:   timestampFromValue(wait.ModifiedAt),
 	}
@@ -549,7 +569,7 @@ func signalMessageToProto(message *models.WorkflowSignalMessage, includePayloads
 		Status:      message.Status,
 		DeliveredAt: timestampFromPtr(message.DeliveredAt),
 		WaitId:      message.WaitID,
-		Attempts:    int32(message.Attempts),
+		Attempts:    safeInt32(message.Attempts),
 		CreatedAt:   timestampFromValue(message.CreatedAt),
 		UpdatedAt:   timestampFromValue(message.ModifiedAt),
 	}

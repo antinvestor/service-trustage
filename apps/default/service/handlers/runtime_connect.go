@@ -33,6 +33,8 @@ type RuntimeConnectServer struct {
 	runtimev1connect.UnimplementedRuntimeServiceHandler
 }
 
+const defaultRuntimePageLimit = 50
+
 // NewRuntimeConnectServer creates a new Connect runtime server.
 func NewRuntimeConnectServer(
 	instanceRepo repository.WorkflowInstanceRepository,
@@ -73,7 +75,7 @@ func (s *RuntimeConnectServer) ListInstances(
 		}
 	}
 
-	pageLimit := searchLimit(req.Msg.GetSearch(), 50)
+	pageLimit := searchLimit(req.Msg.GetSearch(), defaultRuntimePageLimit)
 	itemsPage, err := s.instanceRepo.ListPage(ctx, repository.WorkflowInstanceListFilter{
 		Status:            instanceStatusFilter(req.Msg.GetStatus()),
 		WorkflowName:      req.Msg.GetWorkflowName(),
@@ -127,7 +129,7 @@ func (s *RuntimeConnectServer) RetryInstance(
 		return nil, connectLookupError(err, "latest execution not found")
 	}
 
-	newExec, err := createRetryExecution(ctx, s.execRepo, s.runtimeRepo, s.auditRepo, exec, instance)
+	newExec, err := createRetryExecution(ctx, s.runtimeRepo, s.auditRepo, exec, instance)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
@@ -151,7 +153,7 @@ func (s *RuntimeConnectServer) ListExecutions(
 		}
 	}
 
-	pageLimit := searchLimit(req.Msg.GetSearch(), 50)
+	pageLimit := searchLimit(req.Msg.GetSearch(), defaultRuntimePageLimit)
 	itemsPage, err := s.execRepo.ListPage(ctx, repository.WorkflowExecutionListFilter{
 		Status:     executionStatusFilter(req.Msg.GetStatus()),
 		InstanceID: req.Msg.GetInstanceId(),
@@ -242,7 +244,7 @@ func (s *RuntimeConnectServer) RetryExecution(
 		return nil, connectLookupError(err, "instance not found")
 	}
 
-	newExec, err := createRetryExecution(ctx, s.execRepo, s.runtimeRepo, s.auditRepo, exec, instance)
+	newExec, err := createRetryExecution(ctx, s.runtimeRepo, s.auditRepo, exec, instance)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
@@ -276,7 +278,7 @@ func (s *RuntimeConnectServer) ResumeExecution(
 	}
 
 	switch exec.Status {
-	case "waiting":
+	case models.ExecStatusWaiting:
 		payloadBytes, payloadErr := rawJSONFromStruct(req.Msg.GetPayload())
 		if payloadErr != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, payloadErr)
@@ -285,26 +287,36 @@ func (s *RuntimeConnectServer) ResumeExecution(
 			payloadBytes = json.RawMessage(`{}`)
 		}
 
-		if err := s.engine.ResumeWaitingExecution(ctx, exec.ID, payloadBytes); err != nil {
-			return nil, connectErrorForBusiness(err)
+		if resumeErr := s.engine.ResumeWaitingExecution(ctx, exec.ID, payloadBytes); resumeErr != nil {
+			return nil, connectErrorForBusiness(resumeErr)
 		}
 
-		updatedExec, err := s.execRepo.GetByID(ctx, exec.ID)
-		if err != nil {
-			return nil, connectLookupError(err, "execution not found")
+		updatedExec, getErr := s.execRepo.GetByID(ctx, exec.ID)
+		if getErr != nil {
+			return nil, connectLookupError(getErr, "execution not found")
 		}
 
 		return connect.NewResponse(&runtimev1.ResumeExecutionResponse{
 			Execution: workflowExecutionToProto(updatedExec, "", false),
 			Action:    "resumed_waiting_execution",
 		}), nil
-	default:
-		instance, err := s.instanceRepo.GetByID(ctx, exec.InstanceID)
-		if err != nil {
-			return nil, connectLookupError(err, "instance not found")
+	case models.ExecStatusPending,
+		models.ExecStatusDispatched,
+		models.ExecStatusRunning,
+		models.ExecStatusCompleted,
+		models.ExecStatusFailed,
+		models.ExecStatusFatal,
+		models.ExecStatusTimedOut,
+		models.ExecStatusInvalidInputContract,
+		models.ExecStatusInvalidOutputContract,
+		models.ExecStatusStale,
+		models.ExecStatusRetryScheduled:
+		instance, getErr := s.instanceRepo.GetByID(ctx, exec.InstanceID)
+		if getErr != nil {
+			return nil, connectLookupError(getErr, "instance not found")
 		}
 
-		newExec, retryErr := createRetryExecution(ctx, s.execRepo, s.runtimeRepo, s.auditRepo, exec, instance)
+		newExec, retryErr := createRetryExecution(ctx, s.runtimeRepo, s.auditRepo, exec, instance)
 		if retryErr != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, retryErr)
 		}
@@ -313,6 +325,11 @@ func (s *RuntimeConnectServer) ResumeExecution(
 			Execution: workflowExecutionToProto(newExec, "", false),
 			Action:    "created_retry_execution",
 		}), nil
+	default:
+		return nil, connect.NewError(
+			connect.CodeFailedPrecondition,
+			fmt.Errorf("unsupported execution status %s", exec.Status),
+		)
 	}
 }
 
@@ -320,97 +337,159 @@ func (s *RuntimeConnectServer) GetInstanceRun(
 	ctx context.Context,
 	req *connect.Request[runtimev1.GetInstanceRunRequest],
 ) (*connect.Response[runtimev1.GetInstanceRunResponse], error) {
-	if err := requireConnectAuth(ctx); err != nil {
+	if err := s.authorizeInstanceView(ctx); err != nil {
 		return nil, err
 	}
-
-	if s.authz != nil {
-		if err := s.authz.CanInstanceView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
-	}
-
 	if req.Msg.GetInstanceId() == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("instance_id is required"))
 	}
 
-	includePayloads := req.Msg.GetIncludePayloads()
-	instance, err := s.instanceRepo.GetByID(ctx, req.Msg.GetInstanceId())
+	runData, err := s.loadInstanceRunData(ctx, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(&runtimev1.GetInstanceRunResponse{
+		Instance:        workflowInstanceToProto(runData.instance),
+		LatestExecution: workflowExecutionToProto(runData.latestExec, "", false),
+		TraceId:         runData.latestExec.TraceID,
+		ResumeStrategy:  resumeStrategyForExecution(runData.latestExec),
+		Executions:      runData.executionProtos(req.Msg.GetIncludePayloads()),
+		Timeline:        runData.timelineProtos(req.Msg.GetIncludePayloads()),
+		Outputs:         runData.outputProtos(req.Msg.GetIncludePayloads()),
+		ScopeRuns:       runData.scopeProtos(req.Msg.GetIncludePayloads()),
+		SignalWaits:     runData.waitProtos(),
+		SignalMessages:  runData.messageProtos(req.Msg.GetIncludePayloads()),
+	}), nil
+}
+
+func (s *RuntimeConnectServer) authorizeInstanceView(ctx context.Context) error {
+	if err := requireConnectAuth(ctx); err != nil {
+		return err
+	}
+	if s.authz != nil {
+		if err := s.authz.CanInstanceView(ctx); err != nil {
+			return authorizer.ToConnectError(err)
+		}
+	}
+
+	return nil
+}
+
+type instanceRunData struct {
+	instance       *models.WorkflowInstance
+	latestExec     *models.WorkflowStateExecution
+	executions     []*models.WorkflowStateExecution
+	timeline       []*models.WorkflowAuditEvent
+	outputs        []*models.WorkflowStateOutput
+	scopeRuns      []*models.WorkflowScopeRun
+	signalWaits    []*models.WorkflowSignalWait
+	signalMessages []*models.WorkflowSignalMessage
+}
+
+func (s *RuntimeConnectServer) loadInstanceRunData(
+	ctx context.Context,
+	msg *runtimev1.GetInstanceRunRequest,
+) (*instanceRunData, error) {
+	instance, err := s.instanceRepo.GetByID(ctx, msg.GetInstanceId())
 	if err != nil {
 		return nil, connectLookupError(err, "instance not found")
 	}
-
-	latestExec, err := s.execRepo.GetLatestByInstance(ctx, req.Msg.GetInstanceId())
+	latestExec, err := s.execRepo.GetLatestByInstance(ctx, msg.GetInstanceId())
 	if err != nil {
 		return nil, connectLookupError(err, "latest execution not found")
 	}
 
-	execs, err := s.execRepo.List(ctx, "", req.Msg.GetInstanceId(), int(req.Msg.GetExecutionLimit()))
+	executionLimit := int(msg.GetExecutionLimit())
+	executions, err := s.execRepo.List(ctx, "", msg.GetInstanceId(), executionLimit)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
 	}
-	timeline, err := s.auditRepo.ListByInstanceWithLimit(ctx, req.Msg.GetInstanceId(), int(req.Msg.GetTimelineLimit()))
+	timeline, err := s.auditRepo.ListByInstanceWithLimit(ctx, msg.GetInstanceId(), int(msg.GetTimelineLimit()))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
 	}
-	outputs, err := s.outputRepo.ListByInstance(ctx, req.Msg.GetInstanceId(), int(req.Msg.GetExecutionLimit()))
+	outputs, err := s.outputRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
 	}
-	scopeRuns, err := s.scopeRepo.ListByInstance(ctx, req.Msg.GetInstanceId(), int(req.Msg.GetExecutionLimit()))
+	scopeRuns, err := s.scopeRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
 	}
-	signalWaits, err := s.signalWaitRepo.ListByInstance(ctx, req.Msg.GetInstanceId(), int(req.Msg.GetExecutionLimit()))
+	signalWaits, err := s.signalWaitRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
 	}
-	signalMessages, err := s.signalMsgRepo.ListByInstance(
-		ctx,
-		req.Msg.GetInstanceId(),
-		int(req.Msg.GetExecutionLimit()),
-	)
+	signalMessages, err := s.signalMsgRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
 	}
 
-	execItems := make([]*runtimev1.WorkflowExecution, 0, len(execs))
-	for _, item := range execs {
-		execItems = append(execItems, workflowExecutionToProto(item, "", false))
-	}
-	timelineItems := make([]*runtimev1.RunTimelineEntry, 0, len(timeline))
-	for _, item := range timeline {
-		timelineItems = append(timelineItems, runtimeTimelineEntryToProto(item, includePayloads))
-	}
-	outputItems := make([]*runtimev1.StateOutput, 0, len(outputs))
-	for _, item := range outputs {
-		outputItems = append(outputItems, stateOutputToProto(item, includePayloads))
-	}
-	scopeItems := make([]*runtimev1.ScopeRun, 0, len(scopeRuns))
-	for _, item := range scopeRuns {
-		scopeItems = append(scopeItems, scopeRunToProto(item, includePayloads))
-	}
-	waitItems := make([]*runtimev1.SignalWait, 0, len(signalWaits))
-	for _, item := range signalWaits {
-		waitItems = append(waitItems, signalWaitToProto(item))
-	}
-	messageItems := make([]*runtimev1.SignalMessage, 0, len(signalMessages))
-	for _, item := range signalMessages {
-		messageItems = append(messageItems, signalMessageToProto(item, includePayloads))
+	return &instanceRunData{
+		instance:       instance,
+		latestExec:     latestExec,
+		executions:     executions,
+		timeline:       timeline,
+		outputs:        outputs,
+		scopeRuns:      scopeRuns,
+		signalWaits:    signalWaits,
+		signalMessages: signalMessages,
+	}, nil
+}
+
+func (d *instanceRunData) executionProtos(includePayloads bool) []*runtimev1.WorkflowExecution {
+	items := make([]*runtimev1.WorkflowExecution, 0, len(d.executions))
+	for _, item := range d.executions {
+		items = append(items, workflowExecutionToProto(item, "", includePayloads))
 	}
 
-	return connect.NewResponse(&runtimev1.GetInstanceRunResponse{
-		Instance:        workflowInstanceToProto(instance),
-		LatestExecution: workflowExecutionToProto(latestExec, "", false),
-		TraceId:         latestExec.TraceID,
-		ResumeStrategy:  resumeStrategyForExecution(latestExec),
-		Executions:      execItems,
-		Timeline:        timelineItems,
-		Outputs:         outputItems,
-		ScopeRuns:       scopeItems,
-		SignalWaits:     waitItems,
-		SignalMessages:  messageItems,
-	}), nil
+	return items
+}
+
+func (d *instanceRunData) timelineProtos(includePayloads bool) []*runtimev1.RunTimelineEntry {
+	items := make([]*runtimev1.RunTimelineEntry, 0, len(d.timeline))
+	for _, item := range d.timeline {
+		items = append(items, runtimeTimelineEntryToProto(item, includePayloads))
+	}
+
+	return items
+}
+
+func (d *instanceRunData) outputProtos(includePayloads bool) []*runtimev1.StateOutput {
+	items := make([]*runtimev1.StateOutput, 0, len(d.outputs))
+	for _, item := range d.outputs {
+		items = append(items, stateOutputToProto(item, includePayloads))
+	}
+
+	return items
+}
+
+func (d *instanceRunData) scopeProtos(includePayloads bool) []*runtimev1.ScopeRun {
+	items := make([]*runtimev1.ScopeRun, 0, len(d.scopeRuns))
+	for _, item := range d.scopeRuns {
+		items = append(items, scopeRunToProto(item, includePayloads))
+	}
+
+	return items
+}
+
+func (d *instanceRunData) waitProtos() []*runtimev1.SignalWait {
+	items := make([]*runtimev1.SignalWait, 0, len(d.signalWaits))
+	for _, item := range d.signalWaits {
+		items = append(items, signalWaitToProto(item))
+	}
+
+	return items
+}
+
+func (d *instanceRunData) messageProtos(includePayloads bool) []*runtimev1.SignalMessage {
+	items := make([]*runtimev1.SignalMessage, 0, len(d.signalMessages))
+	for _, item := range d.signalMessages {
+		items = append(items, signalMessageToProto(item, includePayloads))
+	}
+
+	return items
 }
 
 func resumeStrategyForExecution(exec *models.WorkflowStateExecution) string {
@@ -419,10 +498,21 @@ func resumeStrategyForExecution(exec *models.WorkflowStateExecution) string {
 	}
 
 	switch exec.Status {
-	case "waiting":
+	case models.ExecStatusWaiting:
 		return "resume_waiting_execution"
-	case "failed", "fatal", "timed_out", "invalid_input_contract", "invalid_output_contract", "retry_scheduled":
+	case models.ExecStatusFailed,
+		models.ExecStatusFatal,
+		models.ExecStatusTimedOut,
+		models.ExecStatusInvalidInputContract,
+		models.ExecStatusInvalidOutputContract,
+		models.ExecStatusRetryScheduled:
 		return "retry_execution"
+	case models.ExecStatusPending,
+		models.ExecStatusDispatched,
+		models.ExecStatusRunning,
+		models.ExecStatusCompleted,
+		models.ExecStatusStale:
+		return "none"
 	default:
 		return "none"
 	}

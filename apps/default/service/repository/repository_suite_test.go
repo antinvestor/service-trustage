@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local repository tests exercise unexported query helpers intentionally.
 package repository
 
 import (
@@ -433,7 +434,7 @@ func (s *RepositorySuite) TestAuxiliaryRepositories_EventAuditScheduleSchemaOutp
 	s.Require().NoError(err)
 	s.Len(timers, 1)
 	s.Require().NoError(s.timerRepo.ReleaseClaim(ctx, timer.ID, "timer-1"))
-	timers, err = s.timerRepo.ClaimDue(ctx, time.Now(), 10, "timer-2", time.Now().Add(time.Minute))
+	_, err = s.timerRepo.ClaimDue(ctx, time.Now(), 10, "timer-2", time.Now().Add(time.Minute))
 	s.Require().NoError(err)
 	s.Require().NoError(s.timerRepo.MarkFiredByOwner(ctx, timer.ID, "timer-2", time.Now()))
 
@@ -464,7 +465,7 @@ func (s *RepositorySuite) TestAuxiliaryRepositories_EventAuditScheduleSchemaOutp
 	s.Require().NoError(err)
 	s.Len(waits, 1)
 	s.Require().NoError(s.signalWaitRepo.ReleaseClaim(ctx, wait.ID, "wait-1"))
-	waits, err = s.signalWaitRepo.ClaimTimedOut(ctx, time.Now(), 10, "wait-2", time.Now().Add(time.Minute))
+	_, err = s.signalWaitRepo.ClaimTimedOut(ctx, time.Now(), 10, "wait-2", time.Now().Add(time.Minute))
 	s.Require().NoError(err)
 	s.Require().NoError(s.signalWaitRepo.MarkTimedOutByOwner(ctx, wait.ID, "wait-2", time.Now()))
 

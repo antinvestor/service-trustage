@@ -293,7 +293,7 @@ func (e *stateEngine) Dispatch(
 
 // Commit processes a worker's result: validates output, stores it, advances state, and creates the next execution.
 // The entire operation runs inside a database transaction.
-func (e *stateEngine) Commit( //nolint:funlen,gocognit // commit is inherently complex
+func (e *stateEngine) Commit( //nolint:funlen // commit coordinates validation, persistence, transition, retry, and audit in one orchestration path.
 	ctx context.Context,
 	req *CommitRequest,
 ) error {
@@ -650,7 +650,7 @@ func (e *stateEngine) evaluateMapping(
 
 	// Only apply mapping when current step exposes an output_var and next step has call input.
 	outputVar := ""
-	switch currentStep.Type { //nolint:exhaustive
+	switch currentStep.Type { //nolint:exhaustive // unsupported step types are validated at definition time and handled by the default branch here.
 	case dsl.StepTypeCall:
 		if currentStep.Call != nil {
 			outputVar = currentStep.Call.OutputVar

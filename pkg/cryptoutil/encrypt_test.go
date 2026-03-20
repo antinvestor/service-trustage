@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests exercise unexported crypto helpers intentionally.
 package cryptoutil
 
 import (
@@ -28,7 +29,7 @@ func TestEncryptDecryptAndTokenHelpers(t *testing.T) {
 		t.Fatalf("Decrypt() = %q", decrypted)
 	}
 
-	if _, err := Decrypt(key, []byte("short")); err == nil {
+	if _, decryptErr := Decrypt(key, []byte("short")); decryptErr == nil {
 		t.Fatal("expected short ciphertext error")
 	}
 

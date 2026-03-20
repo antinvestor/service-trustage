@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local tests cover unexported HTTP helpers intentionally.
 package handlers
 
 import (
@@ -46,7 +47,9 @@ func TestHTTPHelpers_MiddlewareAndErrorMapping(t *testing.T) {
 		t.Parallel()
 		handler := LimitBodySize(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, err := io.ReadAll(r.Body)
-			require.Error(t, err)
+			if err == nil {
+				t.Fatal("expected oversized body read to fail")
+			}
 			w.WriteHeader(http.StatusRequestEntityTooLarge)
 		}))
 		rec := httptest.NewRecorder()

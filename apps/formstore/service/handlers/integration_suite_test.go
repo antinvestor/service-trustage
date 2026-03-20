@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local integration suite wires unexported handler dependencies intentionally.
 package handlers
 
 import (

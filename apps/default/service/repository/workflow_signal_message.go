@@ -125,7 +125,7 @@ func (r *workflowSignalMessageRepository) ClaimOldestPendingForTarget(
 	}
 
 	if message.ID == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil message indicates no pending signal was available to claim.
 	}
 
 	return &message, nil

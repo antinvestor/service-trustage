@@ -255,10 +255,10 @@ func main() { //nolint:funlen // main function wiring
 	publicMux.Handle(eventPath, eventHandler)
 	publicMux.Handle(runtimePath, runtimeHandler)
 	publicMux.Handle(signalPath, signalHandler)
-	publicMux.Handle("/openapi/workflow.yaml", handlers.EmbeddedSpecHandler(workflowv1spec.ApiSpecFile))
-	publicMux.Handle("/openapi/event.yaml", handlers.EmbeddedSpecHandler(eventv1spec.ApiSpecFile))
-	publicMux.Handle("/openapi/runtime.yaml", handlers.EmbeddedSpecHandler(runtimev1spec.ApiSpecFile))
-	publicMux.Handle("/openapi/signal.yaml", handlers.EmbeddedSpecHandler(signalv1spec.ApiSpecFile))
+	publicMux.Handle("/openapi/workflow.yaml", handlers.EmbeddedSpecHandler(workflowv1spec.APISpecFile))
+	publicMux.Handle("/openapi/event.yaml", handlers.EmbeddedSpecHandler(eventv1spec.APISpecFile))
+	publicMux.Handle("/openapi/runtime.yaml", handlers.EmbeddedSpecHandler(runtimev1spec.APISpecFile))
+	publicMux.Handle("/openapi/signal.yaml", handlers.EmbeddedSpecHandler(signalv1spec.APISpecFile))
 	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(
 		handlers.RequestIDMiddleware(handlers.LimitBodySize(protectedMux)),
 		tenancyAccessChecker,

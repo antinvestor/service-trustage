@@ -70,7 +70,7 @@ func ResolveNextStepInSubtree(
 	vars map[string]any,
 ) (*StepSpec, error) {
 	if spec == nil {
-		return nil, nil //nolint:nilnil
+		return nil, nil //nolint:nilnil // nil step and nil error means there is no subtree to navigate.
 	}
 
 	root := FindStep(spec, rootStepID)
@@ -83,7 +83,7 @@ func ResolveNextStepInSubtree(
 		return nil, err
 	}
 	if !found {
-		return nil, nil //nolint:nilnil
+		return nil, nil //nolint:nilnil // nil next step and nil error means the subtree terminated.
 	}
 
 	return next, nil
@@ -98,7 +98,7 @@ func ResolveNextStepInContainer(
 	vars map[string]any,
 ) (*StepSpec, error) {
 	if spec == nil {
-		return nil, nil //nolint:nilnil
+		return nil, nil //nolint:nilnil // nil container and nil error means there is no container scope to navigate.
 	}
 
 	container := FindStep(spec, containerStepID)
@@ -107,7 +107,7 @@ func ResolveNextStepInContainer(
 	}
 
 	var steps []*StepSpec
-	switch container.Type { //nolint:exhaustive
+	switch container.Type { //nolint:exhaustive // only sequence, parallel, and foreach are container step types.
 	case StepTypeSequence:
 		if container.Sequence != nil {
 			steps = container.Sequence.Steps
@@ -129,7 +129,7 @@ func ResolveNextStepInContainer(
 		return nil, err
 	}
 	if !found {
-		return nil, nil //nolint:nilnil
+		return nil, nil //nolint:nilnil // nil next step and nil error means the container has no further steps.
 	}
 
 	return next, nil

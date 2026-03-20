@@ -15,6 +15,8 @@ import (
 	"github.com/antinvestor/service-trustage/pkg/cryptoutil"
 )
 
+const signalDeliveryLeaseTTL = 30 * time.Second
+
 func (e *stateEngine) StartSignalWait(
 	ctx context.Context,
 	cmd *ExecutionCommand,
@@ -103,7 +105,7 @@ func (e *stateEngine) tryDeliverSignal(
 		InstanceID: instanceID,
 		SignalName: signalName,
 		Owner:      owner,
-		LeaseUntil: time.Now().Add(30 * time.Second),
+		LeaseUntil: time.Now().Add(signalDeliveryLeaseTTL),
 	})
 	if txErr != nil {
 		return false, txErr

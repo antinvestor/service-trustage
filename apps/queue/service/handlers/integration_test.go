@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local integration tests use unexported handler fixtures intentionally.
 package handlers
 
 import (

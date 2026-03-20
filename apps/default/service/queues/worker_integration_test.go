@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local worker tests exercise unexported queue internals intentionally.
 package queues
 
 import (
@@ -315,7 +316,7 @@ func (s *WorkerSuite) TestExecutionWorker_HandleControlSteps() {
 }`,
 			state: "wait",
 			input: `{}`,
-			assert: func(cmd *business.ExecutionCommand, instance *models.WorkflowInstance) {
+			assert: func(cmd *business.ExecutionCommand, _ *models.WorkflowInstance) {
 				timer, err := s.timerRepo.GetByExecutionID(context.Background(), cmd.ExecutionID)
 				s.Require().NoError(err)
 				s.Equal(cmd.ExecutionID, timer.ExecutionID)
@@ -337,7 +338,7 @@ func (s *WorkerSuite) TestExecutionWorker_HandleControlSteps() {
 }`,
 			state: "wait_signal",
 			input: `{}`,
-			assert: func(cmd *business.ExecutionCommand, instance *models.WorkflowInstance) {
+			assert: func(cmd *business.ExecutionCommand, _ *models.WorkflowInstance) {
 				wait, err := s.signalWaitRepo.GetByExecutionID(context.Background(), cmd.ExecutionID)
 				s.Require().NoError(err)
 				s.Equal("approved", wait.SignalName)
@@ -370,7 +371,7 @@ func (s *WorkerSuite) TestExecutionWorker_HandleControlSteps() {
 }`,
 			state: "fanout",
 			input: `{}`,
-			assert: func(cmd *business.ExecutionCommand, instance *models.WorkflowInstance) {
+			assert: func(cmd *business.ExecutionCommand, _ *models.WorkflowInstance) {
 				scope, err := s.scopeRepo.GetByParentExecutionID(context.Background(), cmd.ExecutionID)
 				s.Require().NoError(err)
 				s.Equal(string(dsl.StepTypeParallel), scope.ScopeType)

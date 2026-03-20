@@ -1,3 +1,4 @@
+//nolint:testpackage // package-local scheduler tests exercise unexported run-once helpers intentionally.
 package schedulers
 
 import (
@@ -789,6 +790,4 @@ func (s *SchedulerSuite) TestScopeScheduler_RunOnceReconcilesBranchScope() {
 	s.Equal("after", latestExec.State)
 }
 
-func init() {
-	_ = telemetry.NewMetrics()
-}
+var _ = telemetry.NewMetrics()
