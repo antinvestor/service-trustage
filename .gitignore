@@ -28,3 +28,7 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# UI build artifacts
+apps/ui/node_modules/
+apps/ui/dist/
