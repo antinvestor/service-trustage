@@ -202,8 +202,8 @@ github.com/ory/keto/proto v0.13.0-alpha.0 h1:9ZzjDbaBgriHGVC8fUJKD1pDqQ9nHEFOO3b
 github.com/ory/keto/proto v0.13.0-alpha.0/go.mod h1:6RagCXA7X1hhFSVjcy13ruIo8Dq/nj4J0mcN92qL+hY=
 github.com/panjf2000/ants/v2 v2.11.6 h1:JKsoIUukIoCO0sP0gcOqdyoXmpyKXuU6fC57rODtpug=
 github.com/panjf2000/ants/v2 v2.11.6/go.mod h1:8u92CYMUc6gyvTIw8Ru7Mt7+/ESnJahz5EVtqfrilek=
-github.com/pitabwire/frame v1.80.1 h1:NMa8mm4m6DMKHhIze7n3G4HBkSVqzVlbg6LDftbuEBM=
-github.com/pitabwire/frame v1.80.1/go.mod h1:JhzkP51Zk8wNCPSnM6e2fMSfrUYTdhhWi1Y4R4sHqw8=
+github.com/pitabwire/frame v1.81.0 h1:X1JH56o3mUPylVCJCnVt7OhDW0DnbBF6eEJIWzEk8VU=
+github.com/pitabwire/frame v1.81.0/go.mod h1:JhzkP51Zk8wNCPSnM6e2fMSfrUYTdhhWi1Y4R4sHqw8=
 github.com/pitabwire/natspubsub v0.7.13 h1:eEGhAn7mGqjxX6K5ba4RNkTn4TRxk6hbDrTWLusse4Y=
 github.com/pitabwire/natspubsub v0.7.13/go.mod h1:WR1/+7LaWx01PEyu0PkD2fdQ0EOeyX6jx3IHHzqM18o=
 github.com/pitabwire/util v0.6.1 h1:aXk3gp3qbs/gTSiqSbA8mcNn0So+7mNXrTBt1DJI9Ok=
@@ -371,8 +371,6 @@ google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 h1:
 google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171/go.mod h1:M5krXqk4GhBKvB596udGL3UyjL4I1+cTbK0orROM9ng=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260311181403-84a4fc48630c h1:xgCzyF2LFIO/0X2UAoVRiXKU5Xg6VjToG4i2/ecSswk=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260311181403-84a4fc48630c/go.mod h1:4Hqkh8ycfw05ld/3BWL7rJOSfebL2Q+DVDeRgYgxUU8=
-google.golang.org/grpc v1.79.2 h1:fRMD94s2tITpyJGtBBn7MkMseNpOZU8ZxgC3MMBaXRU=
-google.golang.org/grpc v1.79.2/go.mod h1:KmT0Kjez+0dde/v2j9vzwoAScgEPx/Bw1CYChhHLrHQ=
 google.golang.org/grpc v1.79.3 h1:sybAEdRIEtvcD68Gx7dmnwjZKlyfuc61Dyo9pGXXkKE=
 google.golang.org/grpc v1.79.3/go.mod h1:KmT0Kjez+0dde/v2j9vzwoAScgEPx/Bw1CYChhHLrHQ=
 google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
