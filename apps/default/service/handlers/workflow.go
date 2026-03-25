@@ -8,7 +8,6 @@ import (
 
 	"github.com/pitabwire/util"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
@@ -18,19 +17,16 @@ import (
 // Uses plain HTTP until proto generation is set up.
 type WorkflowHandler struct {
 	workflowBiz business.WorkflowBusiness
-	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 }
 
 // NewWorkflowHandler creates a new WorkflowHandler.
 func NewWorkflowHandler(
 	biz business.WorkflowBusiness,
-	authzMiddleware authz.Middleware,
 	metrics *telemetry.Metrics,
 ) *WorkflowHandler {
 	return &WorkflowHandler{
 		workflowBiz: biz,
-		authz:       authzMiddleware,
 		metrics:     metrics,
 	}
 }
@@ -42,13 +38,6 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanWorkflowManage(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerEngine, telemetry.SpanCreateWorkflow)
@@ -87,13 +76,6 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.authz != nil {
-		if err := h.authz.CanWorkflowView(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
-	}
-
 	id := r.PathValue("id")
 
 	def, err := h.workflowBiz.GetWorkflow(ctx, id)
@@ -119,13 +101,6 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanWorkflowView(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	status := r.URL.Query().Get("status")
@@ -164,13 +139,6 @@ func (h *WorkflowHandler) ActivateWorkflow(w http.ResponseWriter, r *http.Reques
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanWorkflowManage(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	id := r.PathValue("id")

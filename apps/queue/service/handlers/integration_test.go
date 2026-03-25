@@ -19,7 +19,7 @@ import (
 
 func (s *HandlerSuite) TestQueueDefinitionHandler_Lifecycle() {
 	ctx := s.tenantCtx()
-	h := NewQueueDefinitionHandler(s.manager, allowAllAuthz{})
+	h := NewQueueDefinitionHandler(s.manager)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/queues", encodeBody(map[string]any{
 		"name":            "main-queue",
@@ -82,9 +82,9 @@ func (s *HandlerSuite) TestQueueItemCounterAndStatsHandlers_Flow() {
 	}
 	s.Require().NoError(s.defRepo.Create(ctx, queueDef))
 
-	itemHandler := NewQueueItemHandler(s.manager, allowAllAuthz{}, NewRateLimiter(cache.NewInMemoryCache(), 100))
-	counterHandler := NewQueueCounterHandler(s.manager, allowAllAuthz{})
-	statsHandler := NewQueueStatsHandler(s.stats, allowAllAuthz{})
+	itemHandler := NewQueueItemHandler(s.manager, NewRateLimiter(cache.NewInMemoryCache(), 100))
+	counterHandler := NewQueueCounterHandler(s.manager)
+	statsHandler := NewQueueStatsHandler(s.stats)
 
 	enqueueReq := httptest.NewRequest(
 		http.MethodPost,
@@ -272,7 +272,7 @@ func (s *HandlerSuite) TestQueueItemHandler_NoShowRequeueAndTransferFlow() {
 	_, err := s.manager.CallNext(ctx, counter.ID)
 	s.Require().NoError(err)
 
-	itemHandler := NewQueueItemHandler(s.manager, allowAllAuthz{}, NewRateLimiter(cache.NewInMemoryCache(), 100))
+	itemHandler := NewQueueItemHandler(s.manager, NewRateLimiter(cache.NewInMemoryCache(), 100))
 
 	noShowReq := httptest.NewRequest(http.MethodPost, "/api/v1/items/"+item.ID+"/no-show", nil)
 	noShowReq.SetPathValue("id", item.ID)
@@ -319,7 +319,7 @@ func (s *HandlerSuite) TestQueueItemHandler_NoShowRequeueAndTransferFlow() {
 
 func (s *HandlerSuite) TestQueueItemHandler_TransferValidationAndNotFound() {
 	ctx := s.tenantCtx()
-	itemHandler := NewQueueItemHandler(s.manager, allowAllAuthz{}, NewRateLimiter(cache.NewInMemoryCache(), 100))
+	itemHandler := NewQueueItemHandler(s.manager, NewRateLimiter(cache.NewInMemoryCache(), 100))
 
 	tests := []struct {
 		name       string
@@ -368,8 +368,8 @@ func (s *HandlerSuite) TestQueueItemHandler_TransferValidationAndNotFound() {
 
 func (s *HandlerSuite) TestQueueDefinitionAndCounterHandlers_ValidationAndErrorPaths() {
 	ctx := s.tenantCtx()
-	queueHandler := NewQueueDefinitionHandler(s.manager, allowAllAuthz{})
-	counterHandler := NewQueueCounterHandler(s.manager, allowAllAuthz{})
+	queueHandler := NewQueueDefinitionHandler(s.manager)
+	counterHandler := NewQueueCounterHandler(s.manager)
 
 	validQueue := &models.QueueDefinition{
 		Name:           "ops-queue",

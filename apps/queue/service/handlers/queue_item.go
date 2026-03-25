@@ -7,7 +7,6 @@ import (
 
 	"github.com/pitabwire/util"
 
-	"github.com/antinvestor/service-trustage/apps/queue/service/authz"
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 )
@@ -15,13 +14,12 @@ import (
 // QueueItemHandler handles queue item HTTP endpoints.
 type QueueItemHandler struct {
 	mgr     business.QueueManager
-	authz   authz.Middleware
 	limiter *RateLimiter
 }
 
 // NewQueueItemHandler creates a new QueueItemHandler.
-func NewQueueItemHandler(mgr business.QueueManager, authz authz.Middleware, limiter *RateLimiter) *QueueItemHandler {
-	return &QueueItemHandler{mgr: mgr, authz: authz, limiter: limiter}
+func NewQueueItemHandler(mgr business.QueueManager, limiter *RateLimiter) *QueueItemHandler {
+	return &QueueItemHandler{mgr: mgr, limiter: limiter}
 }
 
 // Enqueue handles POST /api/v1/queues/{queue_id}/items.
@@ -30,11 +28,6 @@ func (h *QueueItemHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanItemEnqueue(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -95,11 +88,6 @@ func (h *QueueItemHandler) ListWaiting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanQueueItemView(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	queueID := r.PathValue("queue_id")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -129,11 +117,6 @@ func (h *QueueItemHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanQueueItemView(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	id := r.PathValue("id")
 
 	item, err := h.mgr.GetItem(ctx, id)
@@ -153,11 +136,6 @@ func (h *QueueItemHandler) GetPosition(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanQueueItemView(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -183,11 +161,6 @@ func (h *QueueItemHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	id := r.PathValue("id")
 
 	if err := h.mgr.CancelItem(ctx, id); err != nil {
@@ -206,11 +179,6 @@ func (h *QueueItemHandler) NoShow(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -235,11 +203,6 @@ func (h *QueueItemHandler) Requeue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	id := r.PathValue("id")
 
 	if err := h.mgr.RequeueItem(ctx, id); err != nil {
@@ -258,11 +221,6 @@ func (h *QueueItemHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 

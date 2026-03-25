@@ -5,9 +5,7 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/security/authorizer"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
 	"github.com/antinvestor/service-trustage/gen/go/workflow/v1/workflowv1connect"
@@ -16,7 +14,6 @@ import (
 // WorkflowConnectServer exposes workflow management over ConnectRPC.
 type WorkflowConnectServer struct {
 	workflowBiz business.WorkflowBusiness
-	authz       authz.Middleware
 
 	workflowv1connect.UnimplementedWorkflowServiceHandler
 }
@@ -26,11 +23,9 @@ const defaultWorkflowPageLimit = 50
 // NewWorkflowConnectServer creates a new Connect workflow server.
 func NewWorkflowConnectServer(
 	biz business.WorkflowBusiness,
-	authzMiddleware authz.Middleware,
 ) *WorkflowConnectServer {
 	return &WorkflowConnectServer{
 		workflowBiz: biz,
-		authz:       authzMiddleware,
 	}
 }
 
@@ -40,12 +35,6 @@ func (s *WorkflowConnectServer) CreateWorkflow(
 ) (*connect.Response[workflowv1.CreateWorkflowResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanWorkflowManage(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	if req.Msg.GetDsl() == nil {
@@ -75,12 +64,6 @@ func (s *WorkflowConnectServer) GetWorkflow(
 		return nil, err
 	}
 
-	if s.authz != nil {
-		if err := s.authz.CanWorkflowView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
-	}
-
 	if req.Msg.GetId() == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
 	}
@@ -101,12 +84,6 @@ func (s *WorkflowConnectServer) ListWorkflows(
 ) (*connect.Response[workflowv1.ListWorkflowsResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanWorkflowView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	_, err := workflowStatusFilter(req.Msg.GetStatus())
@@ -143,12 +120,6 @@ func (s *WorkflowConnectServer) ActivateWorkflow(
 ) (*connect.Response[workflowv1.ActivateWorkflowResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanWorkflowManage(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	if req.Msg.GetId() == "" {

@@ -18,7 +18,7 @@ import (
 
 func (s *HandlerSuite) TestWorkflowConnectServer_LifecycleAndAuth() {
 	ctx := s.tenantCtx()
-	server := NewWorkflowConnectServer(s.workflowBusiness(), allowAllAuthz{})
+	server := NewWorkflowConnectServer(s.workflowBusiness())
 
 	createResp, err := server.CreateWorkflow(
 		ctx,
@@ -50,7 +50,7 @@ func (s *HandlerSuite) TestWorkflowConnectServer_LifecycleAndAuth() {
 
 func (s *HandlerSuite) TestEventConnectServer_IngestAndTimeline() {
 	ctx := s.tenantCtx()
-	server := NewEventConnectServer(s.eventRepo, s.auditRepo, allowAllAuthz{}, s.metrics, nil)
+	server := NewEventConnectServer(s.eventRepo, s.auditRepo, s.metrics, nil)
 
 	req := connectReq(&eventv1.IngestEventRequest{
 		EventType:      "order.created",
@@ -171,7 +171,6 @@ func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
 		s.signalWaitRepo,
 		s.signalMsgRepo,
 		engine,
-		allowAllAuthz{},
 	)
 
 	_, err := runtimeServer.ListInstances(ctx, connectReq(&runtimev1.ListInstancesRequest{
@@ -272,7 +271,7 @@ func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
 	}
 	s.Require().NoError(s.instanceRepo.Create(ctx, pendingSignalInstance))
 
-	signalServer := NewSignalConnectServer(engine, allowAllAuthz{})
+	signalServer := NewSignalConnectServer(engine)
 	signalResp, err := signalServer.SendSignal(ctx, connectReq(&signalv1.SendSignalRequest{
 		InstanceId: pendingSignalInstance.ID,
 		SignalName: "approved",
@@ -301,11 +300,10 @@ func (s *HandlerSuite) TestConnectServers_ValidationAndFailurePaths() {
 		s.signalWaitRepo,
 		s.signalMsgRepo,
 		s.stateEngine(),
-		allowAllAuthz{},
 	)
-	eventServer := NewEventConnectServer(s.eventRepo, s.auditRepo, allowAllAuthz{}, s.metrics, nil)
-	signalServer := NewSignalConnectServer(s.stateEngine(), allowAllAuthz{})
-	workflowServer := NewWorkflowConnectServer(s.workflowBusiness(), allowAllAuthz{})
+	eventServer := NewEventConnectServer(s.eventRepo, s.auditRepo, s.metrics, nil)
+	signalServer := NewSignalConnectServer(s.stateEngine())
+	workflowServer := NewWorkflowConnectServer(s.workflowBusiness())
 
 	tests := []struct {
 		name     string

@@ -14,7 +14,6 @@ import (
 	"github.com/pitabwire/frame/security"
 	"github.com/stretchr/testify/suite"
 
-	formauthz "github.com/antinvestor/service-trustage/apps/formstore/service/authz"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/business"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/models"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/repository"
@@ -76,17 +75,6 @@ func (s *HandlerSuite) tenantCtx() context.Context {
 	claims.Subject = "test-user"
 	return claims.ClaimsToContext(context.Background())
 }
-
-type allowAllAuthz struct{}
-
-func (a allowAllAuthz) CanFormDefinitionManage(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanFormDefinitionView(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanFormSubmit(_ context.Context) error           { return nil }
-func (a allowAllAuthz) CanSubmissionView(_ context.Context) error       { return nil }
-func (a allowAllAuthz) CanSubmissionUpdate(_ context.Context) error     { return nil }
-func (a allowAllAuthz) CanSubmissionDelete(_ context.Context) error     { return nil }
-
-var _ formauthz.Middleware = allowAllAuthz{}
 
 func encodeBody(v any) *bytes.Reader {
 	data, err := json.Marshal(v)

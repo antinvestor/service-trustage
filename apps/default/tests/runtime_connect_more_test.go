@@ -100,7 +100,6 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_ListExecutionsAndGetInsta
 		s.signalWaitRepo,
 		s.signalMsgRepo,
 		s.stateEngine(),
-		allowAllAuthz{},
 	)
 
 	listResp, err := server.ListExecutions(
@@ -147,7 +146,7 @@ func (s *DefaultServiceSuite) TestSignalConnectServer_StoresPendingSignal() {
 	}
 	s.Require().NoError(s.instanceRepo.Create(ctx, instance))
 
-	server := handlers.NewSignalConnectServer(s.stateEngine(), allowAllAuthz{})
+	server := handlers.NewSignalConnectServer(s.stateEngine())
 	resp, err := server.SendSignal(
 		ctx,
 		connect.NewRequest(&signalv1.SendSignalRequest{
@@ -230,7 +229,6 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_ResumeExecution() {
 		s.signalWaitRepo,
 		s.signalMsgRepo,
 		s.stateEngine(),
-		allowAllAuthz{},
 	)
 
 	waitingResp, err := server.ResumeExecution(

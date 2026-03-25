@@ -41,7 +41,7 @@ func mustStructFromMap(payload map[string]any) *structpb.Struct {
 
 func (s *DefaultServiceSuite) TestWorkflowConnectServer_Lifecycle() {
 	ctx := s.tenantCtx()
-	server := handlers.NewWorkflowConnectServer(s.workflowBusiness(), allowAllAuthz{})
+	server := handlers.NewWorkflowConnectServer(s.workflowBusiness())
 
 	createResp, err := server.CreateWorkflow(
 		ctx,
@@ -85,7 +85,7 @@ func (s *DefaultServiceSuite) TestWorkflowConnectServer_Lifecycle() {
 
 func (s *DefaultServiceSuite) TestWorkflowConnectServer_AcceptsParallelRuntimeSteps() {
 	ctx := s.tenantCtx()
-	server := handlers.NewWorkflowConnectServer(s.workflowBusiness(), allowAllAuthz{})
+	server := handlers.NewWorkflowConnectServer(s.workflowBusiness())
 
 	unsupportedDSL := `{
   "version": "1.0",
@@ -119,7 +119,7 @@ func (s *DefaultServiceSuite) TestWorkflowConnectServer_AcceptsParallelRuntimeSt
 }
 
 func (s *DefaultServiceSuite) TestWorkflowConnectServer_RequiresAuth() {
-	server := handlers.NewWorkflowConnectServer(s.workflowBusiness(), allowAllAuthz{})
+	server := handlers.NewWorkflowConnectServer(s.workflowBusiness())
 
 	_, err := server.ListWorkflows(
 		context.Background(),
@@ -134,7 +134,6 @@ func (s *DefaultServiceSuite) TestEventConnectServer_IngestAndIdempotency() {
 	server := handlers.NewEventConnectServer(
 		s.eventRepo,
 		s.auditRepo,
-		allowAllAuthz{},
 		telemetry.NewMetrics(),
 		nil,
 	)
@@ -165,7 +164,6 @@ func (s *DefaultServiceSuite) TestEventConnectServer_Timeline() {
 	server := handlers.NewEventConnectServer(
 		s.eventRepo,
 		s.auditRepo,
-		allowAllAuthz{},
 		telemetry.NewMetrics(),
 		nil,
 	)
@@ -223,7 +221,6 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_Lifecycle() {
 		s.signalWaitRepo,
 		s.signalMsgRepo,
 		s.stateEngine(),
-		allowAllAuthz{},
 	)
 
 	listInstancesResp, err := server.ListInstances(

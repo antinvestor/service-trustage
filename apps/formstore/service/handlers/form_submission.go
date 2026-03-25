@@ -7,7 +7,6 @@ import (
 
 	"github.com/pitabwire/util"
 
-	"github.com/antinvestor/service-trustage/apps/formstore/service/authz"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/business"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/models"
 )
@@ -15,17 +14,15 @@ import (
 // FormSubmissionHandler handles form submission HTTP endpoints.
 type FormSubmissionHandler struct {
 	biz     business.FormStoreBusiness
-	authz   authz.Middleware
 	limiter *RateLimiter
 }
 
 // NewFormSubmissionHandler creates a new FormSubmissionHandler.
 func NewFormSubmissionHandler(
 	biz business.FormStoreBusiness,
-	authz authz.Middleware,
 	limiter *RateLimiter,
 ) *FormSubmissionHandler {
-	return &FormSubmissionHandler{biz: biz, authz: authz, limiter: limiter}
+	return &FormSubmissionHandler{biz: biz, limiter: limiter}
 }
 
 // Submit handles POST /api/v1/forms/{form_id}/submissions.
@@ -34,11 +31,6 @@ func (h *FormSubmissionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanFormSubmit(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -99,11 +91,6 @@ func (h *FormSubmissionHandler) ListByForm(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.authz.CanSubmissionView(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	formID := r.PathValue("form_id")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -133,11 +120,6 @@ func (h *FormSubmissionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanSubmissionView(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	id := r.PathValue("id")
 
 	sub, err := h.biz.GetSubmission(ctx, id)
@@ -158,11 +140,6 @@ func (h *FormSubmissionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanSubmissionUpdate(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -216,11 +193,6 @@ func (h *FormSubmissionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanSubmissionDelete(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 

@@ -7,9 +7,7 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/security/authorizer"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	signalv1 "github.com/antinvestor/service-trustage/gen/go/signal/v1"
 	"github.com/antinvestor/service-trustage/gen/go/signal/v1/signalv1connect"
@@ -18,16 +16,14 @@ import (
 // SignalConnectServer exposes signal delivery over ConnectRPC.
 type SignalConnectServer struct {
 	engine business.StateEngine
-	authz  authz.Middleware
 
 	signalv1connect.UnimplementedSignalServiceHandler
 }
 
 // NewSignalConnectServer creates a new Connect signal server.
-func NewSignalConnectServer(engine business.StateEngine, authzMiddleware authz.Middleware) *SignalConnectServer {
+func NewSignalConnectServer(engine business.StateEngine) *SignalConnectServer {
 	return &SignalConnectServer{
 		engine: engine,
-		authz:  authzMiddleware,
 	}
 }
 
@@ -37,12 +33,6 @@ func (s *SignalConnectServer) SendSignal(
 ) (*connect.Response[signalv1.SendSignalResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanInstanceSignal(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	if req.Msg.GetInstanceId() == "" {

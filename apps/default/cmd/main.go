@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"connectrpc.com/connect"
+	"github.com/antinvestor/apis/go/common/permissions"
 	"github.com/pitabwire/frame"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
@@ -26,9 +27,13 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/schedulers"
 	"github.com/antinvestor/service-trustage/connector"
 	"github.com/antinvestor/service-trustage/connector/adapters"
+	eventv1 "github.com/antinvestor/service-trustage/gen/go/event/v1"
 	"github.com/antinvestor/service-trustage/gen/go/event/v1/eventv1connect"
+	runtimev1 "github.com/antinvestor/service-trustage/gen/go/runtime/v1"
 	"github.com/antinvestor/service-trustage/gen/go/runtime/v1/runtimev1connect"
+	signalv1 "github.com/antinvestor/service-trustage/gen/go/signal/v1"
 	"github.com/antinvestor/service-trustage/gen/go/signal/v1/signalv1connect"
+	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
 	"github.com/antinvestor/service-trustage/gen/go/workflow/v1/workflowv1connect"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
 	eventv1spec "github.com/antinvestor/service-trustage/proto/event/v1"
@@ -132,14 +137,32 @@ func main() { //nolint:funlen // main function wiring
 
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)
-	authzMiddleware := authz.NewMiddleware(auth)
 	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
 	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(tenancyAccessChecker)
+
+	// Layer 2: FunctionAccessInterceptor enforces per-RPC permissions automatically.
+	workflowSD := workflowv1.File_proto_workflow_v1_workflow_proto.Services().ByName("WorkflowService")
+	eventSD := eventv1.File_proto_event_v1_event_proto.Services().ByName("EventService")
+	runtimeSD := runtimev1.File_proto_runtime_v1_runtime_proto.Services().ByName("RuntimeService")
+	signalSD := signalv1.File_proto_signal_v1_signal_proto.Services().ByName("SignalService")
+	procMap := permissions.BuildProcedureMap(workflowSD)
+	for k, v := range permissions.BuildProcedureMap(eventSD) {
+		procMap[k] = v
+	}
+	for k, v := range permissions.BuildProcedureMap(runtimeSD) {
+		procMap[k] = v
+	}
+	for k, v := range permissions.BuildProcedureMap(signalSD) {
+		procMap[k] = v
+	}
+	functionChecker := authorizer.NewFunctionChecker(auth, "service_trustage")
+	functionAccessInterceptor := connectInterceptors.NewFunctionAccessInterceptor(functionChecker, procMap)
 
 	defaultInterceptorList, err := connectInterceptors.DefaultList(
 		ctx,
 		sm.GetAuthenticator(ctx),
 		tenancyAccessInterceptor,
+		functionAccessInterceptor,
 	)
 	if err != nil {
 		log.WithError(err).Fatal("failed to create connect interceptors")
@@ -188,16 +211,15 @@ func main() { //nolint:funlen // main function wiring
 	formRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:form_ingress", cfg.EventIngestRateLimit)
 	webhookRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:webhook_ingress", cfg.EventIngestRateLimit)
 
-	formHandler := handlers.NewFormHandler(eventLogRepo, authzMiddleware, metrics, formRateLimiter)
+	formHandler := handlers.NewFormHandler(eventLogRepo, metrics, formRateLimiter)
 	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(
 		eventLogRepo,
-		authzMiddleware,
 		metrics,
 		webhookRateLimiter,
 	)
 
-	workflowServer := handlers.NewWorkflowConnectServer(workflowBiz, authzMiddleware)
-	eventServer := handlers.NewEventConnectServer(eventLogRepo, auditRepo, authzMiddleware, metrics, eventRateLimiter)
+	workflowServer := handlers.NewWorkflowConnectServer(workflowBiz)
+	eventServer := handlers.NewEventConnectServer(eventLogRepo, auditRepo, metrics, eventRateLimiter)
 	runtimeServer := handlers.NewRuntimeConnectServer(
 		instanceRepo,
 		execRepo,
@@ -207,9 +229,8 @@ func main() { //nolint:funlen // main function wiring
 		signalWaitRepo,
 		signalMsgRepo,
 		engine,
-		authzMiddleware,
 	)
-	signalServer := handlers.NewSignalConnectServer(engine, authzMiddleware)
+	signalServer := handlers.NewSignalConnectServer(engine)
 
 	workflowPath, workflowHandler := workflowv1connect.NewWorkflowServiceHandler(
 		workflowServer,

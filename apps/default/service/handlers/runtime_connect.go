@@ -7,9 +7,7 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/security/authorizer"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -28,7 +26,6 @@ type RuntimeConnectServer struct {
 	signalWaitRepo repository.WorkflowSignalWaitRepository
 	signalMsgRepo  repository.WorkflowSignalMessageRepository
 	engine         business.StateEngine
-	authz          authz.Middleware
 
 	runtimev1connect.UnimplementedRuntimeServiceHandler
 }
@@ -45,7 +42,6 @@ func NewRuntimeConnectServer(
 	signalWaitRepo repository.WorkflowSignalWaitRepository,
 	signalMsgRepo repository.WorkflowSignalMessageRepository,
 	engine business.StateEngine,
-	authzMiddleware authz.Middleware,
 ) *RuntimeConnectServer {
 	return &RuntimeConnectServer{
 		instanceRepo:   instanceRepo,
@@ -57,7 +53,6 @@ func NewRuntimeConnectServer(
 		signalWaitRepo: signalWaitRepo,
 		signalMsgRepo:  signalMsgRepo,
 		engine:         engine,
-		authz:          authzMiddleware,
 	}
 }
 
@@ -67,12 +62,6 @@ func (s *RuntimeConnectServer) ListInstances(
 ) (*connect.Response[runtimev1.ListInstancesResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanInstanceView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	pageLimit := searchLimit(req.Msg.GetSearch(), defaultRuntimePageLimit)
@@ -109,12 +98,6 @@ func (s *RuntimeConnectServer) RetryInstance(
 		return nil, err
 	}
 
-	if s.authz != nil {
-		if err := s.authz.CanInstanceRetry(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
-	}
-
 	if req.Msg.GetInstanceId() == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("instance_id is required"))
 	}
@@ -147,12 +130,6 @@ func (s *RuntimeConnectServer) ListExecutions(
 		return nil, err
 	}
 
-	if s.authz != nil {
-		if err := s.authz.CanExecutionView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
-	}
-
 	pageLimit := searchLimit(req.Msg.GetSearch(), defaultRuntimePageLimit)
 	itemsPage, err := s.execRepo.ListPage(ctx, repository.WorkflowExecutionListFilter{
 		Status:     executionStatusFilter(req.Msg.GetStatus()),
@@ -183,12 +160,6 @@ func (s *RuntimeConnectServer) GetExecution(
 ) (*connect.Response[runtimev1.GetExecutionResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanExecutionView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	if req.Msg.GetExecutionId() == "" {
@@ -224,12 +195,6 @@ func (s *RuntimeConnectServer) RetryExecution(
 		return nil, err
 	}
 
-	if s.authz != nil {
-		if err := s.authz.CanExecutionRetry(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
-	}
-
 	if req.Msg.GetExecutionId() == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("execution_id is required"))
 	}
@@ -260,12 +225,6 @@ func (s *RuntimeConnectServer) ResumeExecution(
 ) (*connect.Response[runtimev1.ResumeExecutionResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanExecutionRetry(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	if req.Msg.GetExecutionId() == "" {
@@ -366,11 +325,6 @@ func (s *RuntimeConnectServer) GetInstanceRun(
 func (s *RuntimeConnectServer) authorizeInstanceView(ctx context.Context) error {
 	if err := requireConnectAuth(ctx); err != nil {
 		return err
-	}
-	if s.authz != nil {
-		if err := s.authz.CanInstanceView(ctx); err != nil {
-			return authorizer.ToConnectError(err)
-		}
 	}
 
 	return nil

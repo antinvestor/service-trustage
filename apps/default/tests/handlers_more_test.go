@@ -2,9 +2,7 @@ package tests_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +18,7 @@ import (
 func (s *DefaultServiceSuite) TestWorkflowHandler_Lifecycle() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader([]byte(s.sampleDSL())))
 	createReq = createReq.WithContext(ctx)
@@ -62,7 +60,7 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_Lifecycle() {
 func (s *DefaultServiceSuite) TestWorkflowHandler_Errors() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	badReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader([]byte(`{"version":"1.0"}`)))
 	badReq = badReq.WithContext(ctx)
@@ -110,7 +108,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_ListAndRetry() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances?status=failed", nil)
 	listReq = listReq.WithContext(ctx)
@@ -156,7 +154,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_ListGetRetry() {
 	}
 	s.Require().NoError(s.outputRepo.Store(ctx, output))
 
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions", nil)
 	listReq = listReq.WithContext(ctx)
@@ -181,7 +179,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_ListGetRetry() {
 
 func (s *DefaultServiceSuite) TestExecutionHandler_GetErrors() {
 	ctx := s.tenantCtx()
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions/", nil)
 	getReq.SetPathValue("id", "")
@@ -194,7 +192,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_GetErrors() {
 func (s *DefaultServiceSuite) TestEventHandler_Timeline() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	audit := &models.WorkflowAuditEvent{InstanceID: "inst-1", EventType: "state.started", State: "step-a"}
 	s.Require().NoError(s.auditRepo.Append(ctx, audit))
@@ -264,7 +262,7 @@ func (s *DefaultServiceSuite) TestEventHandler_RateLimitExceeded() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
 	limiter := handlers.NewRateLimiter(cache.NewInMemoryCache(), 1)
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, limiter)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, limiter)
 
 	body := map[string]any{"event_type": "user.created", "source": "api", "payload": map[string]any{"id": "1"}}
 	payload, _ := json.Marshal(body)
@@ -285,7 +283,7 @@ func (s *DefaultServiceSuite) TestEventHandler_RateLimitExceeded() {
 func (s *DefaultServiceSuite) TestEventHandler_RejectsMissingEventType() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	body := map[string]any{"source": "api", "payload": map[string]any{"id": "1"}}
 	payload, _ := json.Marshal(body)
@@ -299,7 +297,7 @@ func (s *DefaultServiceSuite) TestEventHandler_RejectsMissingEventType() {
 
 func (s *DefaultServiceSuite) TestInstanceHandler_RetryErrors() {
 	ctx := s.tenantCtx()
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/instances//retry", nil)
 	req = req.WithContext(ctx)
@@ -310,7 +308,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_RetryErrors() {
 
 func (s *DefaultServiceSuite) TestExecutionHandler_RetryNotFound() {
 	ctx := s.tenantCtx()
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/executions/missing/retry", nil)
 	retryReq.SetPathValue("id", "missing")
@@ -322,7 +320,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_RetryNotFound() {
 
 func (s *DefaultServiceSuite) TestEventHandler_Timeline_Unauthorized() {
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/instances/inst-1/timeline", nil)
 	req.SetPathValue("id", "inst-1")
@@ -334,7 +332,7 @@ func (s *DefaultServiceSuite) TestEventHandler_Timeline_Unauthorized() {
 func (s *DefaultServiceSuite) TestEventHandler_InvalidJSON() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader([]byte("{")))
 	req = req.WithContext(ctx)
@@ -364,7 +362,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_ListFilters() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions?status=pending", nil)
 	listReq = listReq.WithContext(ctx)
@@ -384,7 +382,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_ListFilters() {
 	}
 	s.Require().NoError(s.instanceRepo.Create(ctx, instance))
 
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances?workflow_name=wf", nil)
 	listReq = listReq.WithContext(ctx)
@@ -395,7 +393,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_ListFilters() {
 
 func (s *DefaultServiceSuite) TestExecutionHandler_GetNotFound() {
 	ctx := s.tenantCtx()
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions/missing", nil)
 	getReq.SetPathValue("id", "missing")
@@ -407,7 +405,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_GetNotFound() {
 
 func (s *DefaultServiceSuite) TestInstanceHandler_RetryNotFound() {
 	ctx := s.tenantCtx()
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/instances/missing/retry", nil)
 	req.SetPathValue("id", "missing")
@@ -438,7 +436,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_RetryCreatesNewAttempt() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/executions/"+exec.ID+"/retry", nil)
 	retryReq.SetPathValue("id", exec.ID)
@@ -476,7 +474,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_RetryCreatesNewAttempt() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/instances/"+instance.ID+"/retry", nil)
 	retryReq.SetPathValue("id", instance.ID)
@@ -514,7 +512,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_RetryNotAllowed() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/executions/"+exec.ID+"/retry", nil)
 	retryReq.SetPathValue("id", exec.ID)
@@ -545,7 +543,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_RetryNotAllowed() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/instances/"+instance.ID+"/retry", nil)
 	retryReq.SetPathValue("id", instance.ID)
@@ -555,70 +553,8 @@ func (s *DefaultServiceSuite) TestInstanceHandler_RetryNotAllowed() {
 	s.Equal(http.StatusConflict, retryW.Code)
 }
 
-func (s *DefaultServiceSuite) TestWorkflowHandler_Forbidden() {
-	ctx := s.tenantCtx()
-	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), denyAuthz{}, metrics)
-
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader([]byte(s.sampleDSL())))
-	createReq = createReq.WithContext(ctx)
-	createW := httptest.NewRecorder()
-	h.CreateWorkflow(createW, createReq)
-	s.Equal(http.StatusForbidden, createW.Code)
-}
-
-type denyAuthz struct{}
-
-func (d denyAuthz) CanEventIngest(_ context.Context) error    { return errDenied }
-func (d denyAuthz) CanWorkflowManage(_ context.Context) error { return errDenied }
-func (d denyAuthz) CanWorkflowView(_ context.Context) error   { return errDenied }
-func (d denyAuthz) CanInstanceView(_ context.Context) error   { return errDenied }
-func (d denyAuthz) CanInstanceRetry(_ context.Context) error  { return errDenied }
-func (d denyAuthz) CanInstanceSignal(_ context.Context) error { return errDenied }
-func (d denyAuthz) CanExecutionView(_ context.Context) error  { return errDenied }
-func (d denyAuthz) CanExecutionRetry(_ context.Context) error { return errDenied }
-
-var errDenied = errors.New("denied")
-
-func (s *DefaultServiceSuite) TestExecutionHandler_Forbidden() {
-	ctx := s.tenantCtx()
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, denyAuthz{})
-
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions", nil)
-	listReq = listReq.WithContext(ctx)
-	listW := httptest.NewRecorder()
-	h.List(listW, listReq)
-	s.Equal(http.StatusForbidden, listW.Code)
-}
-
-func (s *DefaultServiceSuite) TestInstanceHandler_Forbidden() {
-	ctx := s.tenantCtx()
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, denyAuthz{})
-
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances", nil)
-	listReq = listReq.WithContext(ctx)
-	listW := httptest.NewRecorder()
-	h.List(listW, listReq)
-	s.Equal(http.StatusForbidden, listW.Code)
-}
-
-func (s *DefaultServiceSuite) TestEventHandler_Forbidden() {
-	ctx := s.tenantCtx()
-	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, denyAuthz{}, metrics, nil)
-
-	body := map[string]any{"event_type": "user.created", "source": "api", "payload": map[string]any{"id": "1"}}
-	payload, _ := json.Marshal(body)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader(payload))
-	req = req.WithContext(ctx)
-	w := httptest.NewRecorder()
-	h.IngestEvent(w, req)
-	s.Equal(http.StatusForbidden, w.Code)
-}
-
 func (s *DefaultServiceSuite) TestExecutionHandler_List_Unauthorized() {
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions", nil)
 	listW := httptest.NewRecorder()
@@ -627,7 +563,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_List_Unauthorized() {
 }
 
 func (s *DefaultServiceSuite) TestInstanceHandler_List_Unauthorized() {
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances", nil)
 	listW := httptest.NewRecorder()
@@ -637,7 +573,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_List_Unauthorized() {
 
 func (s *DefaultServiceSuite) TestWorkflowHandler_List_Unauthorized() {
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/workflows", nil)
 	listW := httptest.NewRecorder()
@@ -646,7 +582,7 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_List_Unauthorized() {
 }
 
 func (s *DefaultServiceSuite) TestExecutionHandler_Retry_Unauthorized() {
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/executions/1/retry", nil)
 	retryReq.SetPathValue("id", "1")
@@ -656,7 +592,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_Retry_Unauthorized() {
 }
 
 func (s *DefaultServiceSuite) TestInstanceHandler_Retry_Unauthorized() {
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/instances/1/retry", nil)
 	retryReq.SetPathValue("id", "1")
@@ -668,7 +604,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_Retry_Unauthorized() {
 func (s *DefaultServiceSuite) TestEventHandler_RateLimiter_UnknownClaims() {
 	metrics := telemetry.NewMetrics()
 	limiter := handlers.NewRateLimiter(cache.NewInMemoryCache(), 1)
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, limiter)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, limiter)
 
 	body := map[string]any{"event_type": "user.created", "source": "api", "payload": map[string]any{"id": "1"}}
 	payload, _ := json.Marshal(body)
@@ -696,7 +632,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_List_Limit() {
 		s.Require().NoError(s.instanceRepo.Create(ctx, inst))
 	}
 
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances?limit=1", nil)
 	listReq = listReq.WithContext(ctx)
 	listW := httptest.NewRecorder()
@@ -727,7 +663,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_List_Limit() {
 		s.Require().NoError(s.execRepo.Create(ctx, exec))
 	}
 
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions?limit=1", nil)
 	listReq = listReq.WithContext(ctx)
 	listW := httptest.NewRecorder()
@@ -738,7 +674,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_List_Limit() {
 func (s *DefaultServiceSuite) TestEventHandler_PayloadMetadata() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	body := map[string]any{"event_type": "user.created", "source": "api", "payload": map[string]any{"id": "1"}}
 	payload, _ := json.Marshal(body)
@@ -758,7 +694,7 @@ func (s *DefaultServiceSuite) TestEventHandler_PayloadMetadata() {
 func (s *DefaultServiceSuite) TestWorkflowHandler_Create_InvalidJSON() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader([]byte("{")))
 	createReq = createReq.WithContext(ctx)
@@ -788,7 +724,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_OutputAbsent() {
 	}
 	s.Require().NoError(s.execRepo.Create(ctx, exec))
 
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions/"+exec.ID+"?include_output=true", nil)
 	getReq.SetPathValue("id", exec.ID)
 	getReq = getReq.WithContext(ctx)
@@ -816,7 +752,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_List_StatusFilter() {
 	s.Require().NoError(s.instanceRepo.Create(ctx, instRunning))
 	s.Require().NoError(s.instanceRepo.Create(ctx, instFailed))
 
-	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances?status=failed", nil)
 	listReq = listReq.WithContext(ctx)
 	listW := httptest.NewRecorder()
@@ -825,7 +761,7 @@ func (s *DefaultServiceSuite) TestInstanceHandler_List_StatusFilter() {
 }
 
 func (s *DefaultServiceSuite) TestExecutionHandler_Get_Unauthorized() {
-	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	h := handlers.NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/executions/1", nil)
 	getReq.SetPathValue("id", "1")
@@ -837,7 +773,7 @@ func (s *DefaultServiceSuite) TestExecutionHandler_Get_Unauthorized() {
 func (s *DefaultServiceSuite) TestEventHandler_Ingest_Idempotency() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	body := map[string]any{
 		"event_type":      "user.created",
@@ -863,7 +799,7 @@ func (s *DefaultServiceSuite) TestEventHandler_Ingest_Idempotency() {
 func (s *DefaultServiceSuite) TestEventHandler_Timeline_Ordering() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, nil)
 
 	first := &models.WorkflowAuditEvent{InstanceID: "inst-2", EventType: "state.started", State: "step-a"}
 	second := &models.WorkflowAuditEvent{InstanceID: "inst-2", EventType: "state.completed", State: "step-a"}
@@ -882,7 +818,7 @@ func (s *DefaultServiceSuite) TestEventHandler_Timeline_Ordering() {
 func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_NotFound() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/missing/activate", nil)
 	req.SetPathValue("id", "missing")
@@ -894,7 +830,7 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_NotFound() {
 
 func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_Unauthorized() {
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/1/activate", nil)
 	req.SetPathValue("id", "1")
@@ -906,7 +842,7 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_Unauthorized() {
 func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_AlreadyActive() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, metrics)
+	h := handlers.NewWorkflowHandler(s.workflowBusiness(), metrics)
 
 	def := s.createWorkflow(ctx, s.sampleDSL())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/"+def.ID+"/activate", nil)
@@ -927,7 +863,7 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_AlreadyActive() {
 func (s *DefaultServiceSuite) TestFormHandler_ErrorsAndIdempotency() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewFormHandler(s.eventRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewFormHandler(s.eventRepo, metrics, nil)
 
 	missingFormReq := httptest.NewRequest(http.MethodPost, "/api/v1/forms//submit", bytes.NewReader([]byte(`{}`)))
 	missingFormReq = missingFormReq.WithContext(ctx)
@@ -976,7 +912,7 @@ func (s *DefaultServiceSuite) TestFormHandler_ErrorsAndIdempotency() {
 func (s *DefaultServiceSuite) TestWebhookHandler_ErrorsAndRateLimit() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWebhookReceiveHandler(s.eventRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewWebhookReceiveHandler(s.eventRepo, metrics, nil)
 
 	missingReq := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks//", bytes.NewReader([]byte(`{}`)))
 	missingReq = missingReq.WithContext(ctx)
@@ -992,7 +928,7 @@ func (s *DefaultServiceSuite) TestWebhookHandler_ErrorsAndRateLimit() {
 	s.Equal(http.StatusBadRequest, invalidW.Code)
 
 	limiter := handlers.NewRateLimiter(cache.NewInMemoryCache(), 1)
-	hLimited := handlers.NewWebhookReceiveHandler(s.eventRepo, allowAllAuthz{}, metrics, limiter)
+	hLimited := handlers.NewWebhookReceiveHandler(s.eventRepo, metrics, limiter)
 
 	body := map[string]any{"hello": "world"}
 	payload, _ := json.Marshal(body)

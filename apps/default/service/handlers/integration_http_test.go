@@ -15,7 +15,7 @@ import (
 
 func (s *HandlerSuite) TestWorkflowHandler_Lifecycle() {
 	ctx := s.tenantCtx()
-	h := NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, s.metrics)
+	h := NewWorkflowHandler(s.workflowBusiness(), s.metrics)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader([]byte(s.sampleDSL())))
 	createReq = createReq.WithContext(ctx)
@@ -78,8 +78,8 @@ func (s *HandlerSuite) TestInstanceAndExecutionHandlers_Lifecycle() {
 		Payload:     `{"result":"ok"}`,
 	}))
 
-	instanceHandler := NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
-	executionHandler := NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	instanceHandler := NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
+	executionHandler := NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 
 	listInstancesReq := httptest.NewRequest(http.MethodGet, "/api/v1/instances?status=failed", nil)
 	listInstancesReq = listInstancesReq.WithContext(ctx)
@@ -120,12 +120,11 @@ func (s *HandlerSuite) TestEventFormAndWebhookHandlers() {
 	eventHandler := NewEventHandler(
 		s.eventRepo,
 		s.auditRepo,
-		allowAllAuthz{},
 		s.metrics,
 		NewRateLimiter(cache.NewInMemoryCache(), 100),
 	)
-	formHandler := NewFormHandler(s.eventRepo, allowAllAuthz{}, s.metrics, nil)
-	webhookHandler := NewWebhookReceiveHandler(s.eventRepo, allowAllAuthz{}, s.metrics, nil)
+	formHandler := NewFormHandler(s.eventRepo, s.metrics, nil)
+	webhookHandler := NewWebhookReceiveHandler(s.eventRepo, s.metrics, nil)
 
 	eventBody, err := json.Marshal(map[string]any{
 		"event_type":      "user.created",
@@ -187,18 +186,17 @@ func (s *HandlerSuite) TestEventFormAndWebhookHandlers() {
 func (s *HandlerSuite) TestHTTPHandlers_ValidationAndNotFoundPaths() {
 	ctx := s.tenantCtx()
 
-	workflowHandler := NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, s.metrics)
-	instanceHandler := NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo, allowAllAuthz{})
-	executionHandler := NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo, allowAllAuthz{})
+	workflowHandler := NewWorkflowHandler(s.workflowBusiness(), s.metrics)
+	instanceHandler := NewInstanceHandler(s.instanceRepo, s.execRepo, s.auditRepo)
+	executionHandler := NewExecutionHandler(s.execRepo, s.instanceRepo, s.outputRepo, s.auditRepo)
 	eventHandler := NewEventHandler(
 		s.eventRepo,
 		s.auditRepo,
-		allowAllAuthz{},
 		s.metrics,
 		NewRateLimiter(cache.NewInMemoryCache(), 1),
 	)
-	formHandler := NewFormHandler(s.eventRepo, allowAllAuthz{}, s.metrics, nil)
-	webhookHandler := NewWebhookReceiveHandler(s.eventRepo, allowAllAuthz{}, s.metrics, nil)
+	formHandler := NewFormHandler(s.eventRepo, s.metrics, nil)
+	webhookHandler := NewWebhookReceiveHandler(s.eventRepo, s.metrics, nil)
 
 	tests := []struct {
 		name       string
@@ -346,8 +344,8 @@ func (s *HandlerSuite) TestHTTPHandlers_ValidationAndNotFoundPaths() {
 
 func (s *HandlerSuite) TestFormHandler_IdempotentAndWorkflowActivateInvalidTransition() {
 	ctx := s.tenantCtx()
-	formHandler := NewFormHandler(s.eventRepo, allowAllAuthz{}, s.metrics, nil)
-	workflowHandler := NewWorkflowHandler(s.workflowBusiness(), allowAllAuthz{}, s.metrics)
+	formHandler := NewFormHandler(s.eventRepo, s.metrics, nil)
+	workflowHandler := NewWorkflowHandler(s.workflowBusiness(), s.metrics)
 
 	first := httptest.NewRequest(http.MethodPost, "/api/v1/forms/f1/submit", bytes.NewReader([]byte(`{
 		"fields":{"email":"user@example.com"},

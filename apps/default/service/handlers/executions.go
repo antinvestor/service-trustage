@@ -7,7 +7,6 @@ import (
 
 	"github.com/pitabwire/util"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 )
 
@@ -18,7 +17,6 @@ type ExecutionHandler struct {
 	instanceRepo repository.WorkflowInstanceRepository
 	outputRepo   repository.WorkflowOutputRepository
 	auditRepo    repository.AuditEventRepository
-	authz        authz.Middleware
 }
 
 // NewExecutionHandler creates a new ExecutionHandler.
@@ -27,7 +25,6 @@ func NewExecutionHandler(
 	instanceRepo repository.WorkflowInstanceRepository,
 	outputRepo repository.WorkflowOutputRepository,
 	auditRepo repository.AuditEventRepository,
-	authzMiddleware authz.Middleware,
 ) *ExecutionHandler {
 	return &ExecutionHandler{
 		execRepo:     execRepo,
@@ -35,7 +32,6 @@ func NewExecutionHandler(
 		instanceRepo: instanceRepo,
 		outputRepo:   outputRepo,
 		auditRepo:    auditRepo,
-		authz:        authzMiddleware,
 	}
 }
 
@@ -45,13 +41,6 @@ func (h *ExecutionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanExecutionView(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	status := r.URL.Query().Get("status")
@@ -95,13 +84,6 @@ func (h *ExecutionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanExecutionView(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	executionID := r.PathValue("id")
@@ -161,13 +143,6 @@ func (h *ExecutionHandler) Retry(w http.ResponseWriter, r *http.Request) {
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanExecutionRetry(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	executionID := r.PathValue("id")

@@ -7,11 +7,9 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/security/authorizer"
 	"github.com/pitabwire/util"
 	"gorm.io/gorm"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	eventv1 "github.com/antinvestor/service-trustage/gen/go/event/v1"
@@ -23,7 +21,6 @@ import (
 type EventConnectServer struct {
 	eventRepo   repository.EventLogRepository
 	auditRepo   repository.AuditEventRepository
-	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
 
@@ -34,14 +31,12 @@ type EventConnectServer struct {
 func NewEventConnectServer(
 	eventRepo repository.EventLogRepository,
 	auditRepo repository.AuditEventRepository,
-	authzMiddleware authz.Middleware,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
 ) *EventConnectServer {
 	return &EventConnectServer{
 		eventRepo:   eventRepo,
 		auditRepo:   auditRepo,
-		authz:       authzMiddleware,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
@@ -96,11 +91,6 @@ func (s *EventConnectServer) validateIngestEventRequest(
 ) error {
 	if err := requireConnectAuth(ctx); err != nil {
 		return err
-	}
-	if s.authz != nil {
-		if err := s.authz.CanEventIngest(ctx); err != nil {
-			return authorizer.ToConnectError(err)
-		}
 	}
 	if s.rateLimiter != nil && !s.rateLimiter.Allow(ctx) {
 		return connect.NewError(connect.CodeResourceExhausted, errors.New("rate limit exceeded"))
@@ -190,12 +180,6 @@ func (s *EventConnectServer) GetInstanceTimeline(
 ) (*connect.Response[eventv1.GetInstanceTimelineResponse], error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
-	}
-
-	if s.authz != nil {
-		if err := s.authz.CanInstanceView(ctx); err != nil {
-			return nil, authorizer.ToConnectError(err)
-		}
 	}
 
 	if req.Msg.GetInstanceId() == "" {

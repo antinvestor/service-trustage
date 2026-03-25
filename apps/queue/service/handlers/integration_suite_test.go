@@ -15,7 +15,6 @@ import (
 	"github.com/pitabwire/frame/security"
 	"github.com/stretchr/testify/suite"
 
-	queueauthz "github.com/antinvestor/service-trustage/apps/queue/service/authz"
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 	"github.com/antinvestor/service-trustage/apps/queue/service/repository"
@@ -91,17 +90,6 @@ func (s *HandlerSuite) tenantCtx() context.Context {
 	claims.Subject = "test-user"
 	return claims.ClaimsToContext(context.Background())
 }
-
-type allowAllAuthz struct{}
-
-func (a allowAllAuthz) CanQueueManage(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanQueueView(_ context.Context) error     { return nil }
-func (a allowAllAuthz) CanItemEnqueue(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanQueueItemView(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanCounterManage(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanStatsView(_ context.Context) error     { return nil }
-
-var _ queueauthz.Middleware = allowAllAuthz{}
 
 func encodeBody(v any) *bytes.Reader {
 	data, err := json.Marshal(v)

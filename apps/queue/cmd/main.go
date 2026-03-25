@@ -67,10 +67,9 @@ func main() {
 	stats := business.NewQueueStatsService(itemRepo, counterRepo, rawCache, cfg.StatsCacheTTLSeconds)
 	mgr := business.NewQueueManager(defRepo, itemRepo, counterRepo, stats)
 
-	// Authorisation middleware.
+	// Authorisation.
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)
-	authzMiddleware := authz.NewMiddleware(auth)
 	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
 
 	// Rate limiter for enqueue operations.
@@ -80,10 +79,10 @@ func main() {
 	}
 
 	// HTTP handlers.
-	defHandler := handlers.NewQueueDefinitionHandler(mgr, authzMiddleware)
-	itemHandler := handlers.NewQueueItemHandler(mgr, authzMiddleware, enqueueLimiter)
-	counterHandler := handlers.NewQueueCounterHandler(mgr, authzMiddleware)
-	statsHandler := handlers.NewQueueStatsHandler(stats, authzMiddleware)
+	defHandler := handlers.NewQueueDefinitionHandler(mgr)
+	itemHandler := handlers.NewQueueItemHandler(mgr, enqueueLimiter)
+	counterHandler := handlers.NewQueueCounterHandler(mgr)
+	statsHandler := handlers.NewQueueStatsHandler(stats)
 
 	protectedMux := http.NewServeMux()
 

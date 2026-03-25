@@ -122,10 +122,9 @@ func main() {
 	// Business layer.
 	formBiz := business.NewFormStoreBusiness(defRepo, subRepo, uploader)
 
-	// Authorisation middleware.
+	// Authorisation.
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)
-	authzMiddleware := authz.NewMiddleware(auth)
 	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
 
 	// Rate limiter for submission operations.
@@ -135,8 +134,8 @@ func main() {
 	}
 
 	// HTTP handlers.
-	defHandler := handlers.NewFormDefinitionHandler(formBiz, authzMiddleware)
-	subHandler := handlers.NewFormSubmissionHandler(formBiz, authzMiddleware, submitLimiter)
+	defHandler := handlers.NewFormDefinitionHandler(formBiz)
+	subHandler := handlers.NewFormSubmissionHandler(formBiz, submitLimiter)
 
 	publicMux, protectedMux := setupRoutes(defHandler, subHandler, dbManager)
 	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(

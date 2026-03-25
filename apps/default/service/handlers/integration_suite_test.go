@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	defaultauthz "github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -223,19 +222,6 @@ func (s *HandlerSuite) sampleDSL() string {
   ]
 }`
 }
-
-type allowAllAuthz struct{}
-
-func (a allowAllAuthz) CanEventIngest(_ context.Context) error    { return nil }
-func (a allowAllAuthz) CanWorkflowManage(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanWorkflowView(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanInstanceView(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanInstanceRetry(_ context.Context) error  { return nil }
-func (a allowAllAuthz) CanInstanceSignal(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanExecutionView(_ context.Context) error  { return nil }
-func (a allowAllAuthz) CanExecutionRetry(_ context.Context) error { return nil }
-
-var _ defaultauthz.Middleware = allowAllAuthz{}
 
 func mustStructFromJSON(raw string) *structpb.Struct {
 	var payload map[string]any

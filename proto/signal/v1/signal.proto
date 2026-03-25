@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package signal.v1;
 
+import "common/v1/permissions.proto";
 import "gnostic/openapi/v3/annotations.proto";
 import "google/protobuf/struct.proto";
 
@@ -17,7 +18,96 @@ option (gnostic.openapi.v3.document) = {
 };
 
 service SignalService {
-  rpc SendSignal(SendSignalRequest) returns (SendSignalResponse);
+  option (common.v1.service_permissions) = {
+    namespace: "service_trustage"
+    permissions: [
+      "event_ingest",
+      "workflow_view",
+      "workflow_manage",
+      "instance_view",
+      "instance_retry",
+      "execution_view",
+      "execution_retry",
+      "execution_resume",
+      "signal_send"
+    ]
+    role_bindings: [
+      {
+        role: ROLE_OWNER
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_ADMIN
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_OPERATOR
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "instance_view",
+          "execution_view",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_VIEWER
+        permissions: [
+          "workflow_view",
+          "instance_view",
+          "execution_view"
+        ]
+      },
+      {
+        role: ROLE_MEMBER
+        permissions: [
+          "workflow_view",
+          "instance_view",
+          "execution_view"
+        ]
+      },
+      {
+        role: ROLE_SERVICE
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      }
+    ]
+  };
+
+  rpc SendSignal(SendSignalRequest) returns (SendSignalResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["signal_send"]
+    };
+  }
 }
 
 message SendSignalRequest {

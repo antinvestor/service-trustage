@@ -3,6 +3,7 @@ syntax = "proto3";
 package runtime.v1;
 
 import "common/v1/common.proto";
+import "common/v1/permissions.proto";
 import "gnostic/openapi/v3/annotations.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -19,13 +20,126 @@ option (gnostic.openapi.v3.document) = {
 };
 
 service RuntimeService {
-  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
-  rpc RetryInstance(RetryInstanceRequest) returns (RetryInstanceResponse);
-  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
-  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
-  rpc RetryExecution(RetryExecutionRequest) returns (RetryExecutionResponse);
-  rpc ResumeExecution(ResumeExecutionRequest) returns (ResumeExecutionResponse);
-  rpc GetInstanceRun(GetInstanceRunRequest) returns (GetInstanceRunResponse);
+  option (common.v1.service_permissions) = {
+    namespace: "service_trustage"
+    permissions: [
+      "event_ingest",
+      "workflow_view",
+      "workflow_manage",
+      "instance_view",
+      "instance_retry",
+      "execution_view",
+      "execution_retry",
+      "execution_resume",
+      "signal_send"
+    ]
+    role_bindings: [
+      {
+        role: ROLE_OWNER
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_ADMIN
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_OPERATOR
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "instance_view",
+          "execution_view",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_VIEWER
+        permissions: [
+          "workflow_view",
+          "instance_view",
+          "execution_view"
+        ]
+      },
+      {
+        role: ROLE_MEMBER
+        permissions: [
+          "workflow_view",
+          "instance_view",
+          "execution_view"
+        ]
+      },
+      {
+        role: ROLE_SERVICE
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      }
+    ]
+  };
+
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["instance_view"]
+    };
+  }
+  rpc RetryInstance(RetryInstanceRequest) returns (RetryInstanceResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["instance_retry"]
+    };
+  }
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["execution_view"]
+    };
+  }
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["execution_view"]
+    };
+  }
+  rpc RetryExecution(RetryExecutionRequest) returns (RetryExecutionResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["execution_retry"]
+    };
+  }
+  rpc ResumeExecution(ResumeExecutionRequest) returns (ResumeExecutionResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["execution_resume"]
+    };
+  }
+  rpc GetInstanceRun(GetInstanceRunRequest) returns (GetInstanceRunResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["instance_view"]
+    };
+  }
 }
 
 enum InstanceStatus {

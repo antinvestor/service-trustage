@@ -2,6 +2,24 @@ package authz
 
 import "github.com/pitabwire/frame/security"
 
+const (
+	NamespaceProfile       = "service_trustage"
+	NamespaceTenancyAccess = "tenancy_access"
+	NamespaceProfileUser   = "profile_user"
+)
+
+const (
+	RoleOwner   = "owner"
+	RoleAdmin   = "admin"
+	RoleMember  = "member"
+	RoleService = "service"
+)
+
+// GrantedRelation returns the OPL relation name for a direct grant.
+func GrantedRelation(permission string) string {
+	return "granted_" + permission
+}
+
 // BuildAccessTuple creates a tenancy_access#member tuple for a regular user.
 func BuildAccessTuple(tenancyPath, profileID string) security.RelationTuple {
 	return security.RelationTuple{

@@ -3,6 +3,7 @@ syntax = "proto3";
 package workflow.v1;
 
 import "common/v1/common.proto";
+import "common/v1/permissions.proto";
 import "gnostic/openapi/v3/annotations.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -19,10 +20,111 @@ option (gnostic.openapi.v3.document) = {
 };
 
 service WorkflowService {
-  rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse);
-  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse);
-  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
-  rpc ActivateWorkflow(ActivateWorkflowRequest) returns (ActivateWorkflowResponse);
+  option (common.v1.service_permissions) = {
+    namespace: "service_trustage"
+    permissions: [
+      "event_ingest",
+      "workflow_view",
+      "workflow_manage",
+      "instance_view",
+      "instance_retry",
+      "execution_view",
+      "execution_retry",
+      "execution_resume",
+      "signal_send"
+    ]
+    role_bindings: [
+      {
+        role: ROLE_OWNER
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_ADMIN
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_OPERATOR
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "instance_view",
+          "execution_view",
+          "signal_send"
+        ]
+      },
+      {
+        role: ROLE_VIEWER
+        permissions: [
+          "workflow_view",
+          "instance_view",
+          "execution_view"
+        ]
+      },
+      {
+        role: ROLE_MEMBER
+        permissions: [
+          "workflow_view",
+          "instance_view",
+          "execution_view"
+        ]
+      },
+      {
+        role: ROLE_SERVICE
+        permissions: [
+          "event_ingest",
+          "workflow_view",
+          "workflow_manage",
+          "instance_view",
+          "instance_retry",
+          "execution_view",
+          "execution_retry",
+          "execution_resume",
+          "signal_send"
+        ]
+      }
+    ]
+  };
+
+  rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["workflow_manage"]
+    };
+  }
+  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["workflow_view"]
+    };
+  }
+  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["workflow_view"]
+    };
+  }
+  rpc ActivateWorkflow(ActivateWorkflowRequest) returns (ActivateWorkflowResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["workflow_manage"]
+    };
+  }
 }
 
 enum WorkflowStatus {

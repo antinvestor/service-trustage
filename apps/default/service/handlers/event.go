@@ -8,7 +8,6 @@ import (
 
 	"github.com/pitabwire/util"
 
-	"github.com/antinvestor/service-trustage/apps/default/service/authz"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
@@ -18,7 +17,6 @@ import (
 type EventHandler struct {
 	eventRepo   repository.EventLogRepository
 	auditRepo   repository.AuditEventRepository
-	authz       authz.Middleware
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
 }
@@ -27,14 +25,12 @@ type EventHandler struct {
 func NewEventHandler(
 	eventRepo repository.EventLogRepository,
 	auditRepo repository.AuditEventRepository,
-	authzMiddleware authz.Middleware,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
 ) *EventHandler {
 	return &EventHandler{
 		eventRepo:   eventRepo,
 		auditRepo:   auditRepo,
-		authz:       authzMiddleware,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
@@ -55,13 +51,6 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanEventIngest(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	// Rate limit per tenant.
@@ -131,13 +120,6 @@ func (h *EventHandler) GetInstanceTimeline(w http.ResponseWriter, r *http.Reques
 
 	if !requireAuth(ctx, w) {
 		return
-	}
-
-	if h.authz != nil {
-		if err := h.authz.CanInstanceView(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
 	}
 
 	instanceID := r.PathValue("id")

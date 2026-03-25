@@ -2,7 +2,6 @@ package tests_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,22 +12,11 @@ import (
 	"github.com/antinvestor/service-trustage/pkg/telemetry"
 )
 
-type allowAllAuthz struct{}
-
-func (a allowAllAuthz) CanEventIngest(_ context.Context) error    { return nil }
-func (a allowAllAuthz) CanWorkflowManage(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanWorkflowView(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanInstanceView(_ context.Context) error   { return nil }
-func (a allowAllAuthz) CanInstanceRetry(_ context.Context) error  { return nil }
-func (a allowAllAuthz) CanInstanceSignal(_ context.Context) error { return nil }
-func (a allowAllAuthz) CanExecutionView(_ context.Context) error  { return nil }
-func (a allowAllAuthz) CanExecutionRetry(_ context.Context) error { return nil }
-
 func (s *DefaultServiceSuite) TestEventHandler_IngestEvent_Idempotent() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
 	rateLimiter := handlers.NewRateLimiter(cache.NewInMemoryCache(), 100)
-	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, allowAllAuthz{}, metrics, rateLimiter)
+	h := handlers.NewEventHandler(s.eventRepo, s.auditRepo, metrics, rateLimiter)
 
 	body := map[string]any{
 		"event_type":      "user.created",
@@ -60,7 +48,7 @@ func (s *DefaultServiceSuite) TestEventHandler_IngestEvent_Idempotent() {
 func (s *DefaultServiceSuite) TestFormHandler_SubmitForm() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewFormHandler(s.eventRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewFormHandler(s.eventRepo, metrics, nil)
 
 	body := map[string]any{
 		"fields": map[string]any{"email": "user@example.com"},
@@ -84,7 +72,7 @@ func (s *DefaultServiceSuite) TestFormHandler_SubmitForm() {
 func (s *DefaultServiceSuite) TestWebhookReceiveHandler_IncludesHeaders() {
 	ctx := s.tenantCtx()
 	metrics := telemetry.NewMetrics()
-	h := handlers.NewWebhookReceiveHandler(s.eventRepo, allowAllAuthz{}, metrics, nil)
+	h := handlers.NewWebhookReceiveHandler(s.eventRepo, metrics, nil)
 
 	body := map[string]any{"hello": "world"}
 	payload, _ := json.Marshal(body)

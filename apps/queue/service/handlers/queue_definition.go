@@ -6,15 +6,13 @@ import (
 
 	"github.com/pitabwire/util"
 
-	"github.com/antinvestor/service-trustage/apps/queue/service/authz"
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 )
 
 // QueueDefinitionHandler handles queue definition HTTP endpoints.
 type QueueDefinitionHandler struct {
-	mgr   business.QueueManager
-	authz authz.Middleware
+	mgr business.QueueManager
 }
 
 const (
@@ -23,8 +21,8 @@ const (
 )
 
 // NewQueueDefinitionHandler creates a new QueueDefinitionHandler.
-func NewQueueDefinitionHandler(mgr business.QueueManager, authz authz.Middleware) *QueueDefinitionHandler {
-	return &QueueDefinitionHandler{mgr: mgr, authz: authz}
+func NewQueueDefinitionHandler(mgr business.QueueManager) *QueueDefinitionHandler {
+	return &QueueDefinitionHandler{mgr: mgr}
 }
 
 // Create handles POST /api/v1/queues.
@@ -33,11 +31,6 @@ func (h *QueueDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) 
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -105,11 +98,6 @@ func (h *QueueDefinitionHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanQueueView(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	activeOnly := r.URL.Query().Get("active") == "true"
 
 	defs, err := h.mgr.ListQueues(ctx, activeOnly)
@@ -137,11 +125,6 @@ func (h *QueueDefinitionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authz.CanQueueView(ctx); err != nil {
-		writeAuthzError(w, err)
-		return
-	}
-
 	id := r.PathValue("id")
 
 	def, err := h.mgr.GetQueue(ctx, id)
@@ -162,11 +145,6 @@ func (h *QueueDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) 
 	log := util.Log(ctx)
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 
@@ -240,11 +218,6 @@ func (h *QueueDefinitionHandler) Delete(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 
 	if !requireAuth(ctx, w) {
-		return
-	}
-
-	if err := h.authz.CanQueueManage(ctx); err != nil {
-		writeAuthzError(w, err)
 		return
 	}
 

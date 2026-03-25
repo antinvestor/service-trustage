@@ -14,7 +14,7 @@ import (
 
 func (s *HandlerSuite) TestFormDefinitionHandler_Lifecycle() {
 	ctx := s.tenantCtx()
-	h := NewFormDefinitionHandler(s.biz, allowAllAuthz{})
+	h := NewFormDefinitionHandler(s.biz)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/form-definitions", encodeBody(map[string]any{
 		"form_id":     "loan-application",
@@ -74,7 +74,7 @@ func (s *HandlerSuite) TestFormSubmissionHandler_Lifecycle() {
 	}
 	s.Require().NoError(s.defRepo.Create(ctx, def))
 
-	h := NewFormSubmissionHandler(s.biz, allowAllAuthz{}, nil)
+	h := NewFormSubmissionHandler(s.biz, nil)
 
 	submitReq := httptest.NewRequest(
 		http.MethodPost,
@@ -132,7 +132,7 @@ func (s *HandlerSuite) TestFormSubmissionHandler_Lifecycle() {
 
 func (s *HandlerSuite) TestFormDefinitionHandler_ValidationAndNotFound() {
 	ctx := s.tenantCtx()
-	h := NewFormDefinitionHandler(s.biz, allowAllAuthz{})
+	h := NewFormDefinitionHandler(s.biz)
 
 	tests := []struct {
 		name       string
@@ -212,7 +212,7 @@ func (s *HandlerSuite) TestFormSubmissionHandler_ValidationRateLimitAndNotFound(
 	}
 	s.Require().NoError(s.defRepo.Create(ctx, def))
 
-	rateLimited := NewFormSubmissionHandler(s.biz, allowAllAuthz{}, NewRateLimiter(cache.NewInMemoryCache(), 1))
+	rateLimited := NewFormSubmissionHandler(s.biz, NewRateLimiter(cache.NewInMemoryCache(), 1))
 	okReq := httptest.NewRequest(http.MethodPost, "/api/v1/forms/"+def.FormID+"/submissions", encodeBody(map[string]any{
 		"submitter_id": "user-1",
 		"data":         map[string]any{"amount": 100},
@@ -237,7 +237,7 @@ func (s *HandlerSuite) TestFormSubmissionHandler_ValidationRateLimitAndNotFound(
 	rateLimited.Submit(rateW, rateReq)
 	s.Equal(http.StatusTooManyRequests, rateW.Code)
 
-	noLimit := NewFormSubmissionHandler(s.biz, allowAllAuthz{}, nil)
+	noLimit := NewFormSubmissionHandler(s.biz, nil)
 	tests := []struct {
 		name       string
 		method     string
