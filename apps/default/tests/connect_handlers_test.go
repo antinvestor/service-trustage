@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"connectrpc.com/connect"
-	commonv1 "github.com/antinvestor/apis/go/common/v1"
+	commonv1 "github.com/antinvestor/common/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"

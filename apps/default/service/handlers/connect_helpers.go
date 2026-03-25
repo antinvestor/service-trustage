@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	commonv1 "github.com/antinvestor/apis/go/common/v1"
+	commonv1 "github.com/antinvestor/common/v1"
 	"github.com/pitabwire/frame/security"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"

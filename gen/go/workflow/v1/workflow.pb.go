@@ -11,7 +11,7 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
-	v1 "github.com/antinvestor/apis/go/common/v1"
+	v1 "github.com/antinvestor/common/v1"
 	_ "github.com/google/gnostic/openapiv3"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"

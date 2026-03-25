@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"connectrpc.com/connect"
-	commonv1 "github.com/antinvestor/apis/go/common/v1"
+	commonv1 "github.com/antinvestor/common/v1"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"

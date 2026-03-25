@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"connectrpc.com/connect"
-	"github.com/antinvestor/apis/go/common/permissions"
+	"github.com/antinvestor/common/permissions"
 	"github.com/pitabwire/frame"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
