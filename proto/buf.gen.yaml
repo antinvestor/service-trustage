@@ -1,0 +1,12 @@
+version: v2
+managed:
+  enabled: true
+
+plugins:
+  # OpenAPI spec generation
+  - remote: buf.build/community/sudorandom-connect-openapi
+    out: ../apps/default
+    opt:
+      - features=connectrpc;gnostic;protovalidate
+      - content-types=json
+      - allow-get
