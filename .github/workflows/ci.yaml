@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
 jobs:
-  ci:
-    uses: antinvestor/common/.github/workflows/service-ci.yaml@main
-    with:
-      app_dirs: "apps/default apps/formstore apps/queue"
+  test:
+    uses: antinvestor/common/.github/workflows/go-test.yml@main
+  lint:
+    uses: antinvestor/common/.github/workflows/golangci-lint.yml@main

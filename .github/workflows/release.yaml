@@ -1,9 +1,10 @@
-name: Push proto to BSR
+name: Release
 on:
   push:
-    tags: ["v*"]
-    paths: ["proto/**"]
+    tags: ["v*.*.*"]
 jobs:
+  docker:
+    uses: antinvestor/common/.github/workflows/docker-release.yml@main
   buf-push:
     uses: antinvestor/common/.github/workflows/buf-push.yaml@main
     secrets:
