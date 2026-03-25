@@ -39,8 +39,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/antinvestor/common v1.1.0 h1:q7pg2u84FnsGWzNAzoPq8MnEbmch8lqBxJ9MHUZDoFg=
-github.com/antinvestor/common v1.1.0/go.mod h1:QfNAHy35nkmI9fAv6shRqh8cGbk/Ecgh+o4J62dYlAI=
+github.com/antinvestor/common v1.2.0 h1:u+bplpwFXRaxBGiFFy0SkmaJlKyr2MAs9r/WZDHqNZU=
+github.com/antinvestor/common v1.2.0/go.mod h1:QfNAHy35nkmI9fAv6shRqh8cGbk/Ecgh+o4J62dYlAI=
 github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op h1:kpBdlEPbRvff0mDD1gk7o9BhI16b9p5yYAXRlidpqJE=
 github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op/go.mod h1:IUpT2DPAKh6i/YhSbt6Gl3v2yvUZjmKncl7U91fup7E=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
