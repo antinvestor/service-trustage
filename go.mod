@@ -13,7 +13,7 @@ require (
 	github.com/google/cel-go v0.27.0
 	github.com/google/gnostic v0.7.1
 	github.com/lib/pq v1.12.0
-	github.com/pitabwire/frame v1.82.1
+	github.com/pitabwire/frame v1.83.0
 	github.com/pitabwire/util v0.7.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
