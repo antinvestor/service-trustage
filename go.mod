@@ -14,7 +14,7 @@ require (
 	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
 	github.com/lib/pq v1.12.0
-	github.com/pitabwire/frame v1.86.0
+	github.com/pitabwire/frame v1.87.0
 	github.com/pitabwire/util v0.7.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
