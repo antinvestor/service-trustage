@@ -1,5 +1,5 @@
-buf.build/gen/go/antinvestor/common/protocolbuffers/go v1.36.11-20260324155536-90f3f009e08b.1 h1:6Ih033B5OxSQyPan4Z3H/kwn5H7Rub5PzRzq7I+6Wt4=
-buf.build/gen/go/antinvestor/common/protocolbuffers/go v1.36.11-20260324155536-90f3f009e08b.1/go.mod h1:pIhhXoB1KgaAfsCc0hZ16ZEibXvXn0OoDnJKdYpP6JU=
+buf.build/gen/go/antinvestor/common/protocolbuffers/go v1.36.11-20260325040325-9771112f2289.1 h1:dth6SgfGACypQX3HqB37zd/OATeXAKQjn0M3r2e59HA=
+buf.build/gen/go/antinvestor/common/protocolbuffers/go v1.36.11-20260325040325-9771112f2289.1/go.mod h1:pIhhXoB1KgaAfsCc0hZ16ZEibXvXn0OoDnJKdYpP6JU=
 buf.build/gen/go/antinvestor/files/connectrpc/go v1.19.1-20260324160942-6ee4269665d4.2 h1:y36odVPj+E6apw/PPswyiCAiCF5++56SGovllyZTw4I=
 buf.build/gen/go/antinvestor/files/connectrpc/go v1.19.1-20260324160942-6ee4269665d4.2/go.mod h1:aVB26tPyLlp+pV23satGFaBmi7Kq8vZKJbNteh9v3LQ=
 buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260324160942-6ee4269665d4.1 h1:xlvWdtujuctf7L/Uco18FSTZXKpQHA9dyu2QZzsWLLE=
@@ -39,8 +39,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/antinvestor/common v1.2.1 h1:RcJvb6jyW2MWXZK1ewWBZtWIQKcCmhBfWiqAgTq/ZCs=
-github.com/antinvestor/common v1.2.1/go.mod h1:8RlAH7T2OGc8c0i3fyn71eKWho52GQI2qWSKi5DzsX8=
+github.com/antinvestor/common v1.3.0 h1:L2qNPzgX3xbBrmA09yygdOOdzqRavWUn1vhIEI1bA7A=
+github.com/antinvestor/common v1.3.0/go.mod h1:LIeoXEv10e9LlXPUz4fDm3Hml7TWxxKEtXcAW5HqnEM=
 github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op h1:kpBdlEPbRvff0mDD1gk7o9BhI16b9p5yYAXRlidpqJE=
 github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op/go.mod h1:IUpT2DPAKh6i/YhSbt6Gl3v2yvUZjmKncl7U91fup7E=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=

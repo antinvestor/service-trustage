@@ -3,8 +3,8 @@ package tests_test
 import (
 	"encoding/json"
 
+	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
 	"connectrpc.com/connect"
-	commonv1 "github.com/antinvestor/common/v1"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
