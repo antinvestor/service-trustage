@@ -7,11 +7,11 @@ toolchain go1.26.1
 require (
 	buf.build/gen/go/antinvestor/files/connectrpc/go v1.19.1-20260324160942-6ee4269665d4.2
 	buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260324160942-6ee4269665d4.1
+	buf.build/gen/go/gnostic/gnostic/protocolbuffers/go v1.36.11-20230414000709-087bc8072ce4.1
 	connectrpc.com/connect v1.19.1
-	github.com/antinvestor/common v1.2.0
+	github.com/antinvestor/common v1.2.1
 	github.com/boundaryml/baml v0.219.0
 	github.com/google/cel-go v0.27.0
-	github.com/google/gnostic v0.7.1
 	github.com/lib/pq v1.12.0
 	github.com/pitabwire/frame v1.83.0
 	github.com/pitabwire/util v0.7.0
@@ -28,7 +28,6 @@ require (
 require (
 	buf.build/gen/go/antinvestor/common/protocolbuffers/go v1.36.11-20260324155536-90f3f009e08b.1 // indirect
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
-	buf.build/gen/go/gnostic/gnostic/protocolbuffers/go v1.36.11-20230414000709-087bc8072ce4.1 // indirect
 	buf.build/go/protovalidate v1.1.3 // indirect
 	cel.dev/expr v0.25.1 // indirect
 	connectrpc.com/otelconnect v0.9.0 // indirect
@@ -60,7 +59,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.19.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
@@ -137,7 +135,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	gocloud.dev v0.45.0 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect

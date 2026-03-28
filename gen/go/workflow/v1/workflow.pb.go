@@ -11,8 +11,8 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
+	_ "buf.build/gen/go/gnostic/gnostic/protocolbuffers/go/gnostic/openapi/v3"
 	v1 "github.com/antinvestor/common/v1"
-	_ "github.com/google/gnostic/openapiv3"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
