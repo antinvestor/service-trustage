@@ -1,0 +1,13 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  errors:
+    # Generated code produces these warnings
+    annotate_overrides: ignore
+    camel_case_types: ignore
+    constant_identifier_names: ignore
+    non_constant_identifier_names: ignore
+    unnecessary_import: ignore
+    depend_on_referenced_packages: ignore
+    implementation_imports: ignore
+    unintended_html_in_doc_comment: ignore
