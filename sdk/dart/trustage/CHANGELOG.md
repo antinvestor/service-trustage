@@ -1,3 +1,4 @@
 ## 0.1.0
 
-- Initial release
+- Generated Dart SDK from proto definitions
+
