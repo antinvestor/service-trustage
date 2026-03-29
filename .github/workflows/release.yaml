@@ -7,14 +7,8 @@ jobs:
     uses: antinvestor/common/.github/workflows/docker-release.yml@main
   buf-push:
     uses: antinvestor/common/.github/workflows/buf-push.yaml@main
-    with:
-      proto_dir: "."
     secrets:
       buf_token: ${{ secrets.BUF_TOKEN }}
-  dart-publish:
-    uses: antinvestor/common/.github/workflows/dart-publish.yml@main
-    secrets:
-      pub_credentials: ${{ secrets.PUB_DEV_CREDENTIALS }}
   opl-push:
     uses: antinvestor/common/.github/workflows/opl-push.yml@main
     secrets:
