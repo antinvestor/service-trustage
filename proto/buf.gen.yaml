@@ -11,14 +11,43 @@ plugins:
       - content-types=json
       - allow-get
 
-  # Dart protobuf generation
+  # Dart protobuf generation - one output per module
   - remote: buf.build/protocolbuffers/dart:v21.1.2
-    out: ../sdk/dart/trustage/lib/src
+    out: ../sdk/dart/event/lib/src
     include_imports: true
     include_wkt: true
 
-  # Dart ConnectRPC generation
   - remote: buf.build/connectrpc/dart
-    out: ../sdk/dart/trustage/lib/src
+    out: ../sdk/dart/event/lib/src
+    include_imports: true
+    include_wkt: true
+
+  - remote: buf.build/protocolbuffers/dart:v21.1.2
+    out: ../sdk/dart/runtime/lib/src
+    include_imports: true
+    include_wkt: true
+
+  - remote: buf.build/connectrpc/dart
+    out: ../sdk/dart/runtime/lib/src
+    include_imports: true
+    include_wkt: true
+
+  - remote: buf.build/protocolbuffers/dart:v21.1.2
+    out: ../sdk/dart/signal/lib/src
+    include_imports: true
+    include_wkt: true
+
+  - remote: buf.build/connectrpc/dart
+    out: ../sdk/dart/signal/lib/src
+    include_imports: true
+    include_wkt: true
+
+  - remote: buf.build/protocolbuffers/dart:v21.1.2
+    out: ../sdk/dart/workflow/lib/src
+    include_imports: true
+    include_wkt: true
+
+  - remote: buf.build/connectrpc/dart
+    out: ../sdk/dart/workflow/lib/src
     include_imports: true
     include_wkt: true
