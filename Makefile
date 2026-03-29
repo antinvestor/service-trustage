@@ -8,3 +8,6 @@ ifeq (,$(wildcard .tmp/Makefile.common))
 endif
 
 include .tmp/Makefile.common
+
+format: ## Format Go files (used by pre-commit hook)
+	gofmt -w .

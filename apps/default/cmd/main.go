@@ -155,7 +155,8 @@ func main() { //nolint:funlen // main function wiring
 	for k, v := range permissions.BuildProcedureMap(signalSD) {
 		procMap[k] = v
 	}
-	functionChecker := authorizer.NewFunctionChecker(auth, "service_trustage")
+	svcPerms := permissions.ForService(workflowSD)
+	functionChecker := authorizer.NewFunctionChecker(auth, svcPerms.Namespace)
 	functionAccessInterceptor := connectInterceptors.NewFunctionAccessInterceptor(functionChecker, procMap)
 
 	defaultInterceptorList, err := connectInterceptors.DefaultList(
