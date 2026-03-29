@@ -7,6 +7,8 @@ jobs:
     uses: antinvestor/common/.github/workflows/docker-release.yml@main
   buf-push:
     uses: antinvestor/common/.github/workflows/buf-push.yaml@main
+    with:
+      proto_dir: "."
     secrets:
       buf_token: ${{ secrets.BUF_TOKEN }}
   dart-publish:

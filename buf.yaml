@@ -1,6 +1,13 @@
 version: v2
 modules:
-  - path: proto
+  - path: proto/event
+    name: buf.build/antinvestor/event
+  - path: proto/runtime
+    name: buf.build/antinvestor/runtime
+  - path: proto/signal
+    name: buf.build/antinvestor/signal
+  - path: proto/workflow
+    name: buf.build/antinvestor/workflow
 deps:
   - buf.build/antinvestor/common
   - buf.build/gnostic/gnostic
@@ -8,6 +15,8 @@ deps:
 lint:
   use:
     - STANDARD
+  except:
+    - PACKAGE_DIRECTORY_MATCH
 
 breaking:
   use:
