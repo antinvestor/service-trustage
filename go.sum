@@ -194,12 +194,12 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
-github.com/ory/keto/proto v0.13.0-alpha.0 h1:9ZzjDbaBgriHGVC8fUJKD1pDqQ9nHEFOO3bT971FfBY=
-github.com/ory/keto/proto v0.13.0-alpha.0/go.mod h1:6RagCXA7X1hhFSVjcy13ruIo8Dq/nj4J0mcN92qL+hY=
+github.com/ory/keto/proto v0.13.0-alpha.0.0.20260327085200-c0e5fcbbbce1 h1:1Mk/k+WhJukiWSh/jEpIcxZwECiQ2VZLiUGpoZBXTLY=
+github.com/ory/keto/proto v0.13.0-alpha.0.0.20260327085200-c0e5fcbbbce1/go.mod h1:c2UboItfGpqIzXoXlxBRMCp3rQqO+Wx2ecsH25jcWxU=
 github.com/panjf2000/ants/v2 v2.12.0 h1:u9JhESo83i/GkZnhfTNuFMMWcNt7mnV1bGJ6FT4wXH8=
 github.com/panjf2000/ants/v2 v2.12.0/go.mod h1:tSQuaNQ6r6NRhPt+IZVUevvDyFMTs+eS4ztZc52uJTY=
-github.com/pitabwire/frame v1.91.0 h1:Uze8LJMLpkMkZgoXHSO60r9elt0+o47LjoRxZnkK2Kw=
-github.com/pitabwire/frame v1.91.0/go.mod h1:K4phA2bqdZJhHqX0SNvbtBaS8ojwUkh6ScEWALHstfM=
+github.com/pitabwire/frame v1.92.0 h1:c/XyJFsgBYCgOAjmJUBaKhNqsK+1OddVi6z4c8Oe7i4=
+github.com/pitabwire/frame v1.92.0/go.mod h1:dGl3TA4ZPSY/0CVF1R18GZlknVquuGNyjLnM3/G2oaU=
 github.com/pitabwire/natspubsub v0.8.0 h1:Z3cevthjRVmGhqycGYm6KxvVIiXYNNklBi2Ig2jd8UM=
 github.com/pitabwire/natspubsub v0.8.0/go.mod h1:ytLmmd6CZ5m2ackMRDDvF5gmXHDuTG+1vcjiLRUKSgs=
 github.com/pitabwire/util v0.7.0 h1:37QUftcS/h9cPwSUJTU2gx/JWUfg4HXSPoejKE0Pqn4=
