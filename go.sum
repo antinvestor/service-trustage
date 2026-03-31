@@ -39,8 +39,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/antinvestor/common v1.3.1 h1:NGZ63RXgdtRI/DWk/qm/494XRII4PCi6aXL/cPe1JdU=
-github.com/antinvestor/common v1.3.1/go.mod h1:LIeoXEv10e9LlXPUz4fDm3Hml7TWxxKEtXcAW5HqnEM=
+github.com/antinvestor/common v1.4.0 h1:aYtZnomAmin3Rw25L/bUmxx+2vK4llg4kLCmrz79JRc=
+github.com/antinvestor/common v1.4.0/go.mod h1:LIeoXEv10e9LlXPUz4fDm3Hml7TWxxKEtXcAW5HqnEM=
 github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op h1:kpBdlEPbRvff0mDD1gk7o9BhI16b9p5yYAXRlidpqJE=
 github.com/antithesishq/antithesis-sdk-go v0.6.0-default-no-op/go.mod h1:IUpT2DPAKh6i/YhSbt6Gl3v2yvUZjmKncl7U91fup7E=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
@@ -198,12 +198,12 @@ github.com/ory/keto/proto v0.13.0-alpha.0.0.20260327085200-c0e5fcbbbce1 h1:1Mk/k
 github.com/ory/keto/proto v0.13.0-alpha.0.0.20260327085200-c0e5fcbbbce1/go.mod h1:c2UboItfGpqIzXoXlxBRMCp3rQqO+Wx2ecsH25jcWxU=
 github.com/panjf2000/ants/v2 v2.12.0 h1:u9JhESo83i/GkZnhfTNuFMMWcNt7mnV1bGJ6FT4wXH8=
 github.com/panjf2000/ants/v2 v2.12.0/go.mod h1:tSQuaNQ6r6NRhPt+IZVUevvDyFMTs+eS4ztZc52uJTY=
-github.com/pitabwire/frame v1.92.2 h1:n4gJEWnFs5ZeRT42xDn7IMEQpyZlRCq1o40rLDN0rjI=
-github.com/pitabwire/frame v1.92.2/go.mod h1:dGl3TA4ZPSY/0CVF1R18GZlknVquuGNyjLnM3/G2oaU=
+github.com/pitabwire/frame v1.93.0 h1:QqQ2CxuVtHBCP7LX97vkqkVXHVJpSGmP/F1Bd/14siY=
+github.com/pitabwire/frame v1.93.0/go.mod h1:nBKPQEIIaBgtai63FQLFoLKev7giVbeXKsgCaUjK/18=
 github.com/pitabwire/natspubsub v0.8.0 h1:Z3cevthjRVmGhqycGYm6KxvVIiXYNNklBi2Ig2jd8UM=
 github.com/pitabwire/natspubsub v0.8.0/go.mod h1:ytLmmd6CZ5m2ackMRDDvF5gmXHDuTG+1vcjiLRUKSgs=
-github.com/pitabwire/util v0.7.0 h1:37QUftcS/h9cPwSUJTU2gx/JWUfg4HXSPoejKE0Pqn4=
-github.com/pitabwire/util v0.7.0/go.mod h1:JrLiS3K4VXsLZE38LLvq1N0X2j0fs33QLz/zMXf3zc4=
+github.com/pitabwire/util v0.8.0 h1:LNKCTMmfurjk4ShG1peTuMFGsOAR5o5jIZ84lHNvwlU=
+github.com/pitabwire/util v0.8.0/go.mod h1:JrLiS3K4VXsLZE38LLvq1N0X2j0fs33QLz/zMXf3zc4=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
