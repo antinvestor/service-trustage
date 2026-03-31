@@ -100,7 +100,7 @@ func (h *InstanceHandler) Retry(w http.ResponseWriter, r *http.Request) {
 
 	newExec, retryErr := createRetryExecution(ctx, h.runtimeRepo, h.auditRepo, exec, instance)
 	if retryErr != nil {
-		log.WithError(retryErr).Error("retry instance failed")
+		log.WithError(retryErr).Error("retry instance failed", "instance_id", instanceID)
 		http.Error(w, retryErr.Error(), http.StatusConflict)
 		return
 	}

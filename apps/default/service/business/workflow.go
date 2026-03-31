@@ -69,11 +69,6 @@ func (b *workflowBusiness) CreateWorkflow(
 	// Validate DSL.
 	result := dsl.Validate(spec)
 	if !result.Valid() {
-		log.Error("DSL validation failed",
-			"errors", len(result.Errors),
-			"workflow", spec.Name,
-		)
-
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, result.Error())
 	}
 

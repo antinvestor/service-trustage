@@ -68,7 +68,7 @@ func (h *QueueItemHandler) Enqueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.mgr.Enqueue(ctx, item); err != nil {
-		log.WithError(err).Error("failed to enqueue item")
+		log.WithError(err).Error("failed to enqueue item", "queue_id", queueID)
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
 

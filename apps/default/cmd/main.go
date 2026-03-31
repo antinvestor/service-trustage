@@ -74,7 +74,7 @@ func main() { //nolint:funlen // main function wiring
 		if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
 			log.WithError(migrateErr).Fatal("database migration failed")
 		}
-		log.Info("database migration completed successfully")
+		log.Debug("database migration completed")
 		return
 	}
 
@@ -188,9 +188,9 @@ func main() { //nolint:funlen // main function wiring
 
 		go func() {
 			defer schedulerWg.Done()
-			log.Info("scheduler starting", "scheduler", name)
+			log.Debug("scheduler starting", "scheduler", name)
 			startFn(schedulerCtx)
-			log.Info("scheduler stopped", "scheduler", name)
+			log.Debug("scheduler stopped", "scheduler", name)
 		}()
 	}
 
@@ -331,7 +331,7 @@ func main() { //nolint:funlen // main function wiring
 	// Graceful scheduler shutdown.
 	schedulerCancel()
 	schedulerWg.Wait()
-	log.Info("all schedulers stopped")
+	log.Debug("all schedulers stopped")
 }
 
 func setupConnectorRegistry(httpClient *http.Client) *connector.Registry {

@@ -78,7 +78,7 @@ func (h *QueueDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.mgr.CreateQueue(ctx, def); err != nil {
-		log.WithError(err).Error("failed to create queue")
+		log.WithError(err).Error("failed to create queue", "name", req.Name)
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
 
@@ -202,7 +202,7 @@ func (h *QueueDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if updateErr := h.mgr.UpdateQueue(ctx, def); updateErr != nil {
-		log.WithError(updateErr).Error("failed to update queue")
+		log.WithError(updateErr).Error("failed to update queue", "queue_id", id)
 		status, msg := httpStatusForError(updateErr)
 		http.Error(w, msg, status)
 

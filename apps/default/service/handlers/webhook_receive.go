@@ -81,7 +81,7 @@ func (h *WebhookReceiveHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.eventRepo.Create(ctx, eventLog); err != nil {
-		log.WithError(err).Error("failed to store webhook event")
+		log.WithError(err).Error("failed to store webhook event", "webhook_id", webhookID)
 		http.Error(w, "failed to process webhook", http.StatusInternalServerError)
 
 		return

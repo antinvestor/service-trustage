@@ -30,7 +30,6 @@ func (w *EventRouterWorker) Handle(ctx context.Context, _ map[string]string, mes
 
 	var event events.IngestedEventMessage
 	if err := json.Unmarshal(message, &event); err != nil {
-		log.WithError(err).Error("failed to unmarshal ingested event")
 		return fmt.Errorf("unmarshal event: %w", err)
 	}
 
@@ -49,8 +48,7 @@ func (w *EventRouterWorker) Handle(ctx context.Context, _ map[string]string, mes
 
 	created, err := w.router.RouteEvent(ctx, &event)
 	if err != nil {
-		log.WithError(err).Error("event routing failed", "event_id", event.EventID)
-		return fmt.Errorf("route event: %w", err)
+		return fmt.Errorf("route event %s: %w", event.EventID, err)
 	}
 
 	if created > 0 {

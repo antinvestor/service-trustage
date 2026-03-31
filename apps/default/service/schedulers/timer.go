@@ -42,7 +42,7 @@ func (s *TimerScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.TimerIntervalSeconds) * time.Second
 
-	log.Info("timer scheduler started", "interval_seconds", s.cfg.TimerIntervalSeconds)
+	log.Debug("timer scheduler started", "interval_seconds", s.cfg.TimerIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -52,10 +52,10 @@ func (s *TimerScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			fired := s.RunOnce(ctx)
 			if fired > 0 {
-				log.Info("timer scheduler completed", "fired", fired)
+				log.Debug("timer scheduler completed", "fired", fired)
 			}
 		case <-ctx.Done():
-			log.Info("timer scheduler stopped")
+			log.Debug("timer scheduler stopped")
 			return
 		}
 	}

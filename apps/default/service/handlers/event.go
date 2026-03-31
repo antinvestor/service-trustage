@@ -96,7 +96,7 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.eventRepo.Create(ctx, eventLog); err != nil {
-		log.WithError(err).Error("failed to store event")
+		log.WithError(err).Error("failed to store event", "event_type", req.EventType)
 		http.Error(w, "failed to store event", http.StatusInternalServerError)
 
 		return

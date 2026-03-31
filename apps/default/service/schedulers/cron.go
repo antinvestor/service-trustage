@@ -44,7 +44,7 @@ func NewCronScheduler(
 func (s *CronScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 
-	log.Info("cron scheduler started", "interval_seconds", int(cronCheckInterval.Seconds()))
+	log.Debug("cron scheduler started", "interval_seconds", int(cronCheckInterval.Seconds()))
 
 	ticker := time.NewTicker(cronCheckInterval)
 	defer ticker.Stop()
@@ -54,10 +54,10 @@ func (s *CronScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			fired := s.RunOnce(ctx)
 			if fired > 0 {
-				log.Info("cron scheduler completed", "fired", fired)
+				log.Debug("cron scheduler completed", "fired", fired)
 			}
 		case <-ctx.Done():
-			log.Info("cron scheduler stopped")
+			log.Debug("cron scheduler stopped")
 			return
 		}
 	}

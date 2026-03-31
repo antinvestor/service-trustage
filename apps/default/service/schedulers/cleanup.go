@@ -43,7 +43,7 @@ func (s *CleanupScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.CleanupIntervalHours) * time.Hour
 
-	log.Info("cleanup scheduler started",
+	log.Debug("cleanup scheduler started",
 		"interval_hours", s.cfg.CleanupIntervalHours,
 		"retention_days", s.cfg.RetentionDays,
 	)
@@ -56,10 +56,10 @@ func (s *CleanupScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			deleted := s.RunOnce(ctx)
 			if deleted > 0 {
-				log.Info("cleanup scheduler completed", "deleted", deleted)
+				log.Debug("cleanup scheduler completed", "deleted", deleted)
 			}
 		case <-ctx.Done():
-			log.Info("cleanup scheduler stopped")
+			log.Debug("cleanup scheduler stopped")
 			return
 		}
 	}

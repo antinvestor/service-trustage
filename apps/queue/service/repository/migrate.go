@@ -40,7 +40,7 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		}
 	}
 
-	log.Info("database auto-migration completed successfully")
+	log.Debug("database auto-migration completed")
 
 	return nil
 }

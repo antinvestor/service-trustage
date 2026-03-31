@@ -109,7 +109,7 @@ func (h *FormHandler) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.eventRepo.Create(ctx, eventLog); err != nil {
-		log.WithError(err).Error("failed to store form submission")
+		log.WithError(err).Error("failed to store form submission", "form_id", formID)
 		http.Error(w, "failed to store form submission", http.StatusInternalServerError)
 
 		return

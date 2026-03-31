@@ -52,7 +52,7 @@ func (s *TimeoutScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.TimeoutIntervalSeconds) * time.Second
 
-	log.Info("timeout scheduler started", "interval_seconds", s.cfg.TimeoutIntervalSeconds)
+	log.Debug("timeout scheduler started", "interval_seconds", s.cfg.TimeoutIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -62,10 +62,10 @@ func (s *TimeoutScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			timedOut := s.RunOnce(ctx)
 			if timedOut > 0 {
-				log.Info("timeout scheduler completed", "timed_out", timedOut)
+				log.Debug("timeout scheduler completed", "timed_out", timedOut)
 			}
 		case <-ctx.Done():
-			log.Info("timeout scheduler stopped")
+			log.Debug("timeout scheduler stopped")
 			return
 		}
 	}
@@ -104,7 +104,7 @@ func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 
 		// Attempt to schedule a retry.
 		if retried := s.scheduleRetryIfAllowed(ctx, exec); retried {
-			log.Info("timeout scheduler: retry scheduled",
+			log.Debug("timeout scheduler: retry scheduled",
 				"execution_id", exec.ID,
 				"attempt", exec.Attempt,
 			)

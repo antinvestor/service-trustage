@@ -433,7 +433,7 @@ func (e *stateEngine) Commit( //nolint:funlen // commit coordinates validation, 
 		Payload:     string(req.Output),
 	})
 
-	log.Info("execution committed",
+	log.Debug("execution committed",
 		"execution_id", req.ExecutionID,
 		"state", exec.State,
 		"instance_id", exec.InstanceID,

@@ -65,7 +65,7 @@ func (h *FormDefinitionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.biz.CreateDefinition(ctx, def); err != nil {
-		log.WithError(err).Error("failed to create form definition")
+		log.WithError(err).Error("failed to create form definition", "form_id", req.FormID)
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
 
@@ -176,7 +176,7 @@ func (h *FormDefinitionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if updateErr := h.biz.UpdateDefinition(ctx, def); updateErr != nil {
-		log.WithError(updateErr).Error("failed to update form definition")
+		log.WithError(updateErr).Error("failed to update form definition", "definition_id", id)
 		status, msg := httpStatusForError(updateErr)
 		http.Error(w, msg, status)
 

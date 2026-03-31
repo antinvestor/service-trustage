@@ -165,7 +165,7 @@ func (h *ExecutionHandler) Retry(w http.ResponseWriter, r *http.Request) {
 
 	newExec, retryErr := createRetryExecution(ctx, h.runtimeRepo, h.auditRepo, exec, instance)
 	if retryErr != nil {
-		log.WithError(retryErr).Error("retry execution failed")
+		log.WithError(retryErr).Error("retry execution failed", "execution_id", executionID)
 		http.Error(w, retryErr.Error(), http.StatusConflict)
 		return
 	}

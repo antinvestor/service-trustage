@@ -67,7 +67,7 @@ func (s *EventConnectServer) IngestEvent(
 
 	duplicateResponse, duplicated, createErr := s.storeEventWithDuplicateRecovery(ctx, eventLog)
 	if createErr != nil {
-		log.WithError(createErr).Error("failed to store event")
+		log.WithError(createErr).Error("failed to store event", "event_type", eventLog.EventType)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", createErr))
 	}
 	if duplicated {

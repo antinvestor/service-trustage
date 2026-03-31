@@ -43,7 +43,7 @@ func (s *RetryScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.RetryIntervalSeconds) * time.Second
 
-	log.Info("retry scheduler started", "interval_seconds", s.cfg.RetryIntervalSeconds)
+	log.Debug("retry scheduler started", "interval_seconds", s.cfg.RetryIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -53,10 +53,10 @@ func (s *RetryScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			retried := s.RunOnce(ctx)
 			if retried > 0 {
-				log.Info("retry scheduler completed", "retried", retried)
+				log.Debug("retry scheduler completed", "retried", retried)
 			}
 		case <-ctx.Done():
-			log.Info("retry scheduler stopped")
+			log.Debug("retry scheduler stopped")
 			return
 		}
 	}
@@ -94,7 +94,7 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 		}
 
 		if instance.Status != models.InstanceStatusRunning {
-			log.Info("retry scheduler: skipping retry for non-running instance",
+			log.Debug("retry scheduler: skipping retry for non-running instance",
 				"execution_id", exec.ID,
 				"instance_status", instance.Status,
 			)

@@ -36,7 +36,7 @@ func (s *ScopeScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.ScopeIntervalSeconds) * time.Second
 
-	log.Info("scope scheduler started", "interval_seconds", s.cfg.ScopeIntervalSeconds)
+	log.Debug("scope scheduler started", "interval_seconds", s.cfg.ScopeIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -46,10 +46,10 @@ func (s *ScopeScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			reconciled := s.RunOnce(ctx)
 			if reconciled > 0 {
-				log.Info("scope scheduler completed", "reconciled", reconciled)
+				log.Debug("scope scheduler completed", "reconciled", reconciled)
 			}
 		case <-ctx.Done():
-			log.Info("scope scheduler stopped")
+			log.Debug("scope scheduler stopped")
 			return
 		}
 	}

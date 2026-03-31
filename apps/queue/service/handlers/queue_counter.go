@@ -56,7 +56,7 @@ func (h *QueueCounterHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.mgr.CreateCounter(ctx, counter); err != nil {
-		log.WithError(err).Error("failed to create counter")
+		log.WithError(err).Error("failed to create counter", "queue_id", queueID)
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
 
@@ -180,7 +180,7 @@ func (h *QueueCounterHandler) CallNext(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.mgr.CallNext(ctx, id)
 	if err != nil {
-		log.WithError(err).Error("failed to call next")
+		log.WithError(err).Error("failed to call next", "counter_id", id)
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
 

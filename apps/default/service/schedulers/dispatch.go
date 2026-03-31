@@ -45,7 +45,7 @@ func (s *DispatchScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.DispatchIntervalSeconds) * time.Second
 
-	log.Info("dispatch scheduler started", "interval_seconds", s.cfg.DispatchIntervalSeconds)
+	log.Debug("dispatch scheduler started", "interval_seconds", s.cfg.DispatchIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -55,10 +55,10 @@ func (s *DispatchScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			dispatched := s.RunUntilDrained(ctx)
 			if dispatched > 0 {
-				log.Info("dispatch scheduler completed", "dispatched", dispatched)
+				log.Debug("dispatch scheduler completed", "dispatched", dispatched)
 			}
 		case <-ctx.Done():
-			log.Info("dispatch scheduler stopped")
+			log.Debug("dispatch scheduler stopped")
 			return
 		}
 	}

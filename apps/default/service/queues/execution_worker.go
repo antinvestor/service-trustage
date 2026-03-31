@@ -52,7 +52,6 @@ func (w *ExecutionWorker) Handle(ctx context.Context, _ map[string]string, messa
 	var cmd business.ExecutionCommand
 	if err := json.Unmarshal(message, &cmd); err != nil {
 		handleErr = fmt.Errorf("unmarshal execution command: %w", err)
-		log.WithError(handleErr).Error("failed to unmarshal execution command")
 		return handleErr
 	}
 

@@ -49,7 +49,7 @@ func (s *OutboxScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.OutboxIntervalSeconds) * time.Second
 
-	log.Info("outbox scheduler started", "interval_seconds", s.cfg.OutboxIntervalSeconds)
+	log.Debug("outbox scheduler started", "interval_seconds", s.cfg.OutboxIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -59,10 +59,10 @@ func (s *OutboxScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			published := s.RunUntilDrained(ctx)
 			if published > 0 {
-				log.Info("outbox scheduler completed", "published", published)
+				log.Debug("outbox scheduler completed", "published", published)
 			}
 		case <-ctx.Done():
-			log.Info("outbox scheduler stopped")
+			log.Debug("outbox scheduler stopped")
 			return
 		}
 	}

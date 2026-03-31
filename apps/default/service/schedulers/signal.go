@@ -38,7 +38,7 @@ func (s *SignalScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 	interval := time.Duration(s.cfg.SignalIntervalSeconds) * time.Second
 
-	log.Info("signal scheduler started", "interval_seconds", s.cfg.SignalIntervalSeconds)
+	log.Debug("signal scheduler started", "interval_seconds", s.cfg.SignalIntervalSeconds)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -48,10 +48,10 @@ func (s *SignalScheduler) Start(ctx context.Context) {
 		case <-ticker.C:
 			timedOut := s.RunOnce(ctx)
 			if timedOut > 0 {
-				log.Info("signal scheduler completed", "timed_out", timedOut)
+				log.Debug("signal scheduler completed", "timed_out", timedOut)
 			}
 		case <-ctx.Done():
-			log.Info("signal scheduler stopped")
+			log.Debug("signal scheduler stopped")
 			return
 		}
 	}

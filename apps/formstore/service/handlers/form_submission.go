@@ -71,7 +71,7 @@ func (h *FormSubmissionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.biz.CreateSubmission(ctx, sub); err != nil {
-		log.WithError(err).Error("failed to create form submission")
+		log.WithError(err).Error("failed to create form submission", "form_id", formID)
 		status, msg := httpStatusForError(err)
 		http.Error(w, msg, status)
 
@@ -177,7 +177,7 @@ func (h *FormSubmissionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if updateErr := h.biz.UpdateSubmission(ctx, sub); updateErr != nil {
-		log.WithError(updateErr).Error("failed to update form submission")
+		log.WithError(updateErr).Error("failed to update form submission", "submission_id", id)
 		status, msg := httpStatusForError(updateErr)
 		http.Error(w, msg, status)
 
