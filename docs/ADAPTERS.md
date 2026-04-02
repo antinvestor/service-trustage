@@ -77,7 +77,7 @@ Execution Flow:
 | `connector/adapters/approval.go` | Human approval request adapter |
 | `connector/adapters/apipost.go` | Shared helper for API POST calls |
 | `connector/adapters/urlvalidation.go` | SSRF protection (URL + IP validation) |
-| `connector/adapters/ai_chat.go` | AI Chat (LLM) adapter via BAML |
+| `connector/adapters/ai_chat.go` | AI Chat (LLM) adapter via OpenAI SDK |
 
 ### Adapter Categories
 
@@ -88,7 +88,7 @@ Execution Flow:
 | **Payment** | `payment.initiate`, `payment.verify` | Yes | Initiates/verifies payments via API |
 | **Computation** | `data.transform`, `log.entry`, `form.validate` | No | Pure in-memory, no I/O |
 | **Human-in-the-loop** | `approval.request` | Yes | Sends approval request via API |
-| **AI** | `ai.chat` | No (BAML-managed) | Calls LLM provider APIs |
+| **AI** | `ai.chat` | No | Calls LLM provider APIs via OpenAI-compatible SDK |
 
 ---
 
@@ -999,10 +999,10 @@ steps:
 **Type:** `ai.chat`
 **Display Name:** AI Chat
 **Category:** AI
-**Requires HTTP Client:** No (BAML manages its own HTTP transport)
+**Requires HTTP Client:** No
 **Source:** `connector/adapters/ai_chat.go`
 
-Sends conversation messages to an LLM provider and returns the generated response. Provider-agnostic — switching between OpenAI, Anthropic, Google, Azure, Bedrock, Vertex, or any OpenAI-compatible API requires only configuration changes. Uses [BAML](https://docs.boundaryml.com/) for provider abstraction and structured output handling.
+Sends conversation messages to an LLM provider and returns the generated response. Uses the [OpenAI Go SDK](https://github.com/openai/openai-go) which is compatible with any OpenAI-compatible API. Point `base_url` to an agent gateway to access different LLM providers (Anthropic, Google, Azure, Bedrock, etc.) through a unified interface.
 
 #### Input Schema
 
@@ -1017,9 +1017,8 @@ Sends conversation messages to an LLM provider and returns the generated respons
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `provider` | string | Yes | — | BAML provider: `openai`, `anthropic`, `google-ai`, `vertex-ai`, `aws-bedrock`, `azure-openai`, `openai-generic` |
 | `model` | string | Yes | — | Model identifier (e.g. `gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.0-flash`) |
-| `base_url` | string (URI) | No | — | Override provider API base URL |
+| `base_url` | string (URI) | No | OpenAI | API base URL (set to gateway URL for non-OpenAI providers) |
 | `temperature` | number (0–2) | No | — | Sampling temperature |
 | `max_tokens` | integer | No | — | Maximum response tokens |
 
@@ -1040,7 +1039,7 @@ Sends conversation messages to an LLM provider and returns the generated respons
 
 | Code | Class | Cause |
 |------|-------|-------|
-| `CONFIG_ERROR` | fatal | Missing provider or model in config |
+| `CONFIG_ERROR` | fatal | Missing model in config |
 | `CREDENTIALS_ERROR` | fatal | Missing api_key credential |
 | `INPUT_ERROR` | fatal | Invalid message format or role |
 | `AUTH_ERROR` | fatal | Provider rejected API key (401) |
@@ -1052,7 +1051,7 @@ Sends conversation messages to an LLM provider and returns the generated respons
 | `PROVIDER_ERROR` | external_dependency | Provider server error (5xx) |
 | `LLM_ERROR` | external_dependency | Unclassified provider error |
 
-#### Example: Intent Classification with Anthropic
+#### Example: Intent Classification via Gateway
 
 ```yaml
 steps:
@@ -1060,8 +1059,8 @@ steps:
     type: call
     adapter: ai.chat
     config:
-      provider: anthropic
       model: claude-sonnet-4-20250514
+      base_url: "https://gateway.example.com/v1"
       temperature: 0
       max_tokens: 100
     input:
@@ -1079,7 +1078,6 @@ steps:
     type: call
     adapter: ai.chat
     config:
-      provider: openai
       model: gpt-4o
       temperature: 0.3
       max_tokens: 500

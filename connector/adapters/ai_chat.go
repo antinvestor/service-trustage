@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
-	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 
-	baml_client "github.com/antinvestor/service-trustage/baml_client"
-	"github.com/antinvestor/service-trustage/baml_client/types"
 	"github.com/antinvestor/service-trustage/connector"
 )
 
@@ -19,8 +19,8 @@ const (
 	aiChatDisplayName = "AI Chat"
 )
 
-// AIChatAdapter sends messages to an LLM provider via BAML.
-// Provider-agnostic: switching models requires only config changes.
+// AIChatAdapter sends messages to an LLM provider via the OpenAI-compatible API.
+// Provider-agnostic: point base_url to any OpenAI-compatible gateway to access different LLMs.
 type AIChatAdapter struct{}
 
 // NewAIChatAdapter creates a new AIChatAdapter.
@@ -59,13 +59,8 @@ func (a *AIChatAdapter) InputSchema() json.RawMessage {
 func (a *AIChatAdapter) ConfigSchema() json.RawMessage {
 	return json.RawMessage(`{
 		"type": "object",
-		"required": ["provider", "model"],
+		"required": ["model"],
 		"properties": {
-			"provider": {
-				"type": "string",
-				"enum": ["openai", "anthropic", "google-ai", "vertex-ai", "aws-bedrock", "azure-openai", "openai-generic"],
-				"description": "BAML LLM provider identifier"
-			},
 			"model": {
 				"type": "string",
 				"description": "Model identifier (e.g. gpt-4o, claude-sonnet-4-20250514)"
@@ -73,7 +68,7 @@ func (a *AIChatAdapter) ConfigSchema() json.RawMessage {
 			"base_url": {
 				"type": "string",
 				"format": "uri",
-				"description": "Override the provider API base URL"
+				"description": "API base URL (defaults to OpenAI; set to gateway URL for other providers)"
 			},
 			"temperature": {
 				"type": "number",
@@ -110,11 +105,6 @@ func (a *AIChatAdapter) Validate(req *connector.ExecuteRequest) error {
 		return errors.New("messages must be an array")
 	}
 
-	provider, _ := req.Config["provider"].(string)
-	if provider == "" {
-		return errors.New("config.provider is required")
-	}
-
 	model, _ := req.Config["model"].(string)
 	if model == "" {
 		return errors.New("config.model is required")
@@ -127,16 +117,14 @@ func (a *AIChatAdapter) Execute(
 	ctx context.Context,
 	req *connector.ExecuteRequest,
 ) (*connector.ExecuteResponse, *connector.ExecutionError) {
-	// Extract config.
-	provider, _ := req.Config["provider"].(string)
 	model, _ := req.Config["model"].(string)
 	apiKey := req.Credentials["api_key"]
 
-	if provider == "" || model == "" {
+	if model == "" {
 		return nil, &connector.ExecutionError{
 			Class:   connector.ErrorFatal,
 			Code:    "CONFIG_ERROR",
-			Message: "provider and model are required in config",
+			Message: "model is required in config",
 		}
 	}
 
@@ -148,32 +136,68 @@ func (a *AIChatAdapter) Execute(
 		}
 	}
 
-	// Build BAML client options.
-	clientOpts := map[string]any{
-		"model":   model,
-		"api_key": apiKey,
+	// Build client options.
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
 	}
 
 	if baseURL, ok := req.Config["base_url"].(string); ok && baseURL != "" {
-		clientOpts["base_url"] = baseURL
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+
+	if httpClient, ok := req.Config["http_client"].(*http.Client); ok {
+		opts = append(opts, option.WithHTTPClient(httpClient))
+	}
+
+	client := openai.NewClient(opts...)
+
+	// Build messages.
+	messages, execErr := buildMessages(req.Input)
+	if execErr != nil {
+		return nil, execErr
+	}
+
+	// Build completion params.
+	params := openai.ChatCompletionNewParams{
+		Model:    model,
+		Messages: messages,
 	}
 
 	if temp, ok := req.Config["temperature"].(float64); ok {
-		clientOpts["temperature"] = temp
+		params.Temperature = openai.Float(temp)
 	}
 
 	if maxTokens, ok := req.Config["max_tokens"].(float64); ok {
-		clientOpts["max_tokens"] = int(maxTokens)
+		params.MaxTokens = openai.Int(int64(maxTokens))
 	}
 
-	// Create dynamic client registry.
-	cr := baml.NewClientRegistry()
-	cr.AddLlmClient("llm", provider, clientOpts)
-	cr.SetPrimaryClient("llm")
+	completion, err := client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return nil, classifyLLMError(err)
+	}
 
-	// Convert input messages to BAML types.
-	rawMessages, _ := req.Input["messages"].([]any)
-	bamlMessages := make([]types.Message, 0, len(rawMessages))
+	content := ""
+	if len(completion.Choices) > 0 {
+		content = completion.Choices[0].Message.Content
+	}
+
+	return &connector.ExecuteResponse{
+		Output: map[string]any{
+			"content": content,
+			"model":   completion.Model,
+		},
+	}, nil
+}
+
+func buildMessages(input map[string]any) ([]openai.ChatCompletionMessageParamUnion, *connector.ExecutionError) {
+	rawMessages, _ := input["messages"].([]any)
+	systemPrompt, _ := input["system"].(string)
+
+	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(rawMessages)+1)
+
+	if systemPrompt != "" {
+		messages = append(messages, openai.SystemMessage(systemPrompt))
+	}
 
 	for i, raw := range rawMessages {
 		msg, ok := raw.(map[string]any)
@@ -188,14 +212,11 @@ func (a *AIChatAdapter) Execute(
 		content, _ := msg["content"].(string)
 		role, _ := msg["role"].(string)
 
-		var bamlMsg types.Message
-		bamlMsg.Content = content
-
 		switch role {
 		case "user":
-			bamlMsg.Role = types.Union2KassistantOrKuser__NewKuser()
+			messages = append(messages, openai.UserMessage(content))
 		case "assistant":
-			bamlMsg.Role = types.Union2KassistantOrKuser__NewKassistant()
+			messages = append(messages, openai.AssistantMessage(content))
 		default:
 			return nil, &connector.ExecutionError{
 				Class:   connector.ErrorFatal,
@@ -203,33 +224,13 @@ func (a *AIChatAdapter) Execute(
 				Message: fmt.Sprintf("messages[%d]: role must be 'user' or 'assistant', got %q", i, role),
 			}
 		}
-
-		bamlMessages = append(bamlMessages, bamlMsg)
 	}
 
-	systemPrompt, _ := req.Input["system"].(string)
-
-	// Call the BAML-generated Chat function.
-	response, err := baml_client.Chat(
-		ctx,
-		bamlMessages,
-		systemPrompt,
-		baml_client.WithClientRegistry(cr),
-	)
-	if err != nil {
-		return nil, classifyBAMLError(err)
-	}
-
-	return &connector.ExecuteResponse{
-		Output: map[string]any{
-			"content": response,
-			"model":   model,
-		},
-	}, nil
+	return messages, nil
 }
 
-// classifyBAMLError maps BAML runtime errors to connector error classes.
-func classifyBAMLError(err error) *connector.ExecutionError {
+// classifyLLMError maps OpenAI API errors to connector error classes.
+func classifyLLMError(err error) *connector.ExecutionError {
 	msg := err.Error()
 
 	switch {

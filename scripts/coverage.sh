@@ -33,7 +33,6 @@ build_coverpkg() {
   go list ./... \
     | grep -v '/gen/' \
     | grep -v '/proto/' \
-    | grep -v '/baml_client' \
     | grep -v '/cmd$' \
     | grep -v '/config$' \
     | grep -v '/tests/testketo$' \

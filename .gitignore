@@ -35,3 +35,4 @@ apps/ui/dist/
 
 # Shared Makefile cache
 .tmp/
+WORK_STATE.md

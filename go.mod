@@ -11,9 +11,9 @@ require (
 	buf.build/gen/go/gnostic/gnostic/protocolbuffers/go v1.36.11-20230414000709-087bc8072ce4.1
 	connectrpc.com/connect v1.19.1
 	github.com/antinvestor/common v1.4.1
-	github.com/boundaryml/baml v0.220.0
 	github.com/google/cel-go v0.27.0
 	github.com/lib/pq v1.12.1
+	github.com/openai/openai-go/v3 v3.30.0
 	github.com/pitabwire/frame v1.93.0
 	github.com/pitabwire/util v0.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
@@ -103,6 +103,10 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/valkey-io/valkey-go v1.0.73 // indirect

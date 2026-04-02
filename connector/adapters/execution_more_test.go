@@ -241,9 +241,9 @@ func TestLogAndAIHelpers(t *testing.T) {
 	for _, tc := range classCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			classifiedErr := classifyBAMLError(tc.err)
+			classifiedErr := classifyLLMError(tc.err)
 			if classifiedErr == nil || classifiedErr.Code != tc.code {
-				t.Fatalf("classifyBAMLError() = %+v", classifiedErr)
+				t.Fatalf("classifyLLMError() = %+v", classifiedErr)
 			}
 		})
 	}
