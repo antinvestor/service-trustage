@@ -10,7 +10,7 @@ require (
 	buf.build/gen/go/antinvestor/files/protocolbuffers/go v1.36.11-20260328115041-0585dfdeba0b.1
 	buf.build/gen/go/gnostic/gnostic/protocolbuffers/go v1.36.11-20230414000709-087bc8072ce4.1
 	connectrpc.com/connect v1.19.1
-	github.com/antinvestor/common v1.4.0
+	github.com/antinvestor/common v1.4.1
 	github.com/boundaryml/baml v0.220.0
 	github.com/google/cel-go v0.27.0
 	github.com/lib/pq v1.12.0
