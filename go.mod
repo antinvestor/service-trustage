@@ -14,7 +14,7 @@ require (
 	github.com/google/cel-go v0.27.0
 	github.com/lib/pq v1.12.1
 	github.com/openai/openai-go/v3 v3.30.0
-	github.com/pitabwire/frame v1.93.4
+	github.com/pitabwire/frame v1.93.5
 	github.com/pitabwire/util v0.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
