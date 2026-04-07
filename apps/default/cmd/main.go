@@ -293,6 +293,12 @@ func main() { //nolint:funlen // main function wiring
 	svc.Init(ctx,
 		frame.WithHTTPHandler(publicMux),
 
+		// Permission namespace registration for all proto services.
+		frame.WithPermissionRegistration(workflowSD),
+		frame.WithPermissionRegistration(eventSD),
+		frame.WithPermissionRegistration(runtimeSD),
+		frame.WithPermissionRegistration(signalSD),
+
 		// Execution dispatch publisher (schedulers publish here).
 		frame.WithRegisterPublisher(
 			cfg.QueueExecDispatchName,
