@@ -1,0 +1,34 @@
+name: antinvestor_ui_formstore
+description: >
+  Form definition and submission management UI for Antinvestor.
+  Screens, widgets, providers, and routing for the Formstore REST API.
+version: 0.1.0
+repository: https://github.com/antinvestor/service-trustage
+homepage: https://github.com/antinvestor/service-trustage/tree/main/ui_formstore
+issue_tracker: https://github.com/antinvestor/service-trustage/issues
+topics:
+  - flutter
+  - ui
+  - forms
+  - antinvestor
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  antinvestor_ui_core:
+    path: /home/j/code/antinvestor/common/ui_core
+  http: ^1.6.0
+  flutter_riverpod: ^3.3.1
+  go_router: ^17.2.0
+  intl: ^0.20.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

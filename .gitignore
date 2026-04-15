@@ -3,7 +3,7 @@
 *.dll
 *.so
 *.dylib
-/cmd/
+/cmd
 /bin/
 
 # Test
@@ -32,6 +32,12 @@ docker-compose.override.yml
 # UI build artifacts
 apps/ui/node_modules/
 apps/ui/dist/
+
+# Dart / Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
 
 # Shared Makefile cache
 .tmp/

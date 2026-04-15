@@ -1,0 +1,43 @@
+name: antinvestor_ui_trustage
+description: >
+  Workflow orchestration UI for Antinvestor Trustage.
+  Command deck, run explorer with execution graph, execution queue,
+  workflow catalog, and operator action center for tracing and managing
+  durable workflow executions.
+version: 0.1.0
+repository: https://github.com/antinvestor/service-trustage
+homepage: https://github.com/antinvestor/service-trustage/tree/main/ui_trustage
+issue_tracker: https://github.com/antinvestor/service-trustage/issues
+topics:
+  - flutter
+  - ui
+  - workflow
+  - orchestration
+  - antinvestor
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  antinvestor_ui_core: ^0.2.0
+  antinvestor_api_runtime: ^0.1.0
+  antinvestor_api_event: ^0.1.0
+  antinvestor_api_signal: ^0.1.0
+  antinvestor_api_workflow: ^0.1.0
+  antinvestor_api_common: ^1.52.0
+  connectrpc: ^1.0.0
+  fixnum: ^1.1.0
+  flutter_riverpod: ^3.3.1
+  go_router: ^17.2.0
+  intl: ^0.20.0
+  protobuf: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
