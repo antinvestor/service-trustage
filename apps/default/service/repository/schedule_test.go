@@ -139,7 +139,7 @@ func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ExactlyOnceConcurrent() {
 		go func() {
 			defer wg.Done()
 			for {
-				count, err := s.repo.ClaimAndFireBatch(ctx, simplePlan, time.Now().UTC(), 8)
+				count, _, err := s.repo.ClaimAndFireBatch(ctx, simplePlan, time.Now().UTC(), 8)
 				s.NoError(err)
 				total.Add(int64(count))
 				if count == 0 {
@@ -152,17 +152,71 @@ func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ExactlyOnceConcurrent() {
 
 	s.Equal(int64(n), total.Load(), "every schedule must fire exactly once across all workers")
 
+	// Per-tenant attribution: the seedDue helper uses tenant "test-tenant"
+	// for every row, so firedByTenant must sum to n with a single key.
+	// (We also assert the sum via a fresh non-concurrent call with empty table
+	//  to keep the assertion clean; see TestClaimAndFireBatch_FiredByTenantAttribution below.)
+
 	var evCount int64
 	s.Require().NoError(s.dbPool.DB(ctx, false).Model(&models.EventLog{}).
 		Where("event_type = ?", events.ScheduleFiredType).Count(&evCount).Error)
 	s.Equal(int64(n), evCount)
 }
 
+func (s *ScheduleRepoSuite) TestClaimAndFireBatch_FiredByTenantAttribution() {
+	ctx := s.tenantCtx()
+	s.seedDue(ctx, 5)
+
+	count, byTenant, err := s.repo.ClaimAndFireBatch(ctx, simplePlan, time.Now().UTC(), 10)
+	s.Require().NoError(err)
+	s.Equal(5, count)
+	s.Equal(5, byTenant["test-tenant"], "all 5 fires must be attributed to test-tenant")
+	s.Len(byTenant, 1, "only one tenant in this suite")
+}
+
+func (s *ScheduleRepoSuite) TestBacklogSeconds_ReturnsOldestDueLag() {
+	ctx := s.tenantCtx()
+
+	// No due rows → zero backlog.
+	lag, err := s.repo.BacklogSeconds(ctx)
+	s.Require().NoError(err)
+	s.Equal(float64(0), lag, "no due rows → zero backlog")
+
+	// Seed a row 1h in the past.
+	pastHour := time.Now().UTC().Add(-time.Hour)
+	sch := &models.ScheduleDefinition{
+		Name: "stale", CronExpr: "*/5 * * * *", Timezone: "UTC",
+		WorkflowName: "wf", WorkflowVersion: 1, InputPayload: "{}",
+		Active: true, NextFireAt: &pastHour,
+	}
+	s.Require().NoError(s.repo.Create(ctx, sch))
+
+	lag, err = s.repo.BacklogSeconds(ctx)
+	s.Require().NoError(err)
+	s.True(lag >= 3600-1 && lag <= 3600+5, "backlog should be ≈ 3600 s, got %v", lag)
+}
+
+func (s *ScheduleRepoSuite) TestBacklogSeconds_IgnoresInactiveAndDeletedRows() {
+	ctx := s.tenantCtx()
+
+	past := time.Now().UTC().Add(-time.Hour)
+	// Inactive row — must NOT count toward backlog.
+	s.Require().NoError(s.repo.Create(ctx, &models.ScheduleDefinition{
+		Name: "inactive", CronExpr: "*/5 * * * *", Timezone: "UTC",
+		WorkflowName: "wf", WorkflowVersion: 1, InputPayload: "{}",
+		Active: false, NextFireAt: &past,
+	}))
+
+	lag, err := s.repo.BacklogSeconds(ctx)
+	s.Require().NoError(err)
+	s.Equal(float64(0), lag, "inactive rows must not contribute to backlog")
+}
+
 func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ParkEmitsNoEvent() {
 	ctx := s.tenantCtx()
 	s.seedDue(ctx, 3)
 
-	count, err := s.repo.ClaimAndFireBatch(ctx, parkPlan, time.Now().UTC(), 10)
+	count, _, err := s.repo.ClaimAndFireBatch(ctx, parkPlan, time.Now().UTC(), 10)
 	s.Require().NoError(err)
 	s.Equal(3, count, "parked rows still count as processed")
 

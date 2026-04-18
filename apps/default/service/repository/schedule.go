@@ -16,12 +16,14 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
+	"github.com/pitabwire/frame/security"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -90,7 +92,15 @@ type ScheduleRepository interface {
 		plan SchedulePlanFn,
 		now time.Time,
 		limit int,
-	) (fired int, err error)
+	) (fired int, firedByTenant map[string]int, err error)
+
+	// BacklogSeconds returns the age (in seconds) of the oldest schedule whose
+	// next_fire_at is in the past and that is still active + not deleted. Returns
+	// 0 if no rows are due.
+	//
+	// This is the single most important scaling signal: operators watch this to
+	// know when fires are arriving faster than pods drain them.
+	BacklogSeconds(ctx context.Context) (float64, error)
 
 	Pool() pool.Pool
 }
@@ -265,11 +275,10 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 	plan SchedulePlanFn,
 	now time.Time,
 	limit int,
-) (int, error) {
+) (fired int, firedByTenant map[string]int, err error) {
 	db := r.p.DB(ctx, false)
-	var fired int
 
-	err := db.Transaction(func(tx *gorm.DB) error {
+	txErr := db.Transaction(func(tx *gorm.DB) error {
 		// Claim up to limit due schedules under SKIP LOCKED.
 		var batch []*models.ScheduleDefinition
 		if err := tx.
@@ -358,11 +367,47 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 			return fmt.Errorf("batch update schedules: %w", err)
 		}
 
+		firedByTenant = make(map[string]int, len(rows))
+		for _, pr := range rows {
+			firedByTenant[pr.sched.TenantID]++
+		}
 		fired = len(rows)
 		return nil
 	})
-	if err != nil {
-		return 0, err
+	if txErr != nil {
+		return 0, nil, txErr
 	}
-	return fired, nil
+	return
+}
+
+// BacklogSeconds returns the age (in seconds) of the oldest schedule whose
+// next_fire_at is in the past and that is still active + not deleted. Returns
+// 0 if no rows are due.
+//
+// The query bypasses tenancy scoping (via SkipTenancyChecksOnClaims) so it
+// reflects the pod-wide operational backlog across all tenants — not just one.
+func (r *scheduleRepository) BacklogSeconds(ctx context.Context) (float64, error) {
+	// Strip tenancy scope: backlog is a pod-wide operational signal, not per-tenant data.
+	bgCtx := security.SkipTenancyChecksOnClaims(ctx)
+	db := r.p.DB(bgCtx, true) // read replica is fine
+
+	var lag sql.NullFloat64
+	err := db.Raw(`
+		SELECT EXTRACT(EPOCH FROM (now() - MIN(next_fire_at)))
+		  FROM schedule_definitions
+		 WHERE active = true
+		   AND deleted_at IS NULL
+		   AND next_fire_at IS NOT NULL
+		   AND next_fire_at <= now()
+	`).Scan(&lag).Error
+	if err != nil {
+		return 0, fmt.Errorf("scheduler backlog query: %w", err)
+	}
+	if !lag.Valid {
+		return 0, nil
+	}
+	if lag.Float64 < 0 {
+		return 0, nil // clock skew guard
+	}
+	return lag.Float64, nil
 }

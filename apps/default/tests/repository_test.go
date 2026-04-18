@@ -175,7 +175,7 @@ func (s *DefaultServiceSuite) TestScheduleRepository_ClaimAndFire() {
 		return ev, &next, 0, nil
 	}
 
-	count, err := s.scheduleRepo.ClaimAndFireBatch(ctx, plan, now, 10)
+	count, _, err := s.scheduleRepo.ClaimAndFireBatch(ctx, plan, now, 10)
 	s.Require().NoError(err)
 	s.Equal(1, count)
 }

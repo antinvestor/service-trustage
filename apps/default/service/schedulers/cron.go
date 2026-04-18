@@ -90,7 +90,7 @@ func (s *CronScheduler) RunOnce(ctx context.Context) int {
 
 	start := time.Now()
 
-	fired, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, s.batchSize())
+	fired, _, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, s.batchSize())
 	dur := time.Since(start)
 
 	if err != nil {

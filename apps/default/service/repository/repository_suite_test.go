@@ -401,7 +401,7 @@ func (s *RepositorySuite) TestAuxiliaryRepositories_EventAuditScheduleSchemaOutp
 		NextFireAt:      &fireAt,
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, sched))
-	fireCount, err := s.scheduleRepo.ClaimAndFireBatch(ctx,
+	fireCount, _, err := s.scheduleRepo.ClaimAndFireBatch(ctx,
 		func(_ context.Context, _ *models.ScheduleDefinition) (*models.EventLog, *time.Time, int, error) {
 			next := time.Now().Add(time.Hour)
 			return nil, &next, 0, nil
