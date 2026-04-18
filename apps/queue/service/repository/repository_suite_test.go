@@ -291,3 +291,14 @@ func (s *RepositorySuite) TestQueueRepository_MigrateAndHelpers() {
 func timePtr(t time.Time) *time.Time {
 	return &t
 }
+
+func (s *RepositorySuite) TestMigrate_ReturnsErrorWhenPoolMissing() {
+	ctx := context.Background()
+	manager, err := datastoremanager.NewManager(ctx)
+	s.Require().NoError(err)
+
+	// No pool added — Migrate must return an error, not panic.
+	err = Migrate(ctx, manager)
+	s.Require().Error(err)
+	s.Contains(err.Error(), "pool")
+}
