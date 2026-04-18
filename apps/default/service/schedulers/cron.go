@@ -35,6 +35,8 @@ const (
 	cronCheckInterval       = 30 * time.Second
 	cronMissedFireThreshold = 5 * time.Minute
 	cronMaxJitter           = 30 * time.Second
+	// cronJitterPeriodDivisor is the fraction of a cron period used as the jitter ceiling.
+	cronJitterPeriodDivisor = 10
 )
 
 // CronScheduler fires events for schedule_definitions rows whose next_fire_at has passed.
@@ -165,7 +167,7 @@ func jitterFor(scheduleID string, cronSched dsl.CronSchedule, nominal time.Time)
 		return 0
 	}
 
-	maxDur := period / 10
+	maxDur := period / cronJitterPeriodDivisor
 	if maxDur > cronMaxJitter {
 		maxDur = cronMaxJitter
 	}
@@ -175,5 +177,6 @@ func jitterFor(scheduleID string, cronSched dsl.CronSchedule, nominal time.Time)
 
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(scheduleID))
+	//nolint:gosec // G115: modulo operation bounds the result to [0, maxDur); overflow is intentional.
 	return time.Duration(int64(h.Sum64() % uint64(maxDur)))
 }

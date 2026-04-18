@@ -96,7 +96,7 @@ func (s *ScheduleRepoSuite) tenantCtx() context.Context {
 
 func (s *ScheduleRepoSuite) seedDueSchedules(ctx context.Context, n int) {
 	due := time.Now().UTC().Add(-time.Minute)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sched := &models.ScheduleDefinition{
 			Name:            fmt.Sprintf("sched-%d", i),
 			CronExpr:        "*/5 * * * *",
@@ -120,7 +120,8 @@ func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ExactlyOnceUnderConcurrency() 
 
 	var fired atomic.Int64
 	var wg sync.WaitGroup
-	for w := 0; w < 10; w++ {
+	var goroutineErr atomic.Value
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -140,7 +141,10 @@ func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ExactlyOnceUnderConcurrency() 
 						}
 						return &next, 0, nil
 					})
-				s.Require().NoError(err)
+				if err != nil {
+					goroutineErr.Store(err)
+					return
+				}
 				fired.Add(int64(count))
 				if count == 0 {
 					return
@@ -150,6 +154,9 @@ func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ExactlyOnceUnderConcurrency() 
 	}
 	wg.Wait()
 
+	if err, ok := goroutineErr.Load().(error); ok && err != nil {
+		s.Require().NoError(err, "goroutine encountered an error")
+	}
 	s.Equal(int64(n), fired.Load(), "each schedule must fire exactly once across all workers")
 
 	var all []*models.ScheduleDefinition

@@ -36,7 +36,9 @@ type WorkflowBusiness interface {
 		dslBlob json.RawMessage,
 	) (*models.WorkflowDefinition, error)
 	GetWorkflow(ctx context.Context, id string) (*models.WorkflowDefinition, error)
-	GetWorkflowWithSchedules(ctx context.Context, id string) (*models.WorkflowDefinition, []*models.ScheduleDefinition, error)
+	GetWorkflowWithSchedules(
+		ctx context.Context, id string,
+	) (*models.WorkflowDefinition, []*models.ScheduleDefinition, error)
 	ListWorkflows(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
 	SearchWorkflows(ctx context.Context, filter WorkflowListFilter) (*WorkflowListPage, error)
 	ActivateWorkflow(ctx context.Context, id string) error
@@ -393,7 +395,9 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 // listSchedulesTx is a tx-bound list used inside ActivateWorkflow. The write path
 // must read schedules via the same tx as the subsequent UPDATEs so it sees uncommitted
 // row-locking consistency; ScheduleRepository.ListByWorkflow does not accept a tx.
-func listSchedulesTx(tx *gorm.DB, workflowName string, workflowVersion int, tenantID, partitionID string) ([]*models.ScheduleDefinition, error) {
+func listSchedulesTx(
+	tx *gorm.DB, workflowName string, workflowVersion int, tenantID, partitionID string,
+) ([]*models.ScheduleDefinition, error) {
 	var out []*models.ScheduleDefinition
 	res := tx.Where(
 		"workflow_name = ? AND workflow_version = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL",
@@ -405,6 +409,9 @@ func listSchedulesTx(tx *gorm.DB, workflowName string, workflowVersion int, tena
 	return out, nil
 }
 
+// jitterPeriodDivisor is the fraction of a schedule period used as the jitter ceiling.
+const jitterPeriodDivisor = 10
+
 // jitterForSchedule duplicates schedulers.jitterFor's algorithm to avoid importing
 // the schedulers package from business (layer smell). Deterministic per-schedule
 // offset, cap = min(period/10, 30s).
@@ -415,7 +422,7 @@ func jitterForSchedule(scheduleID string, cronSched dsl.CronSchedule, nominal ti
 	if period <= 0 {
 		return 0
 	}
-	maxDur := period / 10
+	maxDur := period / jitterPeriodDivisor
 	if maxDur > cronMaxJitter {
 		maxDur = cronMaxJitter
 	}
@@ -424,5 +431,6 @@ func jitterForSchedule(scheduleID string, cronSched dsl.CronSchedule, nominal ti
 	}
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(scheduleID))
+	//nolint:gosec // G115: modulo operation bounds the result to [0, maxDur); overflow is intentional.
 	return time.Duration(int64(h.Sum64() % uint64(maxDur)))
 }

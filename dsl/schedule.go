@@ -15,6 +15,7 @@
 package dsl
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -40,7 +41,7 @@ type CronSchedule struct {
 func ParseCron(expr string) (CronSchedule, error) {
 	trimmed := strings.TrimSpace(expr)
 	if trimmed == "" {
-		return CronSchedule{}, fmt.Errorf("cron expression is empty")
+		return CronSchedule{}, errors.New("cron expression is empty")
 	}
 
 	sched, err := standardCronParser.Parse(trimmed)

@@ -16,6 +16,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -132,7 +133,7 @@ func (r *scheduleRepository) ListByWorkflow(
 }
 
 func (r *scheduleRepository) SetActiveByWorkflow(
-	ctx context.Context,
+	_ context.Context,
 	tx *gorm.DB,
 	workflowName string,
 	workflowVersion int,
@@ -143,7 +144,7 @@ func (r *scheduleRepository) SetActiveByWorkflow(
 	seedJitterSeconds int,
 ) error {
 	if tx == nil {
-		return fmt.Errorf("SetActiveByWorkflow requires a non-nil tx")
+		return errors.New("SetActiveByWorkflow requires a non-nil tx")
 	}
 
 	updates := map[string]any{
@@ -182,7 +183,7 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 
 	fired := 0
 
-	for i := 0; i < limit; i++ {
+	for range limit {
 		// Each schedule gets its own transaction so a single fireFn failure
 		// does not abort the entire batch and so SKIP LOCKED is applied per-row.
 		var sched *models.ScheduleDefinition
@@ -209,8 +210,11 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 				return fmt.Errorf("fire schedule %s: %w", sched.ID, fireErr)
 			}
 
+			const updateSQL = "UPDATE schedule_definitions " +
+				"SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? " +
+				"WHERE id = ? AND tenant_id = ? AND partition_id = ?"
 			updateErr := tx.Exec(
-				"UPDATE schedule_definitions SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? WHERE id = ? AND tenant_id = ? AND partition_id = ?",
+				updateSQL,
 				now, nextFire, jitterSeconds, now, sched.ID, sched.TenantID, sched.PartitionID,
 			).Error
 			if updateErr != nil {

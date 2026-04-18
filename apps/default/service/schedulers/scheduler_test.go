@@ -804,7 +804,7 @@ func TestJitterFor_RespectsCap(t *testing.T) {
 	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
 	nominal := sched.Next(base)
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		j := jitterFor(fmt.Sprintf("s-%d", i), sched, nominal)
 		require.True(t, j >= 0 && j < 30*time.Second, "jitter %v out of bounds", j)
 	}

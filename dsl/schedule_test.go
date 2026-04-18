@@ -12,38 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dsl
+package dsl_test
 
 import (
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/antinvestor/service-trustage/dsl"
 )
 
 func TestParseCron_ValidExpression(t *testing.T) {
-	s, err := ParseCron("*/5 * * * *")
+	s, err := dsl.ParseCron("*/5 * * * *")
 	require.NoError(t, err)
 	require.Equal(t, "*/5 * * * *", s.Expr())
 }
 
 func TestParseCron_RejectsSixField(t *testing.T) {
-	_, err := ParseCron("0 */5 * * * *")
+	_, err := dsl.ParseCron("0 */5 * * * *")
 	require.Error(t, err)
 }
 
 func TestParseCron_RejectsDescriptor(t *testing.T) {
-	_, err := ParseCron("@hourly")
+	_, err := dsl.ParseCron("@hourly")
 	require.Error(t, err)
 }
 
 func TestParseCron_RejectsEmpty(t *testing.T) {
-	_, err := ParseCron("")
+	_, err := dsl.ParseCron("")
 	require.Error(t, err)
 }
 
 func TestCronSchedule_NextMonotonic(t *testing.T) {
-	s, err := ParseCron("*/10 * * * *")
+	s, err := dsl.ParseCron("*/10 * * * *")
 	require.NoError(t, err)
 
 	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
