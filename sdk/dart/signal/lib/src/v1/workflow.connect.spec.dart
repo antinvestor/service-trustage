@@ -37,4 +37,11 @@ abstract final class WorkflowService {
     v1workflow.ActivateWorkflowRequest.new,
     v1workflow.ActivateWorkflowResponse.new,
   );
+
+  static const archiveWorkflow = connect.Spec(
+    '/$name/ArchiveWorkflow',
+    connect.StreamType.unary,
+    v1workflow.ArchiveWorkflowRequest.new,
+    v1workflow.ArchiveWorkflowResponse.new,
+  );
 }

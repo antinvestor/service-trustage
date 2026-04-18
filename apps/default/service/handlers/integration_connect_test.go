@@ -20,8 +20,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
 	"connectrpc.com/connect"
-	commonv1 "github.com/antinvestor/common/v1"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	eventv1 "github.com/antinvestor/service-trustage/gen/go/event/v1"

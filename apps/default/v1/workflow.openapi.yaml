@@ -52,6 +52,43 @@ paths:
                 $ref: '#/components/schemas/workflow.v1.ActivateWorkflowResponse'
       x-required-permissions:
         - workflow_manage
+  /workflow.v1.WorkflowService/ArchiveWorkflow:
+    post:
+      tags:
+        - workflow.v1.WorkflowService
+      summary: ArchiveWorkflow
+      operationId: workflow.v1.WorkflowService.ArchiveWorkflow
+      parameters:
+        - name: Connect-Protocol-Version
+          in: header
+          required: true
+          schema:
+            $ref: '#/components/schemas/connect-protocol-version'
+        - name: Connect-Timeout-Ms
+          in: header
+          schema:
+            $ref: '#/components/schemas/connect-timeout-header'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/workflow.v1.ArchiveWorkflowRequest'
+        required: true
+      responses:
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/connect.error'
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/workflow.v1.ArchiveWorkflowResponse'
+      x-required-permissions:
+        - workflow_manage
   /workflow.v1.WorkflowService/CreateWorkflow:
     post:
       tags:
@@ -458,6 +495,22 @@ components:
           $ref: '#/components/schemas/workflow.v1.WorkflowDefinition'
       title: ActivateWorkflowResponse
       additionalProperties: false
+    workflow.v1.ArchiveWorkflowRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+      title: ArchiveWorkflowRequest
+      additionalProperties: false
+    workflow.v1.ArchiveWorkflowResponse:
+      type: object
+      properties:
+        workflow:
+          title: workflow
+          $ref: '#/components/schemas/workflow.v1.WorkflowDefinition'
+      title: ArchiveWorkflowResponse
+      additionalProperties: false
     workflow.v1.CreateWorkflowRequest:
       type: object
       properties:
@@ -560,6 +613,9 @@ components:
         updatedAt:
           title: updated_at
           $ref: '#/components/schemas/google.protobuf.Timestamp'
+        timezone:
+          type: string
+          title: timezone
       title: ScheduleDefinition
       additionalProperties: false
     workflow.v1.WorkflowDefinition:

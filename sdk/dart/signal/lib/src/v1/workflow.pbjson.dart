@@ -101,6 +101,7 @@ const ScheduleDefinition$json = {
     {'1': 'jitter_seconds', '3': 9, '4': 1, '5': 5, '10': 'jitterSeconds'},
     {'1': 'created_at', '3': 10, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
     {'1': 'updated_at', '3': 11, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'updatedAt'},
+    {'1': 'timezone', '3': 12, '4': 1, '5': 9, '10': 'timezone'},
   ],
 };
 
@@ -114,7 +115,8 @@ final $typed_data.Uint8List scheduleDefinitionDescriptor = $convert.base64Decode
     'dvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSC2xhc3RGaXJlZEF0EiUKDmppdHRlcl9zZWNvbmRz'
     'GAkgASgFUg1qaXR0ZXJTZWNvbmRzEjkKCmNyZWF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG'
     '9idWYuVGltZXN0YW1wUgljcmVhdGVkQXQSOQoKdXBkYXRlZF9hdBgLIAEoCzIaLmdvb2dsZS5w'
-    'cm90b2J1Zi5UaW1lc3RhbXBSCXVwZGF0ZWRBdA==');
+    'cm90b2J1Zi5UaW1lc3RhbXBSCXVwZGF0ZWRBdBIaCgh0aW1lem9uZRgMIAEoCVIIdGltZXpvbm'
+    'U=');
 
 @$core.Deprecated('Use getWorkflowRequestDescriptor instead')
 const GetWorkflowRequest$json = {
@@ -199,6 +201,31 @@ final $typed_data.Uint8List activateWorkflowResponseDescriptor = $convert.base64
     'ChhBY3RpdmF0ZVdvcmtmbG93UmVzcG9uc2USOwoId29ya2Zsb3cYASABKAsyHy53b3JrZmxvdy'
     '52MS5Xb3JrZmxvd0RlZmluaXRpb25SCHdvcmtmbG93');
 
+@$core.Deprecated('Use archiveWorkflowRequestDescriptor instead')
+const ArchiveWorkflowRequest$json = {
+  '1': 'ArchiveWorkflowRequest',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
+  ],
+};
+
+/// Descriptor for `ArchiveWorkflowRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List archiveWorkflowRequestDescriptor = $convert.base64Decode(
+    'ChZBcmNoaXZlV29ya2Zsb3dSZXF1ZXN0Eg4KAmlkGAEgASgJUgJpZA==');
+
+@$core.Deprecated('Use archiveWorkflowResponseDescriptor instead')
+const ArchiveWorkflowResponse$json = {
+  '1': 'ArchiveWorkflowResponse',
+  '2': [
+    {'1': 'workflow', '3': 1, '4': 1, '5': 11, '6': '.workflow.v1.WorkflowDefinition', '10': 'workflow'},
+  ],
+};
+
+/// Descriptor for `ArchiveWorkflowResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List archiveWorkflowResponseDescriptor = $convert.base64Decode(
+    'ChdBcmNoaXZlV29ya2Zsb3dSZXNwb25zZRI7Cgh3b3JrZmxvdxgBIAEoCzIfLndvcmtmbG93Ln'
+    'YxLldvcmtmbG93RGVmaW5pdGlvblIId29ya2Zsb3c=');
+
 const $core.Map<$core.String, $core.dynamic> WorkflowServiceBase$json = {
   '1': 'WorkflowService',
   '2': [
@@ -206,6 +233,7 @@ const $core.Map<$core.String, $core.dynamic> WorkflowServiceBase$json = {
     {'1': 'GetWorkflow', '2': '.workflow.v1.GetWorkflowRequest', '3': '.workflow.v1.GetWorkflowResponse', '4': {}},
     {'1': 'ListWorkflows', '2': '.workflow.v1.ListWorkflowsRequest', '3': '.workflow.v1.ListWorkflowsResponse', '4': {}},
     {'1': 'ActivateWorkflow', '2': '.workflow.v1.ActivateWorkflowRequest', '3': '.workflow.v1.ActivateWorkflowResponse', '4': {}},
+    {'1': 'ArchiveWorkflow', '2': '.workflow.v1.ArchiveWorkflowRequest', '3': '.workflow.v1.ArchiveWorkflowResponse', '4': {}},
   ],
   '3': {},
 };
@@ -229,6 +257,8 @@ const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> WorkflowSe
   '.workflow.v1.ListWorkflowsResponse': ListWorkflowsResponse$json,
   '.workflow.v1.ActivateWorkflowRequest': ActivateWorkflowRequest$json,
   '.workflow.v1.ActivateWorkflowResponse': ActivateWorkflowResponse$json,
+  '.workflow.v1.ArchiveWorkflowRequest': ArchiveWorkflowRequest$json,
+  '.workflow.v1.ArchiveWorkflowResponse': ArchiveWorkflowResponse$json,
 };
 
 /// Descriptor for `WorkflowService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
@@ -241,19 +271,21 @@ final $typed_data.Uint8List workflowServiceDescriptor = $convert.base64Decode(
     'dzUmVxdWVzdBoiLndvcmtmbG93LnYxLkxpc3RXb3JrZmxvd3NSZXNwb25zZSITgrUYDwoNd29y'
     'a2Zsb3dfdmlldxJ2ChBBY3RpdmF0ZVdvcmtmbG93EiQud29ya2Zsb3cudjEuQWN0aXZhdGVXb3'
     'JrZmxvd1JlcXVlc3QaJS53b3JrZmxvdy52MS5BY3RpdmF0ZVdvcmtmbG93UmVzcG9uc2UiFYK1'
-    'GBEKD3dvcmtmbG93X21hbmFnZRqLBoK1GIYGChBzZXJ2aWNlX3RydXN0YWdlEgxldmVudF9pbm'
-    'dlc3QSDXdvcmtmbG93X3ZpZXcSD3dvcmtmbG93X21hbmFnZRINaW5zdGFuY2VfdmlldxIOaW5z'
-    'dGFuY2VfcmV0cnkSDmV4ZWN1dGlvbl92aWV3Eg9leGVjdXRpb25fcmV0cnkSEGV4ZWN1dGlvbl'
-    '9yZXN1bWUSC3NpZ25hbF9zZW5kGo8BCAESDGV2ZW50X2luZ2VzdBINd29ya2Zsb3dfdmlldxIP'
-    'd29ya2Zsb3dfbWFuYWdlEg1pbnN0YW5jZV92aWV3Eg5pbnN0YW5jZV9yZXRyeRIOZXhlY3V0aW'
-    '9uX3ZpZXcSD2V4ZWN1dGlvbl9yZXRyeRIQZXhlY3V0aW9uX3Jlc3VtZRILc2lnbmFsX3NlbmQa'
-    'jwEIAhIMZXZlbnRfaW5nZXN0Eg13b3JrZmxvd192aWV3Eg93b3JrZmxvd19tYW5hZ2USDWluc3'
-    'RhbmNlX3ZpZXcSDmluc3RhbmNlX3JldHJ5Eg5leGVjdXRpb25fdmlldxIPZXhlY3V0aW9uX3Jl'
-    'dHJ5EhBleGVjdXRpb25fcmVzdW1lEgtzaWduYWxfc2VuZBpLCAMSDGV2ZW50X2luZ2VzdBINd2'
-    '9ya2Zsb3dfdmlldxINaW5zdGFuY2VfdmlldxIOZXhlY3V0aW9uX3ZpZXcSC3NpZ25hbF9zZW5k'
-    'GjAIBBINd29ya2Zsb3dfdmlldxINaW5zdGFuY2VfdmlldxIOZXhlY3V0aW9uX3ZpZXcaMAgFEg'
-    '13b3JrZmxvd192aWV3Eg1pbnN0YW5jZV92aWV3Eg5leGVjdXRpb25fdmlldxqPAQgGEgxldmVu'
-    'dF9pbmdlc3QSDXdvcmtmbG93X3ZpZXcSD3dvcmtmbG93X21hbmFnZRINaW5zdGFuY2Vfdmlldx'
-    'IOaW5zdGFuY2VfcmV0cnkSDmV4ZWN1dGlvbl92aWV3Eg9leGVjdXRpb25fcmV0cnkSEGV4ZWN1'
-    'dGlvbl9yZXN1bWUSC3NpZ25hbF9zZW5k');
+    'GBEKD3dvcmtmbG93X21hbmFnZRJzCg9BcmNoaXZlV29ya2Zsb3cSIy53b3JrZmxvdy52MS5Bcm'
+    'NoaXZlV29ya2Zsb3dSZXF1ZXN0GiQud29ya2Zsb3cudjEuQXJjaGl2ZVdvcmtmbG93UmVzcG9u'
+    'c2UiFYK1GBEKD3dvcmtmbG93X21hbmFnZRqLBoK1GIYGChBzZXJ2aWNlX3RydXN0YWdlEgxldm'
+    'VudF9pbmdlc3QSDXdvcmtmbG93X3ZpZXcSD3dvcmtmbG93X21hbmFnZRINaW5zdGFuY2Vfdmll'
+    'dxIOaW5zdGFuY2VfcmV0cnkSDmV4ZWN1dGlvbl92aWV3Eg9leGVjdXRpb25fcmV0cnkSEGV4ZW'
+    'N1dGlvbl9yZXN1bWUSC3NpZ25hbF9zZW5kGo8BCAESDGV2ZW50X2luZ2VzdBINd29ya2Zsb3df'
+    'dmlldxIPd29ya2Zsb3dfbWFuYWdlEg1pbnN0YW5jZV92aWV3Eg5pbnN0YW5jZV9yZXRyeRIOZX'
+    'hlY3V0aW9uX3ZpZXcSD2V4ZWN1dGlvbl9yZXRyeRIQZXhlY3V0aW9uX3Jlc3VtZRILc2lnbmFs'
+    'X3NlbmQajwEIAhIMZXZlbnRfaW5nZXN0Eg13b3JrZmxvd192aWV3Eg93b3JrZmxvd19tYW5hZ2'
+    'USDWluc3RhbmNlX3ZpZXcSDmluc3RhbmNlX3JldHJ5Eg5leGVjdXRpb25fdmlldxIPZXhlY3V0'
+    'aW9uX3JldHJ5EhBleGVjdXRpb25fcmVzdW1lEgtzaWduYWxfc2VuZBpLCAMSDGV2ZW50X2luZ2'
+    'VzdBINd29ya2Zsb3dfdmlldxINaW5zdGFuY2VfdmlldxIOZXhlY3V0aW9uX3ZpZXcSC3NpZ25h'
+    'bF9zZW5kGjAIBBINd29ya2Zsb3dfdmlldxINaW5zdGFuY2VfdmlldxIOZXhlY3V0aW9uX3ZpZX'
+    'caMAgFEg13b3JrZmxvd192aWV3Eg1pbnN0YW5jZV92aWV3Eg5leGVjdXRpb25fdmlldxqPAQgG'
+    'EgxldmVudF9pbmdlc3QSDXdvcmtmbG93X3ZpZXcSD3dvcmtmbG93X21hbmFnZRINaW5zdGFuY2'
+    'VfdmlldxIOaW5zdGFuY2VfcmV0cnkSDmV4ZWN1dGlvbl92aWV3Eg9leGVjdXRpb25fcmV0cnkS'
+    'EGV4ZWN1dGlvbl9yZXN1bWUSC3NpZ25hbF9zZW5k');
 

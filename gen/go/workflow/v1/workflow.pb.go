@@ -21,8 +21,8 @@
 package workflowv1
 
 import (
+	v1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
 	_ "buf.build/gen/go/gnostic/gnostic/protocolbuffers/go/gnostic/openapi/v3"
-	v1 "github.com/antinvestor/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"

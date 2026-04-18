@@ -307,6 +307,7 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
     $core.int? jitterSeconds,
     $3.Timestamp? createdAt,
     $3.Timestamp? updatedAt,
+    $core.String? timezone,
   }) {
     final $result = create();
     if (id != null) {
@@ -342,6 +343,9 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
     if (updatedAt != null) {
       $result.updatedAt = updatedAt;
     }
+    if (timezone != null) {
+      $result.timezone = timezone;
+    }
     return $result;
   }
   ScheduleDefinition._() : super();
@@ -360,6 +364,7 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
     ..a<$core.int>(9, _omitFieldNames ? '' : 'jitterSeconds', $pb.PbFieldType.O3)
     ..aOM<$3.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $3.Timestamp.create)
     ..aOM<$3.Timestamp>(11, _omitFieldNames ? '' : 'updatedAt', subBuilder: $3.Timestamp.create)
+    ..aOS(12, _omitFieldNames ? '' : 'timezone')
     ..hasRequiredFields = false
   ;
 
@@ -490,6 +495,15 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
   void clearUpdatedAt() => clearField(11);
   @$pb.TagNumber(11)
   $3.Timestamp ensureUpdatedAt() => $_ensure(10);
+
+  @$pb.TagNumber(12)
+  $core.String get timezone => $_getSZ(11);
+  @$pb.TagNumber(12)
+  set timezone($core.String v) { $_setString(11, v); }
+  @$pb.TagNumber(12)
+  $core.bool hasTimezone() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearTimezone() => clearField(12);
 }
 
 class GetWorkflowRequest extends $pb.GeneratedMessage {
@@ -844,6 +858,108 @@ class ActivateWorkflowResponse extends $pb.GeneratedMessage {
   WorkflowDefinition ensureWorkflow() => $_ensure(0);
 }
 
+class ArchiveWorkflowRequest extends $pb.GeneratedMessage {
+  factory ArchiveWorkflowRequest({
+    $core.String? id,
+  }) {
+    final $result = create();
+    if (id != null) {
+      $result.id = id;
+    }
+    return $result;
+  }
+  ArchiveWorkflowRequest._() : super();
+  factory ArchiveWorkflowRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory ArchiveWorkflowRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ArchiveWorkflowRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'workflow.v1'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'id')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  ArchiveWorkflowRequest clone() => ArchiveWorkflowRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  ArchiveWorkflowRequest copyWith(void Function(ArchiveWorkflowRequest) updates) => super.copyWith((message) => updates(message as ArchiveWorkflowRequest)) as ArchiveWorkflowRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ArchiveWorkflowRequest create() => ArchiveWorkflowRequest._();
+  ArchiveWorkflowRequest createEmptyInstance() => create();
+  static $pb.PbList<ArchiveWorkflowRequest> createRepeated() => $pb.PbList<ArchiveWorkflowRequest>();
+  @$core.pragma('dart2js:noInline')
+  static ArchiveWorkflowRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ArchiveWorkflowRequest>(create);
+  static ArchiveWorkflowRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get id => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set id($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearId() => clearField(1);
+}
+
+class ArchiveWorkflowResponse extends $pb.GeneratedMessage {
+  factory ArchiveWorkflowResponse({
+    WorkflowDefinition? workflow,
+  }) {
+    final $result = create();
+    if (workflow != null) {
+      $result.workflow = workflow;
+    }
+    return $result;
+  }
+  ArchiveWorkflowResponse._() : super();
+  factory ArchiveWorkflowResponse.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory ArchiveWorkflowResponse.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ArchiveWorkflowResponse', package: const $pb.PackageName(_omitMessageNames ? '' : 'workflow.v1'), createEmptyInstance: create)
+    ..aOM<WorkflowDefinition>(1, _omitFieldNames ? '' : 'workflow', subBuilder: WorkflowDefinition.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  ArchiveWorkflowResponse clone() => ArchiveWorkflowResponse()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  ArchiveWorkflowResponse copyWith(void Function(ArchiveWorkflowResponse) updates) => super.copyWith((message) => updates(message as ArchiveWorkflowResponse)) as ArchiveWorkflowResponse;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ArchiveWorkflowResponse create() => ArchiveWorkflowResponse._();
+  ArchiveWorkflowResponse createEmptyInstance() => create();
+  static $pb.PbList<ArchiveWorkflowResponse> createRepeated() => $pb.PbList<ArchiveWorkflowResponse>();
+  @$core.pragma('dart2js:noInline')
+  static ArchiveWorkflowResponse getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ArchiveWorkflowResponse>(create);
+  static ArchiveWorkflowResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  WorkflowDefinition get workflow => $_getN(0);
+  @$pb.TagNumber(1)
+  set workflow(WorkflowDefinition v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasWorkflow() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearWorkflow() => clearField(1);
+  @$pb.TagNumber(1)
+  WorkflowDefinition ensureWorkflow() => $_ensure(0);
+}
+
 class WorkflowServiceApi {
   $pb.RpcClient _client;
   WorkflowServiceApi(this._client);
@@ -859,6 +975,9 @@ class WorkflowServiceApi {
   ;
   $async.Future<ActivateWorkflowResponse> activateWorkflow($pb.ClientContext? ctx, ActivateWorkflowRequest request) =>
     _client.invoke<ActivateWorkflowResponse>(ctx, 'WorkflowService', 'ActivateWorkflow', request, ActivateWorkflowResponse())
+  ;
+  $async.Future<ArchiveWorkflowResponse> archiveWorkflow($pb.ClientContext? ctx, ArchiveWorkflowRequest request) =>
+    _client.invoke<ArchiveWorkflowResponse>(ctx, 'WorkflowService', 'ArchiveWorkflow', request, ArchiveWorkflowResponse())
   ;
 }
 

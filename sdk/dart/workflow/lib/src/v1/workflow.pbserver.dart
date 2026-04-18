@@ -25,6 +25,7 @@ abstract class WorkflowServiceBase extends $pb.GeneratedService {
   $async.Future<$11.GetWorkflowResponse> getWorkflow($pb.ServerContext ctx, $11.GetWorkflowRequest request);
   $async.Future<$11.ListWorkflowsResponse> listWorkflows($pb.ServerContext ctx, $11.ListWorkflowsRequest request);
   $async.Future<$11.ActivateWorkflowResponse> activateWorkflow($pb.ServerContext ctx, $11.ActivateWorkflowRequest request);
+  $async.Future<$11.ArchiveWorkflowResponse> archiveWorkflow($pb.ServerContext ctx, $11.ArchiveWorkflowRequest request);
 
   $pb.GeneratedMessage createRequest($core.String methodName) {
     switch (methodName) {
@@ -32,6 +33,7 @@ abstract class WorkflowServiceBase extends $pb.GeneratedService {
       case 'GetWorkflow': return $11.GetWorkflowRequest();
       case 'ListWorkflows': return $11.ListWorkflowsRequest();
       case 'ActivateWorkflow': return $11.ActivateWorkflowRequest();
+      case 'ArchiveWorkflow': return $11.ArchiveWorkflowRequest();
       default: throw $core.ArgumentError('Unknown method: $methodName');
     }
   }
@@ -42,6 +44,7 @@ abstract class WorkflowServiceBase extends $pb.GeneratedService {
       case 'GetWorkflow': return this.getWorkflow(ctx, request as $11.GetWorkflowRequest);
       case 'ListWorkflows': return this.listWorkflows(ctx, request as $11.ListWorkflowsRequest);
       case 'ActivateWorkflow': return this.activateWorkflow(ctx, request as $11.ActivateWorkflowRequest);
+      case 'ArchiveWorkflow': return this.archiveWorkflow(ctx, request as $11.ArchiveWorkflowRequest);
       default: throw $core.ArgumentError('Unknown method: $methodName');
     }
   }
