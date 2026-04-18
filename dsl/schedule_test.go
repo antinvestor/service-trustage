@@ -57,3 +57,33 @@ func TestCronSchedule_NextMonotonic(t *testing.T) {
 	require.True(t, n3.After(n2))
 	require.Equal(t, 10*time.Minute, n2.Sub(n1))
 }
+
+func TestCronSchedule_NextInZone(t *testing.T) {
+	s, err := dsl.ParseCron("0 2 * * *") // 02:00 daily
+	require.NoError(t, err)
+
+	// 05:30 UTC is 01:30 EDT on 2026-04-18. Next should be 02:00 EDT = 06:00 UTC.
+	baseUTC := time.Date(2026, 4, 18, 5, 30, 0, 0, time.UTC)
+	next, err := s.NextInZone(baseUTC, "America/New_York")
+	require.NoError(t, err)
+	require.Equal(t, 6, next.UTC().Hour())
+}
+
+func TestCronSchedule_NextInZone_InvalidZone(t *testing.T) {
+	s, err := dsl.ParseCron("*/5 * * * *")
+	require.NoError(t, err)
+
+	_, err = s.NextInZone(time.Now(), "Not/A/Zone")
+	require.Error(t, err)
+}
+
+func TestCronSchedule_NextInZone_UTCEquivalentToNext(t *testing.T) {
+	s, err := dsl.ParseCron("0 2 * * *")
+	require.NoError(t, err)
+
+	baseUTC := time.Date(2026, 4, 18, 0, 0, 0, 0, time.UTC)
+	want := s.Next(baseUTC)
+	got, err := s.NextInZone(baseUTC, "UTC")
+	require.NoError(t, err)
+	require.True(t, want.Equal(got))
+}

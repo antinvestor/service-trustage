@@ -57,3 +57,18 @@ func (s CronSchedule) Expr() string { return s.expr }
 
 // Next returns the first fire time strictly after `from` for this schedule.
 func (s CronSchedule) Next(from time.Time) time.Time { return s.schedule.Next(from) }
+
+// NextInZone returns the first fire time strictly after `from`, evaluated in
+// the specified IANA timezone. "UTC" (or empty) preserves Next's behaviour.
+// Returns an error if the zone is not loadable. Result is always in UTC.
+func (s CronSchedule) NextInZone(from time.Time, zone string) (time.Time, error) {
+	if zone == "" || zone == "UTC" {
+		return s.schedule.Next(from.UTC()).UTC(), nil
+	}
+
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("load zone %q: %w", zone, err)
+	}
+	return s.schedule.Next(from.In(loc)).UTC(), nil
+}

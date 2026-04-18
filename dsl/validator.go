@@ -17,6 +17,7 @@ package dsl
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Validate performs full static validation of a WorkflowSpec.
@@ -351,13 +352,11 @@ func validateTimeouts(spec *WorkflowSpec, result *ValidationResult) {
 
 func validateSchedules(spec *WorkflowSpec, result *ValidationResult) {
 	seen := make(map[string]struct{}, len(spec.Schedules))
-
 	for i, sched := range spec.Schedules {
 		if sched == nil {
 			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d]: nil entry", i))
 			continue
 		}
-
 		if strings.TrimSpace(sched.Name) == "" {
 			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d]: name is required", i))
 		} else if _, dup := seen[sched.Name]; dup {
@@ -365,10 +364,13 @@ func validateSchedules(spec *WorkflowSpec, result *ValidationResult) {
 		} else {
 			seen[sched.Name] = struct{}{}
 		}
-
 		if _, err := ParseCron(sched.CronExpr); err != nil {
-			result.AddError(ErrInvalidSchedule,
-				fmt.Sprintf("schedules[%d] (%s): invalid cron expression: %s", i, sched.Name, err))
+			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d] (%s): invalid cron: %s", i, sched.Name, err))
+		}
+		if sched.Timezone != "" && sched.Timezone != "UTC" {
+			if _, err := time.LoadLocation(sched.Timezone); err != nil {
+				result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d] (%s): invalid timezone %q: %s", i, sched.Name, sched.Timezone, err))
+			}
 		}
 	}
 }
