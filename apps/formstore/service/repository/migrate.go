@@ -17,7 +17,13 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 	log := util.Log(ctx)
 
 	dbPool := manager.GetPool(ctx, datastore.DefaultPoolName)
+	if dbPool == nil {
+		return fmt.Errorf("datastore pool %q not available", datastore.DefaultPoolName)
+	}
 	db := dbPool.DB(ctx, false)
+	if db == nil {
+		return fmt.Errorf("datastore pool %q has no active connection", datastore.DefaultPoolName)
+	}
 
 	err := db.AutoMigrate(
 		&models.FormDefinition{},
