@@ -1,3 +1,17 @@
+// Copyright 2023-2026 Ant Investor Ltd
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -141,7 +155,7 @@ func main() { //nolint:funlen // main function wiring
 	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(tenancyAccessChecker)
 
 	// Layer 2: FunctionAccessInterceptor enforces per-RPC permissions automatically.
-	workflowSD := workflowv1.File_proto_workflow_v1_workflow_proto.Services().ByName("WorkflowService")
+	workflowSD := workflowv1.File_workflow_v1_workflow_proto.Services().ByName("WorkflowService")
 	eventSD := eventv1.File_proto_event_v1_event_proto.Services().ByName("EventService")
 	runtimeSD := runtimev1.File_proto_runtime_v1_runtime_proto.Services().ByName("RuntimeService")
 	signalSD := signalv1.File_proto_signal_v1_signal_proto.Services().ByName("SignalService")

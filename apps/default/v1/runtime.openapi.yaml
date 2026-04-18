@@ -3,6 +3,17 @@ info:
   title: Trustage Runtime API
   description: Workflow instance and execution runtime reads and operator retries for Trustage.
   version: v1.0.0
+x-service-namespace: service_trustage
+x-service-permissions:
+  - event_ingest
+  - workflow_view
+  - workflow_manage
+  - instance_view
+  - instance_retry
+  - execution_view
+  - execution_retry
+  - execution_resume
+  - signal_send
 paths:
   /runtime.v1.RuntimeService/GetExecution:
     post:
@@ -39,6 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.GetExecutionResponse'
+      x-required-permissions:
+        - execution_view
   /runtime.v1.RuntimeService/GetInstanceRun:
     post:
       tags:
@@ -74,6 +87,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.GetInstanceRunResponse'
+      x-required-permissions:
+        - instance_view
   /runtime.v1.RuntimeService/ListExecutions:
     post:
       tags:
@@ -109,6 +124,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.ListExecutionsResponse'
+      x-required-permissions:
+        - execution_view
   /runtime.v1.RuntimeService/ListInstances:
     post:
       tags:
@@ -144,6 +161,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.ListInstancesResponse'
+      x-required-permissions:
+        - instance_view
   /runtime.v1.RuntimeService/ResumeExecution:
     post:
       tags:
@@ -179,6 +198,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.ResumeExecutionResponse'
+      x-required-permissions:
+        - execution_resume
   /runtime.v1.RuntimeService/RetryExecution:
     post:
       tags:
@@ -214,6 +235,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.RetryExecutionResponse'
+      x-required-permissions:
+        - execution_retry
   /runtime.v1.RuntimeService/RetryInstance:
     post:
       tags:
@@ -249,6 +272,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/runtime.v1.RetryInstanceResponse'
+      x-required-permissions:
+        - instance_retry
 components:
   schemas:
     common.v1.PageCursor:

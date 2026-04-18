@@ -1,3 +1,17 @@
+// Copyright 2023-2026 Ant Investor Ltd
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //nolint:testpackage // package-local tests exercise unexported business helpers intentionally.
 package business
 
@@ -319,4 +333,22 @@ func (s *BusinessSuite) TestActivateWorkflow_DoesNotAffectOtherTenants() {
 	s.Len(aScheds, 1)
 	s.True(aScheds[0].Active, "tenant A's schedule must remain active after tenant B activates a same-name workflow")
 	s.NotNil(aScheds[0].NextFireAt)
+}
+
+func (s *BusinessSuite) TestGetWorkflowWithSchedules_ReturnsMaterialised() {
+	ctx := s.tenantCtx()
+	dslBlob := []byte(`{
+		"version": "v1",
+		"name": "w-get",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [{"name": "x", "cron_expr": "*/5 * * * *"}]
+	}`)
+	def, err := s.workflowBusiness().CreateWorkflow(ctx, dslBlob)
+	s.Require().NoError(err)
+
+	got, scheds, err := s.workflowBusiness().GetWorkflowWithSchedules(ctx, def.ID)
+	s.Require().NoError(err)
+	s.Equal(def.ID, got.ID)
+	s.Len(scheds, 1)
+	s.Equal("x", scheds[0].Name)
 }

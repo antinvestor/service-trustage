@@ -3,6 +3,17 @@ info:
   title: Trustage Signal API
   description: Workflow signal delivery for resuming waiting Trustage executions.
   version: v1.0.0
+x-service-namespace: service_trustage
+x-service-permissions:
+  - event_ingest
+  - workflow_view
+  - workflow_manage
+  - instance_view
+  - instance_retry
+  - execution_view
+  - execution_retry
+  - execution_resume
+  - signal_send
 paths:
   /signal.v1.SignalService/SendSignal:
     post:
@@ -39,6 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/signal.v1.SendSignalResponse'
+      x-required-permissions:
+        - signal_send
 components:
   schemas:
     connect-protocol-version:

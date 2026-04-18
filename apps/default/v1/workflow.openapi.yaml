@@ -3,6 +3,17 @@ info:
   title: Trustage Workflow API
   description: Workflow definition management for the Trustage orchestrator.
   version: v1.0.0
+x-service-namespace: service_trustage
+x-service-permissions:
+  - event_ingest
+  - workflow_view
+  - workflow_manage
+  - instance_view
+  - instance_retry
+  - execution_view
+  - execution_retry
+  - execution_resume
+  - signal_send
 paths:
   /workflow.v1.WorkflowService/ActivateWorkflow:
     post:
@@ -39,6 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/workflow.v1.ActivateWorkflowResponse'
+      x-required-permissions:
+        - workflow_manage
   /workflow.v1.WorkflowService/CreateWorkflow:
     post:
       tags:
@@ -74,6 +87,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/workflow.v1.CreateWorkflowResponse'
+      x-required-permissions:
+        - workflow_manage
   /workflow.v1.WorkflowService/GetWorkflow:
     post:
       tags:
@@ -109,6 +124,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/workflow.v1.GetWorkflowResponse'
+      x-required-permissions:
+        - workflow_view
   /workflow.v1.WorkflowService/ListWorkflows:
     post:
       tags:
@@ -144,6 +161,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/workflow.v1.ListWorkflowsResponse'
+      x-required-permissions:
+        - workflow_view
 components:
   schemas:
     common.v1.PageCursor:
@@ -469,6 +488,11 @@ components:
         workflow:
           title: workflow
           $ref: '#/components/schemas/workflow.v1.WorkflowDefinition'
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/workflow.v1.ScheduleDefinition'
+          title: schedules
       title: GetWorkflowResponse
       additionalProperties: false
     workflow.v1.ListWorkflowsRequest:
@@ -497,6 +521,46 @@ components:
           title: next_cursor
           $ref: '#/components/schemas/common.v1.PageCursor'
       title: ListWorkflowsResponse
+      additionalProperties: false
+    workflow.v1.ScheduleDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          title: id
+        name:
+          type: string
+          title: name
+        cronExpr:
+          type: string
+          title: cron_expr
+        workflowName:
+          type: string
+          title: workflow_name
+        workflowVersion:
+          type: integer
+          title: workflow_version
+          format: int32
+        active:
+          type: boolean
+          title: active
+        nextFireAt:
+          title: next_fire_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+        lastFiredAt:
+          title: last_fired_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+        jitterSeconds:
+          type: integer
+          title: jitter_seconds
+          format: int32
+        createdAt:
+          title: created_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+        updatedAt:
+          title: updated_at
+          $ref: '#/components/schemas/google.protobuf.Timestamp'
+      title: ScheduleDefinition
       additionalProperties: false
     workflow.v1.WorkflowDefinition:
       type: object

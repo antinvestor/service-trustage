@@ -3,6 +3,17 @@ info:
   title: Trustage Event API
   description: Event ingestion and workflow timeline reads for the Trustage orchestrator.
   version: v1.0.0
+x-service-namespace: service_trustage
+x-service-permissions:
+  - event_ingest
+  - workflow_view
+  - workflow_manage
+  - instance_view
+  - instance_retry
+  - execution_view
+  - execution_retry
+  - execution_resume
+  - signal_send
 paths:
   /event.v1.EventService/GetInstanceTimeline:
     post:
@@ -39,6 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/event.v1.GetInstanceTimelineResponse'
+      x-required-permissions:
+        - instance_view
   /event.v1.EventService/IngestEvent:
     post:
       tags:
@@ -74,6 +87,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/event.v1.IngestEventResponse'
+      x-required-permissions:
+        - event_ingest
 components:
   schemas:
     connect-protocol-version:

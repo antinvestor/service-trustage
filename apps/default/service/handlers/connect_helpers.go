@@ -1,3 +1,17 @@
+// Copyright 2023-2026 Ant Investor Ltd
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package handlers
 
 import (
@@ -354,6 +368,28 @@ func executionStatusFilter(status runtimev1.ExecutionStatus) string {
 	default:
 		return ""
 	}
+}
+
+func scheduleDefinitionsToProto(in []*models.ScheduleDefinition) []*workflowv1.ScheduleDefinition {
+	out := make([]*workflowv1.ScheduleDefinition, 0, len(in))
+	for _, s := range in {
+		api := &workflowv1.ScheduleDefinition{
+			Id:              s.ID,
+			Name:            s.Name,
+			CronExpr:        s.CronExpr,
+			WorkflowName:    s.WorkflowName,
+			WorkflowVersion: safeInt32(s.WorkflowVersion),
+			Active:          s.Active,
+			JitterSeconds:   safeInt32(s.JitterSeconds),
+			CreatedAt:       timestampFromValue(s.CreatedAt),
+			UpdatedAt:       timestampFromValue(s.ModifiedAt),
+			NextFireAt:      timestampFromPtr(s.NextFireAt),
+			LastFiredAt:     timestampFromPtr(s.LastFiredAt),
+		}
+		out = append(out, api)
+	}
+
+	return out
 }
 
 func workflowDefinitionToProto(def *models.WorkflowDefinition) *workflowv1.WorkflowDefinition {
