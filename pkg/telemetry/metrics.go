@@ -84,6 +84,9 @@ type Metrics struct {
 	SchedulerCronFired         metric.Int64Counter
 	SchedulerCronSweepDuration metric.Float64Histogram
 	SchedulerCronInvalid       metric.Int64Counter
+	// v1.2 observability — backlog gauge, tenant-attributed fire counter, lifecycle counter.
+	SchedulerCronBacklog   metric.Float64Gauge // scheduler_cron_backlog_seconds
+	WorkflowLifecycleTotal metric.Int64Counter // workflow_lifecycle_total
 }
 
 // NewMetrics creates and registers all OTel instruments.
@@ -109,6 +112,15 @@ func NewMetrics() *Metrics {
 	cronFired, _ := meter.Int64Counter("scheduler_cron_fired_total")
 	cronSweepDuration, _ := meter.Float64Histogram("scheduler_cron_sweep_duration_seconds")
 	cronInvalid, _ := meter.Int64Counter("scheduler_cron_invalid_cron_total")
+	cronBacklog, _ := meter.Float64Gauge(
+		"scheduler_cron_backlog_seconds",
+		metric.WithDescription("Age (in seconds) of the oldest due schedule. 0 if no schedules are currently due."),
+		metric.WithUnit("s"),
+	)
+	workflowLifecycle, _ := meter.Int64Counter(
+		"workflow_lifecycle_total",
+		metric.WithDescription("Count of workflow lifecycle operations (create|activate|archive) by result and tenant."),
+	)
 
 	return &Metrics{
 		ExecutionsTotal:            execTotal,
@@ -130,12 +142,63 @@ func NewMetrics() *Metrics {
 		SchedulerCronFired:         cronFired,
 		SchedulerCronSweepDuration: cronSweepDuration,
 		SchedulerCronInvalid:       cronInvalid,
+		SchedulerCronBacklog:       cronBacklog,
+		WorkflowLifecycleTotal:     workflowLifecycle,
 	}
 }
 
-// RecordSchedulerCronSweep records a single cron sweep: fired count,
-// sweep duration, and success/failure result label.
-func (m *Metrics) RecordSchedulerCronSweep(ctx context.Context, fired int, dur time.Duration, ok bool) {
+// RecordSchedulerCronSweep emits per-tenant fire counters and the sweep-duration
+// histogram after one ClaimAndFireBatch sweep completes. firedByTenant may be
+// empty (no rows fired this sweep). ok=false marks a sweep that returned an
+// error; firedByTenant should be empty in that case.
+func (m *Metrics) RecordSchedulerCronSweep(ctx context.Context, firedByTenant map[string]int, dur time.Duration, ok bool) {
+	if m == nil {
+		return
+	}
+
+	result := "ok"
+	if !ok {
+		result = "fail"
+	}
+
+	// Histogram: one observation per sweep.
+	m.SchedulerCronSweepDuration.Record(ctx, dur.Seconds(),
+		metric.WithAttributes(attribute.String("result", result)))
+
+	// Counter: one increment per tenant in the sweep. On failure, emit a
+	// single fail counter with empty tenant so the fail rate is always visible
+	// even if no rows were fired.
+	if !ok || len(firedByTenant) == 0 {
+		m.SchedulerCronFired.Add(ctx, 0,
+			metric.WithAttributes(
+				attribute.String("result", result),
+				attribute.String("tenant_id", ""),
+			))
+		return
+	}
+
+	for tenantID, count := range firedByTenant {
+		m.SchedulerCronFired.Add(ctx, int64(count),
+			metric.WithAttributes(
+				attribute.String("result", result),
+				attribute.String("tenant_id", tenantID),
+			))
+	}
+}
+
+// ObserveSchedulerBacklog sets the scheduler_cron_backlog_seconds gauge to the
+// most recent sampled value. Called once per sweep by CronScheduler.
+func (m *Metrics) ObserveSchedulerBacklog(ctx context.Context, seconds float64) {
+	if m == nil {
+		return
+	}
+	m.SchedulerCronBacklog.Record(ctx, seconds)
+}
+
+// RecordWorkflowLifecycle increments workflow_lifecycle_total for the given
+// operation (create|activate|archive), tenant, and result. Called by the
+// business layer at the end of each lifecycle method.
+func (m *Metrics) RecordWorkflowLifecycle(ctx context.Context, op, tenantID string, ok bool) {
 	if m == nil {
 		return
 	}
@@ -143,8 +206,12 @@ func (m *Metrics) RecordSchedulerCronSweep(ctx context.Context, fired int, dur t
 	if !ok {
 		result = "fail"
 	}
-	m.SchedulerCronFired.Add(ctx, int64(fired), metric.WithAttributes(attribute.String("result", result)))
-	m.SchedulerCronSweepDuration.Record(ctx, dur.Seconds(), metric.WithAttributes(attribute.String("result", result)))
+	m.WorkflowLifecycleTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("op", op),
+			attribute.String("result", result),
+			attribute.String("tenant_id", tenantID),
+		))
 }
 
 // StartSpan starts a new OTel span.
