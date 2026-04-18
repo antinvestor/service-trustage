@@ -16,6 +16,7 @@ import (
 	"github.com/pitabwire/frame/frametests/deps/testpostgres"
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
@@ -181,31 +182,7 @@ func (c *captureWorker) Handle(_ context.Context, _ map[string]string, message [
 	return nil
 }
 
-func (s *SchedulerSuite) TestComputeNextFireAndBuildIngestedEventMessage() {
-	now := time.Now().UTC().Truncate(time.Second)
-
-	cases := []struct {
-		name     string
-		cronExpr string
-		wantNil  bool
-	}{
-		{name: "one hour", cronExpr: "1h", wantNil: false},
-		{name: "invalid", cronExpr: "bad", wantNil: true},
-		{name: "zero", cronExpr: "0s", wantNil: true},
-	}
-
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			next := computeNextFire(tc.cronExpr, now)
-			if tc.wantNil {
-				s.Nil(next)
-				return
-			}
-			s.NotNil(next)
-			s.True(next.After(now))
-		})
-	}
-
+func (s *SchedulerSuite) TestBuildIngestedEventMessage() {
 	msg, err := buildIngestedEventMessage(&models.EventLog{
 		BaseModel: models.EventLog{}.BaseModel,
 		EventType: "payment.requested",
@@ -268,7 +245,7 @@ func (s *SchedulerSuite) TestCronScheduler_RunOnceCreatesEventAndAdvancesSchedul
 	fireAt := time.Now().Add(-time.Minute).UTC()
 	sched := &models.ScheduleDefinition{
 		Name:            "hourly",
-		CronExpr:        "1h",
+		CronExpr:        "*/5 * * * *",
 		WorkflowName:    "payments",
 		WorkflowVersion: 1,
 		InputPayload:    `{"country":"UG"}`,
@@ -287,9 +264,13 @@ func (s *SchedulerSuite) TestCronScheduler_RunOnceCreatesEventAndAdvancesSchedul
 	s.Contains(unpublished[0].Payload, `"country": "UG"`)
 	s.Contains(unpublished[0].Payload, `"schedule_name": "hourly"`)
 
-	reloaded, err := s.scheduleRepo.FindDue(ctx, time.Now().Add(2*time.Hour), 10)
-	s.Require().NoError(err)
-	s.NotEmpty(reloaded)
+	// Verify next_fire_at was advanced: schedule should now be due again in the future
+	// (ClaimAndFireBatch updates next_fire_at; a subsequent sweep in the near future should
+	// NOT claim the same row since its next_fire_at now points ahead).
+	var reloaded models.ScheduleDefinition
+	s.Require().NoError(s.dbPool.DB(ctx, false).First(&reloaded, "id = ?", sched.ID).Error)
+	s.NotNil(reloaded.NextFireAt)
+	s.True(reloaded.NextFireAt.After(time.Now()), "next_fire_at must be in the future after firing")
 }
 
 func (s *SchedulerSuite) TestRetryScheduler_RunOnceCreatesNewAttempt() {
@@ -788,6 +769,31 @@ func (s *SchedulerSuite) TestScopeScheduler_RunOnceReconcilesBranchScope() {
 	latestExec, err := s.execRepo.GetLatestByInstance(ctx, instance.ID)
 	s.Require().NoError(err)
 	s.Equal("after", latestExec.State)
+}
+
+func TestJitterFor_Deterministic(t *testing.T) {
+	sched, err := dsl.ParseCron("*/5 * * * *")
+	require.NoError(t, err)
+
+	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
+	nominal := sched.Next(base)
+
+	a := jitterFor("sched-1", sched, nominal)
+	b := jitterFor("sched-1", sched, nominal)
+	require.Equal(t, a, b, "jitter must be deterministic per schedule id")
+}
+
+func TestJitterFor_RespectsCap(t *testing.T) {
+	sched, err := dsl.ParseCron("*/5 * * * *") // 5-min period → cap = min(period/10, 30s) = 30s.
+	require.NoError(t, err)
+
+	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
+	nominal := sched.Next(base)
+
+	for i := 0; i < 50; i++ {
+		j := jitterFor(fmt.Sprintf("s-%d", i), sched, nominal)
+		require.True(t, j >= 0 && j < 30*time.Second, "jitter %v out of bounds", j)
+	}
 }
 
 var _ = telemetry.NewMetrics()
