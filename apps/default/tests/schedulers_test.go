@@ -532,7 +532,7 @@ func (s *DefaultServiceSuite) TestCronScheduler_RunOnce() {
 	nextFire := time.Now().Add(-time.Minute)
 	schedDef := &models.ScheduleDefinition{
 		Name:            "sched-1",
-		CronExpr:        "1h",
+		CronExpr:        "*/5 * * * *",
 		WorkflowName:    "wf",
 		WorkflowVersion: 1,
 		InputPayload:    `{"extra":"x"}`,
@@ -541,7 +541,7 @@ func (s *DefaultServiceSuite) TestCronScheduler_RunOnce() {
 	}
 	s.Require().NoError(s.scheduleRepo.Create(tenantCtx, schedDef))
 
-	cron := schedulers.NewCronScheduler(s.scheduleRepo, s.eventRepo, &config.Config{})
+	cron := schedulers.NewCronScheduler(s.scheduleRepo, &config.Config{})
 	count := cron.RunOnce(ctx)
 	s.Equal(1, count)
 
@@ -607,7 +607,7 @@ func (s *DefaultServiceSuite) TestSchedulers_Start_CancelledContext() {
 	timer := schedulers.NewTimerScheduler(s.timerRepo, s.stateEngine(), cfg, s.metrics)
 	timeout := schedulers.NewTimeoutScheduler(s.execRepo, s.instanceRepo, s.retryRepo, s.auditRepo, cfg, s.metrics)
 	outbox := schedulers.NewOutboxScheduler(s.eventRepo, queueMgr, cfg, s.metrics)
-	cron := schedulers.NewCronScheduler(s.scheduleRepo, s.eventRepo, cfg)
+	cron := schedulers.NewCronScheduler(s.scheduleRepo, cfg)
 	cleanup := schedulers.NewCleanupScheduler(s.eventRepo, s.auditRepo, cfg)
 
 	done := make(chan struct{})

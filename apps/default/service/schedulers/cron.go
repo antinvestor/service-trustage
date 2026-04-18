@@ -17,67 +17,54 @@ package schedulers
 import (
 	"context"
 	"encoding/json"
-	"hash/fnv"
-	"maps"
 	"time"
 
 	"github.com/pitabwire/util"
-	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/dsl"
+	"github.com/antinvestor/service-trustage/pkg/events"
 )
 
 const (
-	cronSchedulerBatchSize  = 50
-	cronCheckInterval       = 30 * time.Second
 	cronMissedFireThreshold = 5 * time.Minute
-	cronMaxJitter           = 30 * time.Second
-	// cronJitterPeriodDivisor is the fraction of a cron period used as the jitter ceiling.
-	cronJitterPeriodDivisor = 10
+	cronDefaultBatchSize    = 500
+	cronDefaultIntervalSecs = 1
 )
 
-// CronScheduler fires events for schedule_definitions rows whose next_fire_at has passed.
-// Uses ScheduleRepository.ClaimAndFireBatch to ensure exactly-once fire under multi-pod deployment.
+// CronScheduler runs the fire loop. It implements the plan side of
+// repository.ScheduleRepository.ClaimAndFireBatch — pure Go, no DB access in
+// planOne. The repo owns the transaction.
 type CronScheduler struct {
 	scheduleRepo repository.ScheduleRepository
-	eventRepo    repository.EventLogRepository
 	cfg          *config.Config
 }
 
-// NewCronScheduler creates a new CronScheduler. The eventRepo argument is retained for
-// backwards compatibility with main.go wiring but is unused now that the event_log insert
-// happens inside ClaimAndFireBatch's tx (via fireSchedule's tx handle).
-func NewCronScheduler(
-	scheduleRepo repository.ScheduleRepository,
-	eventRepo repository.EventLogRepository,
-	cfg *config.Config,
-) *CronScheduler {
-	return &CronScheduler{
-		scheduleRepo: scheduleRepo,
-		eventRepo:    eventRepo,
-		cfg:          cfg,
-	}
+// NewCronScheduler wires the scheduler with its repo and config. Metrics
+// injection lands in Task 9.
+func NewCronScheduler(scheduleRepo repository.ScheduleRepository, cfg *config.Config) *CronScheduler {
+	return &CronScheduler{scheduleRepo: scheduleRepo, cfg: cfg}
 }
 
-// Start begins the cron scheduler loop. It blocks until context is cancelled.
+// Start runs the sweep loop until ctx is cancelled.
 func (s *CronScheduler) Start(ctx context.Context) {
 	log := util.Log(ctx)
 
-	log.Debug("cron scheduler started", "interval_seconds", int(cronCheckInterval.Seconds()))
+	interval := s.interval()
+	log.Debug("cron scheduler started",
+		"interval_seconds", int(interval.Seconds()),
+		"batch_size", s.batchSize(),
+	)
 
-	ticker := time.NewTicker(cronCheckInterval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			fired := s.RunOnce(ctx)
-			if fired > 0 {
-				log.Debug("cron scheduler completed", "fired", fired)
-			}
+			s.RunOnce(ctx)
 		case <-ctx.Done():
 			log.Debug("cron scheduler stopped")
 			return
@@ -85,65 +72,35 @@ func (s *CronScheduler) Start(ctx context.Context) {
 	}
 }
 
-// RunOnce performs one transactional sweep for due schedules.
+// RunOnce drives one transactional sweep.
 func (s *CronScheduler) RunOnce(ctx context.Context) int {
 	log := util.Log(ctx)
 	now := time.Now().UTC()
 
-	fired, err := s.scheduleRepo.ClaimAndFireBatch(ctx, now, cronSchedulerBatchSize,
-		func(innerCtx context.Context, tx *gorm.DB, sched *models.ScheduleDefinition) (*time.Time, int, error) {
-			return fireOne(innerCtx, tx, sched, now)
-		})
+	fired, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, s.batchSize())
 	if err != nil {
-		log.WithError(err).Error("cron scheduler: ClaimAndFireBatch failed")
+		log.WithError(err).Error("cron scheduler: sweep failed")
+		return 0
 	}
-
+	if fired > 0 {
+		log.Debug("cron scheduler swept", "fired", fired)
+	}
 	return fired
 }
 
-// fireOne emits the event_log row (inside tx) and returns (nextFire, jitterSeconds, error).
-// Runs inside the tx that holds the FOR UPDATE SKIP LOCKED lock.
-func fireOne(
+// planOne implements repository.SchedulePlanFn. Pure Go, no DB.
+func (s *CronScheduler) planOne(
 	ctx context.Context,
-	tx *gorm.DB,
 	sched *models.ScheduleDefinition,
-	now time.Time,
-) (*time.Time, int, error) {
+) (*models.EventLog, *time.Time, int, error) {
 	log := util.Log(ctx)
+	now := time.Now().UTC()
 
-	// Build event payload.
-	payload := map[string]any{
-		"schedule_id":   sched.ID,
-		"schedule_name": sched.Name,
-		"fired_at":      now.Format(time.RFC3339),
-	}
-	if sched.InputPayload != "" {
-		var inputData map[string]any
-		if err := json.Unmarshal([]byte(sched.InputPayload), &inputData); err == nil {
-			maps.Copy(payload, inputData)
-		}
-	}
-	payloadBytes, _ := json.Marshal(payload)
-
-	eventLog := &models.EventLog{
-		EventType:      "schedule.fired",
-		Source:         "schedule:" + sched.ID,
-		IdempotencyKey: sched.ID + ":" + now.Format(time.RFC3339Nano),
-		Payload:        string(payloadBytes),
-	}
-	eventLog.CopyPartitionInfo(&sched.BaseModel)
-
-	if err := tx.Create(eventLog).Error; err != nil {
-		return nil, 0, err
-	}
-
-	// Compute next fire.
 	cronSched, err := dsl.ParseCron(sched.CronExpr)
 	if err != nil {
-		// Invalid cron — log and park next_fire_at = nil so the row drops out of the partial index.
-		log.WithError(err).Error("cron scheduler: invalid cron expression, parking schedule",
+		log.WithError(err).Error("cron scheduler: invalid cron, parking",
 			"schedule_id", sched.ID, "cron_expr", sched.CronExpr)
-		return nil, 0, nil
+		return nil, nil, 0, nil // park: no event, clear next_fire_at
 	}
 
 	base := now
@@ -151,32 +108,56 @@ func fireOne(
 		base = *sched.NextFireAt
 	}
 
-	nominal := cronSched.Next(base)
-	jitter := jitterFor(sched.ID, cronSched, nominal)
+	nominal, err := cronSched.NextInZone(base, sched.Timezone)
+	if err != nil {
+		log.WithError(err).Error("cron scheduler: invalid timezone, parking",
+			"schedule_id", sched.ID, "timezone", sched.Timezone)
+		return nil, nil, 0, nil
+	}
+
+	jitter := dsl.JitterFor(sched.ID, cronSched, nominal)
 	next := nominal.Add(jitter)
 
-	return &next, int(jitter / time.Second), nil
+	ev := buildEvent(sched, now)
+	return ev, &next, int(jitter / time.Second), nil
 }
 
-// jitterFor returns a deterministic per-schedule offset to flatten thundering herds.
-// Capped at min(period/10, cronMaxJitter).
-func jitterFor(scheduleID string, cronSched dsl.CronSchedule, nominal time.Time) time.Duration {
-	following := cronSched.Next(nominal)
-	period := following.Sub(nominal)
-	if period <= 0 {
-		return 0
+// buildEvent assembles a schedule.fired event_log row via the typed payload
+// helper — user input_payload cannot shadow system fields.
+func buildEvent(sched *models.ScheduleDefinition, now time.Time) *models.EventLog {
+	var input map[string]any
+	if sched.InputPayload != "" {
+		var tmp map[string]any
+		if err := json.Unmarshal([]byte(sched.InputPayload), &tmp); err == nil {
+			input = tmp
+		}
 	}
 
-	maxDur := period / cronJitterPeriodDivisor
-	if maxDur > cronMaxJitter {
-		maxDur = cronMaxJitter
-	}
-	if maxDur <= 0 {
-		return 0
-	}
+	payload := events.BuildScheduleFiredPayload(
+		sched.ID, sched.Name, now.Format(time.RFC3339), input,
+	)
+	raw, _ := payload.ToJSON()
 
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(scheduleID))
-	//nolint:gosec // G115: modulo operation bounds the result to [0, maxDur); overflow is intentional.
-	return time.Duration(int64(h.Sum64() % uint64(maxDur)))
+	ev := &models.EventLog{
+		EventType:      events.ScheduleFiredType,
+		Source:         "schedule:" + sched.ID,
+		IdempotencyKey: sched.ID + ":" + now.Format(time.RFC3339Nano),
+		Payload:        raw,
+	}
+	ev.CopyPartitionInfo(&sched.BaseModel)
+	return ev
+}
+
+func (s *CronScheduler) batchSize() int {
+	if s.cfg != nil && s.cfg.CronSchedulerBatchSize > 0 {
+		return s.cfg.CronSchedulerBatchSize
+	}
+	return cronDefaultBatchSize
+}
+
+func (s *CronScheduler) interval() time.Duration {
+	if s.cfg != nil && s.cfg.CronSchedulerIntervalSecs > 0 {
+		return time.Duration(s.cfg.CronSchedulerIntervalSecs) * time.Second
+	}
+	return cronDefaultIntervalSecs * time.Second
 }

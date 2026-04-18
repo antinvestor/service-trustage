@@ -29,6 +29,10 @@ type Config struct {
 	// Encryption.
 	MasterEncryptionKey string `env:"MASTER_ENCRYPTION_KEY"`
 
+	// Cron scheduler.
+	CronSchedulerBatchSize    int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`
+	CronSchedulerIntervalSecs int `env:"CRON_SCHEDULER_INTERVAL_SECONDS" envDefault:"1"`
+
 	// Scheduler intervals (seconds).
 	DispatchIntervalSeconds int `env:"DISPATCH_INTERVAL_SECONDS" envDefault:"5"`
 	RetryIntervalSeconds    int `env:"RETRY_INTERVAL_SECONDS"    envDefault:"10"`

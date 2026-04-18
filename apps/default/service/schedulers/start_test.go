@@ -69,8 +69,8 @@ func TestSchedulers_ConstructorsAndStartStop(t *testing.T) {
 		},
 		{
 			name:      "cron",
-			scheduler: NewCronScheduler(nil, nil, cfg),
-			start:     NewCronScheduler(nil, nil, cfg).Start,
+			scheduler: NewCronScheduler(nil, cfg),
+			start:     NewCronScheduler(nil, cfg).Start,
 		},
 		{
 			name:      "dispatch",

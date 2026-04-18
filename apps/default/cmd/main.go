@@ -209,7 +209,7 @@ func main() { //nolint:funlen // main function wiring
 	}
 
 	cleanupSched := schedulers.NewCleanupScheduler(eventLogRepo, auditRepo, &cfg)
-	cronSched := schedulers.NewCronScheduler(scheduleRepo, eventLogRepo, &cfg)
+	cronSched := schedulers.NewCronScheduler(scheduleRepo, &cfg)
 
 	startScheduler("dispatch", dispatchSched.Start)
 	startScheduler("retry", retrySched.Start)

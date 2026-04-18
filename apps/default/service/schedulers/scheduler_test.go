@@ -268,7 +268,7 @@ func (s *SchedulerSuite) TestCronScheduler_RunOnceCreatesEventAndAdvancesSchedul
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, sched))
 
-	scheduler := NewCronScheduler(s.scheduleRepo, s.eventRepo, s.cfg)
+	scheduler := NewCronScheduler(s.scheduleRepo, s.cfg)
 	fired := scheduler.RunOnce(ctx)
 	s.Equal(1, fired)
 
@@ -792,8 +792,8 @@ func TestJitterFor_Deterministic(t *testing.T) {
 	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
 	nominal := sched.Next(base)
 
-	a := jitterFor("sched-1", sched, nominal)
-	b := jitterFor("sched-1", sched, nominal)
+	a := dsl.JitterFor("sched-1", sched, nominal)
+	b := dsl.JitterFor("sched-1", sched, nominal)
 	require.Equal(t, a, b, "jitter must be deterministic per schedule id")
 }
 
@@ -805,9 +805,49 @@ func TestJitterFor_RespectsCap(t *testing.T) {
 	nominal := sched.Next(base)
 
 	for i := range 50 {
-		j := jitterFor(fmt.Sprintf("s-%d", i), sched, nominal)
+		j := dsl.JitterFor(fmt.Sprintf("s-%d", i), sched, nominal)
 		require.True(t, j >= 0 && j < 30*time.Second, "jitter %v out of bounds", j)
 	}
+}
+
+func TestPlanOne_InvalidCronParks(t *testing.T) {
+	sched := &models.ScheduleDefinition{Name: "bad", CronExpr: "not-a-cron", Timezone: "UTC"}
+	sched.ID = "s-1"
+
+	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50, CronSchedulerIntervalSecs: 1}}
+	ev, next, jit, err := s.planOne(context.Background(), sched)
+
+	require.NoError(t, err)
+	require.Nil(t, ev, "invalid cron must not emit an event")
+	require.Nil(t, next, "invalid cron must park")
+	require.Equal(t, 0, jit)
+}
+
+func TestPlanOne_InvalidTimezoneParks(t *testing.T) {
+	sched := &models.ScheduleDefinition{Name: "tz", CronExpr: "*/5 * * * *", Timezone: "Not/A/Zone"}
+	sched.ID = "s-2"
+
+	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50, CronSchedulerIntervalSecs: 1}}
+	ev, next, _, _ := s.planOne(context.Background(), sched)
+
+	require.Nil(t, ev)
+	require.Nil(t, next)
+}
+
+func TestPlanOne_MissedFireSkipsForward(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour) // > 5 min stale
+	sched := &models.ScheduleDefinition{
+		Name: "stale", CronExpr: "*/5 * * * *", Timezone: "UTC", NextFireAt: &past,
+	}
+	sched.ID = "s-3"
+
+	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50, CronSchedulerIntervalSecs: 1}}
+	ev, next, _, err := s.planOne(context.Background(), sched)
+
+	require.NoError(t, err)
+	require.NotNil(t, ev)
+	require.NotNil(t, next)
+	require.True(t, next.After(time.Now().UTC()), "missed-fire must skip forward")
 }
 
 var _ = telemetry.NewMetrics()
