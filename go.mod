@@ -16,6 +16,7 @@ require (
 	github.com/openai/openai-go/v3 v3.31.0
 	github.com/pitabwire/frame v1.94.1
 	github.com/pitabwire/util v0.8.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
