@@ -54,8 +54,9 @@ type Config struct {
 	ScopeBatchSize             int `env:"SCOPE_BATCH_SIZE"               envDefault:"100"`
 	TimeoutBatchSize           int `env:"TIMEOUT_BATCH_SIZE"             envDefault:"50"`
 	OutboxBatchSize            int `env:"OUTBOX_BATCH_SIZE"              envDefault:"100"`
-	DispatchMaxBatchesPerSweep int `env:"DISPATCH_MAX_BATCHES_PER_SWEEP" envDefault:"100"`
-	OutboxMaxBatchesPerSweep   int `env:"OUTBOX_MAX_BATCHES_PER_SWEEP"   envDefault:"100"`
+	DispatchMaxBatchesPerSweep int `env:"DISPATCH_MAX_BATCHES_PER_SWEEP"     envDefault:"100"`
+	OutboxMaxBatchesPerSweep   int `env:"OUTBOX_MAX_BATCHES_PER_SWEEP"       envDefault:"100"`
+	OutboxPublishConcurrency   int `env:"OUTBOX_PUBLISH_CONCURRENCY"         envDefault:"16"`
 
 	// Execution timeout (seconds) - default timeout for dispatched executions.
 	DefaultExecutionTimeoutSeconds int `env:"DEFAULT_EXECUTION_TIMEOUT_SECONDS" envDefault:"300"`

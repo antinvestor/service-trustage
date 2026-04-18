@@ -18,11 +18,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/pitabwire/frame/queue"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -122,24 +124,60 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 
 	s.metrics.SchedulerOutboxGauge.Record(ctx, int64(len(claimed)))
 
+	// publishResult captures whether an event was successfully published to NATS.
+	type publishResult struct {
+		event *models.EventLog
+		msg   *events.IngestedEventMessage
+		err   error
+	}
+
+	results := make([]publishResult, len(claimed))
+	for i, ev := range claimed {
+		msg, buildErr := buildIngestedEventMessage(ev)
+		results[i] = publishResult{event: ev, msg: msg, err: buildErr}
+	}
+
+	// Publish concurrently, bounded by OutboxPublishConcurrency.
+	concurrency := s.cfg.OutboxPublishConcurrency
+	if concurrency <= 0 {
+		concurrency = 16
+	}
+
+	sem := make(chan struct{}, concurrency)
+	var mu sync.Mutex
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	for i := range results {
+		if results[i].err != nil {
+			// Build failed — skip publish; release happens in the ack loop below.
+			continue
+		}
+		i := i // capture
+		sem <- struct{}{}
+		eg.Go(func() error {
+			defer func() { <-sem }()
+			publishErr := s.queueMgr.Publish(egCtx, s.cfg.QueueEventIngestName, results[i].msg)
+			if publishErr != nil {
+				mu.Lock()
+				results[i].err = publishErr
+				mu.Unlock()
+			}
+			return nil // don't cancel the group on a single-message failure
+		})
+	}
+	_ = eg.Wait()
+
+	// Sequential ack / release — preserves claim/release semantics.
 	published := 0
-
-	for _, event := range claimed {
-		msg, buildErr := buildIngestedEventMessage(event)
-		if buildErr != nil {
-			log.WithError(buildErr).Error("outbox scheduler: build message failed", "event_id", event.ID)
-			_ = s.eventRepo.ReleaseClaim(ctx, event.ID, s.owner)
+	for _, r := range results {
+		if r.err != nil {
+			log.WithError(r.err).Error("outbox scheduler: publish/build failed", "event_id", r.event.ID)
+			_ = s.eventRepo.ReleaseClaim(ctx, r.event.ID, s.owner)
 			continue
 		}
 
-		if publishErr := s.queueMgr.Publish(ctx, s.cfg.QueueEventIngestName, msg); publishErr != nil {
-			log.WithError(publishErr).Error("outbox scheduler: publish failed", "event_id", event.ID)
-			_ = s.eventRepo.ReleaseClaim(ctx, event.ID, s.owner)
-			continue
-		}
-
-		if ackErr := s.eventRepo.MarkPublishedByOwner(ctx, event.ID, s.owner, time.Now()); ackErr != nil {
-			log.WithError(ackErr).Error("outbox scheduler: mark published failed", "event_id", event.ID)
+		if ackErr := s.eventRepo.MarkPublishedByOwner(ctx, r.event.ID, s.owner, time.Now()); ackErr != nil {
+			log.WithError(ackErr).Error("outbox scheduler: mark published failed", "event_id", r.event.ID)
 			continue
 		}
 
