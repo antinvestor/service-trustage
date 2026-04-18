@@ -313,13 +313,13 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 			return fmt.Errorf("update workflow: %w", updErr)
 		}
 
-		// Deactivate every version's schedules for this workflow name (wildcard).
+		// Deactivate every version's schedules for this workflow name (same tenant only).
 		// Use raw Exec to guarantee active=false (boolean zero value) is written.
 		if deactErr := tx.Exec(
 			`UPDATE schedule_definitions
 			    SET active = false, next_fire_at = NULL, modified_at = ?
-			  WHERE workflow_name = ? AND deleted_at IS NULL`,
-			now, def.Name,
+			  WHERE workflow_name = ? AND tenant_id = ? AND deleted_at IS NULL`,
+			now, def.Name, def.TenantID,
 		).Error; deactErr != nil {
 			return fmt.Errorf("deactivate prior schedules: %w", deactErr)
 		}

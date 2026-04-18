@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/pitabwire/frame/security"
+
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/pkg/events"
 )
@@ -284,4 +286,37 @@ func (s *BusinessSuite) TestSchemaRegistry_RegisterValidateAndCache() {
 	_, err = s.schemaRegistry().ValidateInput(ctx, "payments", 1, "step_a", json.RawMessage(`{"amount":"bad"}`))
 	s.Require().Error(err)
 	s.ErrorIs(err, ErrInputContractViolation)
+}
+
+func (s *BusinessSuite) TestActivateWorkflow_DoesNotAffectOtherTenants() {
+	tenantA := s.tenantCtx() // existing helper: returns ctx with "test-tenant-001"
+
+	// Create a workflow in tenant A with a schedule, activate it.
+	dslA := []byte(`{
+		"version": "v1",
+		"name": "w-iso",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [{"name": "t", "cron_expr": "*/5 * * * *"}]
+	}`)
+	biz := s.workflowBusiness()
+	wA, err := biz.CreateWorkflow(tenantA, dslA)
+	s.Require().NoError(err)
+	s.Require().NoError(biz.ActivateWorkflow(tenantA, wA.ID))
+
+	// Craft a tenant-B ctx.
+	tenantBClaims := &security.AuthenticationClaims{TenantID: "tenant-B", PartitionID: "partition-B"}
+	tenantBClaims.Subject = "user-B"
+	tenantB := tenantBClaims.ClaimsToContext(context.Background())
+
+	// Create + activate another workflow with SAME name in tenant B.
+	wB, err := biz.CreateWorkflow(tenantB, dslA)
+	s.Require().NoError(err)
+	s.Require().NoError(biz.ActivateWorkflow(tenantB, wB.ID))
+
+	// Tenant A's schedule must remain active — tenant B's activation should not have flipped it off.
+	aScheds, err := s.scheduleRepo.ListByWorkflow(tenantA, wA.Name, wA.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Len(aScheds, 1)
+	s.True(aScheds[0].Active, "tenant A's schedule must remain active after tenant B activates a same-name workflow")
+	s.NotNil(aScheds[0].NextFireAt)
 }
