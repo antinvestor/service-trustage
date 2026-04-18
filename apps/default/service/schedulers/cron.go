@@ -90,20 +90,39 @@ func (s *CronScheduler) RunOnce(ctx context.Context) int {
 
 	start := time.Now()
 
-	fired, _, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, s.batchSize())
+	fired, firedByTenant, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, s.batchSize())
 	dur := time.Since(start)
 
 	if err != nil {
 		log.WithError(err).Error("cron scheduler: sweep failed")
-		s.metrics.RecordSchedulerCronSweep(ctx, 0, dur, false)
+		s.metrics.RecordSchedulerCronSweep(ctx, nil, dur, false)
+		s.sampleBacklog(ctx) // still sample backlog even on failure — operators want to see lag growing
 		return 0
 	}
 
-	s.metrics.RecordSchedulerCronSweep(ctx, fired, dur, true)
+	s.metrics.RecordSchedulerCronSweep(ctx, firedByTenant, dur, true)
+	s.sampleBacklog(ctx)
+
 	if fired > 0 {
-		log.Debug("cron scheduler swept", "fired", fired)
+		log.Debug("cron scheduler swept", "fired", fired, "by_tenant", len(firedByTenant))
 	}
 	return fired
+}
+
+// sampleBacklog queries the oldest-due-schedule age and emits it as a gauge.
+// One extra DB round-trip per sweep — cheap at 1s cadence, invaluable for
+// detecting slow-creep backlog that would otherwise only surface as user-
+// visible missed fires.
+func (s *CronScheduler) sampleBacklog(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+	lag, err := s.scheduleRepo.BacklogSeconds(ctx)
+	if err != nil {
+		util.Log(ctx).WithError(err).Warn("cron scheduler: backlog sample failed")
+		return
+	}
+	s.metrics.ObserveSchedulerBacklog(ctx, lag)
 }
 
 // planOne implements repository.SchedulePlanFn. Pure Go, no DB.
