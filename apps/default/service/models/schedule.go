@@ -26,6 +26,7 @@ type ScheduleDefinition struct {
 
 	Name            string     `gorm:"column:name;not null"`
 	CronExpr        string     `gorm:"column:cron_expr;not null"`
+	Timezone        string     `gorm:"column:timezone;not null;default:'UTC'"`
 	WorkflowName    string     `gorm:"column:workflow_name;not null"`
 	WorkflowVersion int        `gorm:"column:workflow_version;not null"`
 	InputPayload    string     `gorm:"column:input_payload;type:jsonb;default:'{}'"`
@@ -35,7 +36,4 @@ type ScheduleDefinition struct {
 	JitterSeconds   int        `gorm:"column:jitter_seconds;not null;default:0"`
 }
 
-// TableName returns the database table name.
-func (ScheduleDefinition) TableName() string {
-	return "schedule_definitions"
-}
+func (ScheduleDefinition) TableName() string { return "schedule_definitions" }

@@ -56,6 +56,15 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		return fmt.Errorf("auto-migrate database schema: %w", err)
 	}
 
+	// v1.1 housekeeping: drop the v1 idx_sd_due so the tightened predicate
+	// (WHERE active = true AND deleted_at IS NULL AND next_fire_at IS NOT NULL)
+	// is picked up on the next CreateIndex. One-time.
+	if db.Migrator().HasIndex(&models.ScheduleDefinition{}, "idx_sd_due") {
+		if dropErr := db.Migrator().DropIndex(&models.ScheduleDefinition{}, "idx_sd_due"); dropErr != nil {
+			return fmt.Errorf("drop v1 idx_sd_due: %w", dropErr)
+		}
+	}
+
 	for _, indexDef := range migrationIndexes() {
 		for _, indexName := range indexDef.Names {
 			if db.Migrator().HasIndex(indexDef.Model, indexName) {
@@ -152,7 +161,7 @@ func migrationIndexes() []migrationIndex {
 		},
 		{
 			Model: &scheduleDefinitionIndexModel{},
-			Names: []string{"idx_sd_tenant", "idx_sd_due"},
+			Names: []string{"idx_sd_tenant", "idx_sd_due", "idx_sd_workflow_unique"},
 		},
 	}
 }
@@ -288,9 +297,12 @@ type triggerBindingIndexModel struct {
 func (triggerBindingIndexModel) TableName() string { return "trigger_bindings" }
 
 type scheduleDefinitionIndexModel struct {
-	TenantID    string    `gorm:"column:tenant_id;index:idx_sd_tenant,priority:1"`
-	PartitionID string    `gorm:"column:partition_id;index:idx_sd_tenant,priority:2"`
-	NextFireAt  time.Time `gorm:"column:next_fire_at;index:idx_sd_due,where:active = true AND deleted_at IS NULL,priority:1"`
+	TenantID        string    `gorm:"column:tenant_id;index:idx_sd_tenant,priority:1;index:idx_sd_workflow_unique,unique,where:deleted_at IS NULL,priority:1"`
+	PartitionID     string    `gorm:"column:partition_id;index:idx_sd_tenant,priority:2;index:idx_sd_workflow_unique,unique,where:deleted_at IS NULL,priority:2"`
+	WorkflowName    string    `gorm:"column:workflow_name;index:idx_sd_workflow_unique,unique,where:deleted_at IS NULL,priority:3"`
+	WorkflowVersion int       `gorm:"column:workflow_version;index:idx_sd_workflow_unique,unique,where:deleted_at IS NULL,priority:4"`
+	Name            string    `gorm:"column:name;index:idx_sd_workflow_unique,unique,where:deleted_at IS NULL,priority:5"`
+	NextFireAt      time.Time `gorm:"column:next_fire_at;index:idx_sd_due,where:active = true AND deleted_at IS NULL AND next_fire_at IS NOT NULL,priority:1"`
 }
 
 func (scheduleDefinitionIndexModel) TableName() string { return "schedule_definitions" }
