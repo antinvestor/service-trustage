@@ -401,11 +401,11 @@ func (s *RepositorySuite) TestAuxiliaryRepositories_EventAuditScheduleSchemaOutp
 		NextFireAt:      &fireAt,
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, sched))
-	fireCount, err := s.scheduleRepo.ClaimAndFireBatch(ctx, time.Now(), 10,
-		func(_ context.Context, _ *gorm.DB, _ *models.ScheduleDefinition) (*time.Time, int, error) {
+	fireCount, err := s.scheduleRepo.ClaimAndFireBatch(ctx,
+		func(_ context.Context, _ *models.ScheduleDefinition) (*models.EventLog, *time.Time, int, error) {
 			next := time.Now().Add(time.Hour)
-			return &next, 0, nil
-		})
+			return nil, &next, 0, nil
+		}, time.Now(), 10)
 	s.Require().NoError(err)
 	s.Equal(1, fireCount)
 

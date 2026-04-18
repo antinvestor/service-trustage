@@ -16,8 +16,8 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pitabwire/frame/datastore"
@@ -28,72 +28,60 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
+// SchedulePlanFn is invoked per row by ClaimAndFireBatch inside the fire tx.
+// Must be pure Go — NO DB access, NO I/O. Returns:
+//   - event: event_log row to emit, or nil to park the schedule
+//   - nextFire: new next_fire_at, or nil to park
+//   - jitterSeconds: value persisted on the schedule row
+//   - err: nil on success; non-nil skips this row (others in the batch still commit)
+type SchedulePlanFn func(ctx context.Context, sched *models.ScheduleDefinition) (
+	event *models.EventLog,
+	nextFire *time.Time,
+	jitterSeconds int,
+	err error,
+)
+
+// ScheduleActivation is a single row's activation plan passed to ActivateByWorkflow.
+type ScheduleActivation struct {
+	ID            string
+	NextFireAt    time.Time
+	JitterSeconds int
+}
+
 // ScheduleRepository manages schedule_definitions persistence.
 //
-// The v1 surface is intentionally narrow: schedules are declared in workflow specs
-// and materialised at CreateWorkflow; there is no schedule-level mutation RPC.
-// Callers:
-//   - business layer (Create, ListByWorkflow, SetActiveByWorkflow) — workflow lifecycle.
-//   - CronScheduler (ClaimAndFireBatch) — the fire hot path.
+// Every write method is atomic on a single table, except ClaimAndFireBatch
+// which writes schedule_definitions + event_log in one tx for exactly-once
+// fire semantics. That is the only cross-table tx in the codebase and it is
+// fully enclosed in this package — business logic never sees it.
 type ScheduleRepository interface {
 	Create(ctx context.Context, schedule *models.ScheduleDefinition) error
-
+	CreateBatch(ctx context.Context, scheds []*models.ScheduleDefinition) error
 	ListByWorkflow(ctx context.Context, workflowName string, workflowVersion int) ([]*models.ScheduleDefinition, error)
 
-	// SetActiveByWorkflow flips active on all non-deleted schedules for the given
-	// (workflowName, workflowVersion) tuple. When activating (active=true), it also
-	// seeds next_fire_at using the provided baseline; when deactivating, it clears
-	// next_fire_at (avoids stale due rows lingering in the partial index).
-	//
-	// Passing workflowVersion < 0 disables the version filter and matches all
-	// versions of the named workflow.
-	//
-	// Must be called inside tx so the flip is atomic with the workflow status update.
-	SetActiveByWorkflow(
+	ActivateByWorkflow(
 		ctx context.Context,
-		tx *gorm.DB,
 		workflowName string,
 		workflowVersion int,
-		tenantID string,
-		partitionID string,
-		active bool,
-		seedNextFireAt *time.Time,
-		seedJitterSeconds int,
+		tenantID, partitionID string,
+		fires []ScheduleActivation,
 	) error
 
-	// ClaimAndFireBatch scans for due schedules under one tx, invokes fireFn for each,
-	// and commits atomically. fireFn receives the schedule and a DB handle bound to
-	// the same tx so event_log inserts and next_fire_at updates participate in the
-	// same transaction as the FOR UPDATE SKIP LOCKED row lock.
-	//
-	// fireFn returns the new next_fire_at and jitter_seconds. The repository persists
-	// those onto the row before committing.
-	//
-	// The batch aborts on the first fireFn error: earlier iterations have already
-	// been committed (each schedule runs in its own transaction), so partial progress
-	// is possible when fireFn returns an error.
-	//
-	// Returns the number of schedules for which fireFn returned nil error.
-	ClaimAndFireBatch(
-		ctx context.Context,
-		now time.Time,
-		limit int,
-		fireFn func(ctx context.Context, tx *gorm.DB, sched *models.ScheduleDefinition) (nextFire *time.Time, jitterSeconds int, err error),
-	) (int, error)
+	DeactivateByWorkflow(ctx context.Context, workflowName, tenantID, partitionID string) error
 
-	// Pool exposes the underlying pool for callers that need to drive tx boundaries
-	// spanning multiple repositories.
+	ClaimAndFireBatch(ctx context.Context, plan SchedulePlanFn, now time.Time, limit int) (fired int, err error)
+
 	Pool() pool.Pool
 }
 
 type scheduleRepository struct {
 	datastore.BaseRepository[*models.ScheduleDefinition]
+	p pool.Pool
 }
 
 // NewScheduleRepository creates a new ScheduleRepository.
 func NewScheduleRepository(dbPool pool.Pool) ScheduleRepository {
 	ctx := context.Background()
-
 	return &scheduleRepository{
 		BaseRepository: datastore.NewBaseRepository[*models.ScheduleDefinition](
 			ctx,
@@ -101,23 +89,41 @@ func NewScheduleRepository(dbPool pool.Pool) ScheduleRepository {
 			nil,
 			func() *models.ScheduleDefinition { return &models.ScheduleDefinition{} },
 		),
+		p: dbPool,
 	}
 }
+
+func (r *scheduleRepository) Pool() pool.Pool { return r.p }
 
 func (r *scheduleRepository) Create(ctx context.Context, schedule *models.ScheduleDefinition) error {
 	return r.BaseRepository.Create(ctx, schedule)
 }
 
-func (r *scheduleRepository) Pool() pool.Pool {
-	return r.BaseRepository.Pool()
+// CreateBatch inserts all schedules in a single atomic transaction.
+// If any row violates a constraint (e.g. idx_sd_workflow_unique) the entire
+// batch is rolled back — no partial inserts.
+func (r *scheduleRepository) CreateBatch(ctx context.Context, scheds []*models.ScheduleDefinition) error {
+	if len(scheds) == 0 {
+		return nil
+	}
+	db := r.p.DB(ctx, false)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(scheds).Error
+	}); err != nil {
+		return fmt.Errorf("create schedule batch: %w", err)
+	}
+	return nil
 }
 
+// ListByWorkflow returns all non-deleted schedules for the given workflow name and version,
+// ordered by name. Tenant + partition filtering is applied automatically by pool.DB via
+// the TenancyPartition scope (same idiom as WorkflowDefinitionRepository.ListPage).
 func (r *scheduleRepository) ListByWorkflow(
 	ctx context.Context,
 	workflowName string,
 	workflowVersion int,
 ) ([]*models.ScheduleDefinition, error) {
-	db := r.BaseRepository.Pool().DB(ctx, false)
+	db := r.p.DB(ctx, true)
 
 	var out []*models.ScheduleDefinition
 	result := db.Where(
@@ -128,113 +134,203 @@ func (r *scheduleRepository) ListByWorkflow(
 	if result.Error != nil {
 		return nil, fmt.Errorf("list schedules by workflow: %w", result.Error)
 	}
-
 	return out, nil
 }
 
-func (r *scheduleRepository) SetActiveByWorkflow(
-	_ context.Context,
-	tx *gorm.DB,
+// ActivateByWorkflow atomically deactivates sibling workflow versions and
+// activates the specified version's schedules in one transaction.
+// tenantID and partitionID are explicit arguments so callers can operate on
+// behalf of any tenant without relying on context claims (e.g. background jobs).
+func (r *scheduleRepository) ActivateByWorkflow(
+	ctx context.Context,
 	workflowName string,
 	workflowVersion int,
-	tenantID string,
-	partitionID string,
-	active bool,
-	seedNextFireAt *time.Time,
-	seedJitterSeconds int,
+	tenantID, partitionID string,
+	fires []ScheduleActivation,
 ) error {
-	if tx == nil {
-		return errors.New("SetActiveByWorkflow requires a non-nil tx")
-	}
+	db := r.p.DB(ctx, false)
+	return db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
 
-	updates := map[string]any{
-		"active":      active,
-		"modified_at": time.Now().UTC(),
-	}
-	if active {
-		updates["next_fire_at"] = seedNextFireAt
-		updates["jitter_seconds"] = seedJitterSeconds
-	} else {
-		updates["next_fire_at"] = nil
-	}
+		// Step 1: deactivate all sibling versions (version != workflowVersion).
+		if err := tx.Exec(`
+			UPDATE schedule_definitions
+			   SET active = false, next_fire_at = NULL, modified_at = ?
+			 WHERE workflow_name = ?
+			   AND workflow_version <> ?
+			   AND tenant_id = ?
+			   AND partition_id = ?
+			   AND deleted_at IS NULL`,
+			now, workflowName, workflowVersion, tenantID, partitionID,
+		).Error; err != nil {
+			return fmt.Errorf("deactivate sibling versions: %w", err)
+		}
 
-	query := tx.Model(&models.ScheduleDefinition{}).
-		Where("workflow_name = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL",
-			workflowName, tenantID, partitionID)
-	if workflowVersion >= 0 {
-		query = query.Where("workflow_version = ?", workflowVersion)
-	}
+		if len(fires) == 0 {
+			return nil
+		}
 
-	result := query.Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("set active by workflow: %w", result.Error)
-	}
+		// Step 2: activate this version's schedules via VALUES-join UPDATE.
+		// Positional order: modified_at, then the VALUES tuples, then tenant_id, partition_id.
+		// IDs are stored as character varying — cast to ::text, not ::uuid.
+		tuples := make([]string, 0, len(fires))
+		orderedArgs := make([]any, 0, 1+3*len(fires)+2)
+		orderedArgs = append(orderedArgs, now) // modified_at placeholder
+		for i, f := range fires {
+			if i == 0 {
+				tuples = append(tuples, "(?::text, ?::timestamptz, ?::int)")
+			} else {
+				tuples = append(tuples, "(?, ?, ?)")
+			}
+			orderedArgs = append(orderedArgs, f.ID, f.NextFireAt, f.JitterSeconds)
+		}
+		orderedArgs = append(orderedArgs, tenantID, partitionID)
 
-	return nil
+		sql := fmt.Sprintf(`
+			UPDATE schedule_definitions s
+			   SET active = true,
+			       next_fire_at = v.next_fire_at,
+			       jitter_seconds = v.jitter_seconds,
+			       modified_at = ?
+			  FROM (VALUES %s)
+			    AS v(id, next_fire_at, jitter_seconds)
+			 WHERE s.id = v.id
+			   AND s.tenant_id = ?
+			   AND s.partition_id = ?
+			   AND s.deleted_at IS NULL`,
+			strings.Join(tuples, ", "),
+		)
+
+		return tx.Exec(sql, orderedArgs...).Error
+	})
 }
 
+// DeactivateByWorkflow deactivates all non-deleted schedules for the given workflow
+// (all versions), scoped strictly to the provided tenant_id and partition_id.
+// No transaction needed — this is a single-statement UPDATE.
+func (r *scheduleRepository) DeactivateByWorkflow(
+	ctx context.Context,
+	workflowName, tenantID, partitionID string,
+) error {
+	db := r.p.DB(ctx, false)
+	now := time.Now().UTC()
+	return db.Exec(`
+		UPDATE schedule_definitions
+		   SET active = false, next_fire_at = NULL, modified_at = ?
+		 WHERE workflow_name = ?
+		   AND tenant_id = ?
+		   AND partition_id = ?
+		   AND deleted_at IS NULL`,
+		now, workflowName, tenantID, partitionID,
+	).Error
+}
+
+// ClaimAndFireBatch is the fire hot path. One tx per sweep: SKIP LOCKED claim
+// up to limit rows, pure-Go per-row plan, multi-row INSERT into event_log for
+// rows that produced an event, VALUES-join UPDATE on schedule_definitions for
+// all claimed rows (park rows get next_fire_at = NULL).
+//
+// This is the only cross-table tx in the codebase; it is fully enclosed here.
 func (r *scheduleRepository) ClaimAndFireBatch(
 	ctx context.Context,
+	plan SchedulePlanFn,
 	now time.Time,
 	limit int,
-	fireFn func(ctx context.Context, tx *gorm.DB, sched *models.ScheduleDefinition) (*time.Time, int, error),
 ) (int, error) {
-	db := r.BaseRepository.Pool().DB(ctx, false)
+	db := r.p.DB(ctx, false)
+	var fired int
 
-	fired := 0
-
-	for range limit {
-		// Each schedule gets its own transaction so a single fireFn failure
-		// does not abort the entire batch and so SKIP LOCKED is applied per-row.
-		var sched *models.ScheduleDefinition
-
-		txErr := db.Transaction(func(tx *gorm.DB) error {
-			// Claim exactly one due schedule under SKIP LOCKED.
-			var due []*models.ScheduleDefinition
-			selectErr := tx.
-				Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-				Where("active = ? AND deleted_at IS NULL AND next_fire_at IS NOT NULL AND next_fire_at <= ?", true, now).
-				Order("next_fire_at ASC").
-				Limit(1).
-				Find(&due).Error
-			if selectErr != nil {
-				return fmt.Errorf("claim due schedule: %w", selectErr)
-			}
-			if len(due) == 0 {
-				return nil
-			}
-			sched = due[0]
-
-			nextFire, jitterSeconds, fireErr := fireFn(ctx, tx, sched)
-			if fireErr != nil {
-				return fmt.Errorf("fire schedule %s: %w", sched.ID, fireErr)
-			}
-
-			const updateSQL = "UPDATE schedule_definitions " +
-				"SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? " +
-				"WHERE id = ? AND tenant_id = ? AND partition_id = ?"
-			updateErr := tx.Exec(
-				updateSQL,
-				now, nextFire, jitterSeconds, now, sched.ID, sched.TenantID, sched.PartitionID,
-			).Error
-			if updateErr != nil {
-				return fmt.Errorf("update fire times for %s: %w", sched.ID, updateErr)
-			}
-
+	err := db.Transaction(func(tx *gorm.DB) error {
+		// Claim up to limit due schedules under SKIP LOCKED.
+		var batch []*models.ScheduleDefinition
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("active = ? AND deleted_at IS NULL AND next_fire_at IS NOT NULL AND next_fire_at <= ?", true, now).
+			Order("next_fire_at ASC").
+			Limit(limit).
+			Find(&batch).Error; err != nil {
+			return fmt.Errorf("claim due batch: %w", err)
+		}
+		if len(batch) == 0 {
 			return nil
-		})
-
-		if txErr != nil {
-			return fired, txErr
 		}
 
-		if sched == nil {
-			// No due schedules remain.
-			break
+		type planRow struct {
+			sched *models.ScheduleDefinition
+			event *models.EventLog
+			next  *time.Time
+			jit   int
 		}
 
-		fired++
+		rows := make([]planRow, 0, len(batch))
+		eventsToInsert := make([]*models.EventLog, 0, len(batch))
+
+		for _, sched := range batch {
+			ev, nf, j, pErr := plan(ctx, sched)
+			if pErr != nil {
+				// Per-row error: skip this row. The batch still commits the rest.
+				continue
+			}
+			rows = append(rows, planRow{sched: sched, event: ev, next: nf, jit: j})
+			if ev != nil {
+				eventsToInsert = append(eventsToInsert, ev)
+			}
+		}
+
+		if len(rows) == 0 {
+			return nil
+		}
+
+		// Multi-row INSERT INTO event_log (only for rows with a non-nil event).
+		if len(eventsToInsert) > 0 {
+			if err := tx.CreateInBatches(eventsToInsert, 500).Error; err != nil {
+				return fmt.Errorf("batch insert event_log: %w", err)
+			}
+		}
+
+		// VALUES-join UPDATE for every claimed row.
+		// Parked rows (next == nil) get next_fire_at = NULL via the typed cast.
+		tuples := make([]string, 0, len(rows))
+		args := make([]any, 0, 7*len(rows))
+		// IDs are stored as character varying — cast to ::text, not ::uuid.
+		for i, pr := range rows {
+			if i == 0 {
+				tuples = append(tuples, "(?::text, ?::text, ?::text, ?::timestamptz, ?::timestamptz, ?::int, ?::timestamptz)")
+			} else {
+				tuples = append(tuples, "(?, ?, ?, ?, ?, ?, ?)")
+			}
+			args = append(args,
+				pr.sched.ID, pr.sched.TenantID, pr.sched.PartitionID,
+				now,     // last_fired_at
+				pr.next, // nil → NULL (parks the row)
+				pr.jit,
+				now, // modified_at
+			)
+		}
+
+		updateSQL := fmt.Sprintf(`
+			UPDATE schedule_definitions s
+			   SET last_fired_at  = v.last_fired_at,
+			       next_fire_at   = v.next_fire_at,
+			       jitter_seconds = v.jitter_seconds,
+			       modified_at    = v.modified_at
+			  FROM (VALUES %s)
+			    AS v(id, tenant_id, partition_id, last_fired_at, next_fire_at, jitter_seconds, modified_at)
+			 WHERE s.id = v.id
+			   AND s.tenant_id = v.tenant_id
+			   AND s.partition_id = v.partition_id`,
+			strings.Join(tuples, ", "),
+		)
+
+		if err := tx.Exec(updateSQL, args...).Error; err != nil {
+			return fmt.Errorf("batch update schedules: %w", err)
+		}
+
+		fired = len(rows)
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
-
 	return fired, nil
 }
