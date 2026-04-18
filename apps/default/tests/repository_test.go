@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"github.com/pitabwire/frame/security"
-	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/pkg/cryptoutil"
+	"github.com/antinvestor/service-trustage/pkg/events"
 )
 
 func (s *DefaultServiceSuite) TestEventLogRepository_Lifecycle() {
@@ -161,11 +161,21 @@ func (s *DefaultServiceSuite) TestScheduleRepository_ClaimAndFire() {
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, schedule))
 
-	count, err := s.scheduleRepo.ClaimAndFireBatch(ctx, now, 10,
-		func(_ context.Context, _ *gorm.DB, _ *models.ScheduleDefinition) (*time.Time, int, error) {
-			next := now.Add(5 * time.Minute)
-			return &next, 0, nil
-		})
+	plan := func(_ context.Context, sched *models.ScheduleDefinition) (*models.EventLog, *time.Time, int, error) {
+		next := now.Add(5 * time.Minute)
+		payload := events.BuildScheduleFiredPayload(sched.ID, sched.Name, now.Format(time.RFC3339), nil)
+		raw, _ := payload.ToJSON()
+		ev := &models.EventLog{
+			EventType:      events.ScheduleFiredType,
+			Source:         "schedule:" + sched.ID,
+			IdempotencyKey: sched.ID + ":" + now.Format(time.RFC3339Nano),
+			Payload:        raw,
+		}
+		ev.CopyPartitionInfo(&sched.BaseModel)
+		return ev, &next, 0, nil
+	}
+
+	count, err := s.scheduleRepo.ClaimAndFireBatch(ctx, plan, now, 10)
 	s.Require().NoError(err)
 	s.Equal(1, count)
 }
