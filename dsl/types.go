@@ -19,6 +19,20 @@ type WorkflowSpec struct {
 	Timeout     Duration          `json:"timeout,omitempty"`
 	OnError     *ErrorPolicy      `json:"on_error,omitempty"`
 	Steps       []*StepSpec       `json:"steps"`
+	Schedules   []*ScheduleSpec   `json:"schedules,omitempty"`
+}
+
+// ScheduleSpec declares a cron-triggered workflow schedule inside a WorkflowSpec.
+// Schedules are materialised into schedule_definitions rows at CreateWorkflow time
+// and follow the workflow's lifecycle — they activate when the workflow activates
+// and deactivate when another version of the same workflow is activated.
+type ScheduleSpec struct {
+	Name         string         `json:"name"`
+	CronExpr     string         `json:"cron_expr"`
+	InputPayload map[string]any `json:"input_payload,omitempty"`
+	// Active is an optional default. Nil means "active once the workflow is activated".
+	// Explicitly false ships the schedule disabled even under an active workflow.
+	Active *bool `json:"active,omitempty"`
 }
 
 // StepType enumerates all supported step types.

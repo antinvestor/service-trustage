@@ -1,7 +1,11 @@
 //nolint:testpackage // package-local DSL tests exercise unexported validator helpers intentionally.
 package dsl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestValidateAcceptsExecutableDelayAndIfWorkflow(t *testing.T) {
 	spec, err := Parse([]byte(`{
@@ -137,5 +141,76 @@ func TestValidateDetectsNestedTemplateErrors(t *testing.T) {
 	result := Validate(spec)
 	if result.Valid() {
 		t.Fatal("expected validation failure")
+	}
+}
+
+func TestValidateSchedules(t *testing.T) {
+	cases := []struct {
+		name      string
+		schedules []*ScheduleSpec
+		wantValid bool
+		wantMsg   string
+	}{
+		{name: "nil slice is valid", schedules: nil, wantValid: true},
+		{name: "empty slice is valid", schedules: []*ScheduleSpec{}, wantValid: true},
+		{
+			name: "valid single schedule",
+			schedules: []*ScheduleSpec{
+				{Name: "nightly", CronExpr: "0 2 * * *"},
+			},
+			wantValid: true,
+		},
+		{
+			name: "empty name",
+			schedules: []*ScheduleSpec{
+				{Name: "", CronExpr: "*/5 * * * *"},
+			},
+			wantValid: false,
+			wantMsg:   "name",
+		},
+		{
+			name: "duplicate names",
+			schedules: []*ScheduleSpec{
+				{Name: "same", CronExpr: "*/5 * * * *"},
+				{Name: "same", CronExpr: "0 2 * * *"},
+			},
+			wantValid: false,
+			wantMsg:   "duplicate",
+		},
+		{
+			name: "invalid cron",
+			schedules: []*ScheduleSpec{
+				{Name: "bad", CronExpr: "every 5 minutes"},
+			},
+			wantValid: false,
+			wantMsg:   "cron",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &WorkflowSpec{
+				Version: "v1",
+				Name:    "w",
+				Steps: []*StepSpec{{
+					ID:    "s",
+					Type:  StepTypeDelay,
+					Delay: &DelaySpec{Duration: Duration{Duration: time.Second}},
+				}},
+				Schedules: tc.schedules,
+			}
+			result := Validate(spec)
+			if tc.wantValid && !result.Valid() {
+				t.Fatalf("expected valid, got errors: %v", result.Error())
+			}
+			if !tc.wantValid {
+				if result.Valid() {
+					t.Fatalf("expected invalid")
+				}
+				if tc.wantMsg != "" && !strings.Contains(result.Error().Error(), tc.wantMsg) {
+					t.Fatalf("expected error containing %q, got %v", tc.wantMsg, result.Error())
+				}
+			}
+		})
 	}
 }

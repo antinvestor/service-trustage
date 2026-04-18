@@ -20,6 +20,7 @@ const (
 	ErrInvalidStepType     ValidationErrorCode = "INVALID_STEP_TYPE"
 	ErrMissingRequired     ValidationErrorCode = "MISSING_REQUIRED"
 	ErrInvalidReference    ValidationErrorCode = "INVALID_REFERENCE"
+	ErrInvalidSchedule     ValidationErrorCode = "INVALID_SCHEDULE"
 )
 
 // ValidationError represents a single validation failure in a DSL document.

@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"strings"
 )
 
 // Validate performs full static validation of a WorkflowSpec.
@@ -17,6 +18,7 @@ func Validate(spec *WorkflowSpec) *ValidationResult {
 	validateTemplates(spec, result)
 	validateRetryPolicies(spec, result)
 	validateTimeouts(spec, result)
+	validateSchedules(spec, result)
 
 	return result
 }
@@ -329,6 +331,30 @@ func validateTimeouts(spec *WorkflowSpec, result *ValidationResult) {
 			result.AddErrorWithStep(ErrInvalidTimeout, step.ID,
 				fmt.Sprintf("step timeout (%s) exceeds workflow timeout (%s)",
 					stepTimeout, workflowTimeout))
+		}
+	}
+}
+
+func validateSchedules(spec *WorkflowSpec, result *ValidationResult) {
+	seen := make(map[string]struct{}, len(spec.Schedules))
+
+	for i, sched := range spec.Schedules {
+		if sched == nil {
+			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d]: nil entry", i))
+			continue
+		}
+
+		if strings.TrimSpace(sched.Name) == "" {
+			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d]: name is required", i))
+		} else if _, dup := seen[sched.Name]; dup {
+			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d]: duplicate name %q", i, sched.Name))
+		} else {
+			seen[sched.Name] = struct{}{}
+		}
+
+		if _, err := ParseCron(sched.CronExpr); err != nil {
+			result.AddError(ErrInvalidSchedule,
+				fmt.Sprintf("schedules[%d] (%s): invalid cron expression: %s", i, sched.Name, err))
 		}
 	}
 }
