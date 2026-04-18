@@ -387,11 +387,13 @@ func (s *RepositorySuite) TestAuxiliaryRepositories_EventAuditScheduleSchemaOutp
 		NextFireAt:      &fireAt,
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, sched))
-	due, err := s.scheduleRepo.FindDue(ctx, time.Now(), 10)
+	fireCount, err := s.scheduleRepo.ClaimAndFireBatch(ctx, time.Now(), 10,
+		func(_ context.Context, _ *gorm.DB, _ *models.ScheduleDefinition) (*time.Time, int, error) {
+			next := time.Now().Add(time.Hour)
+			return &next, 0, nil
+		})
 	s.Require().NoError(err)
-	s.Len(due, 1)
-	nextFire := time.Now().Add(time.Hour)
-	s.Require().NoError(s.scheduleRepo.UpdateFireTimes(ctx, sched.ID, time.Now(), &nextFire))
+	s.Equal(1, fireCount)
 
 	schema := &models.WorkflowStateSchema{
 		WorkflowName:    "payments",

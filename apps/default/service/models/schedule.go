@@ -15,7 +15,7 @@ type ScheduleDefinition struct {
 	WorkflowName    string     `gorm:"column:workflow_name;not null"`
 	WorkflowVersion int        `gorm:"column:workflow_version;not null"`
 	InputPayload    string     `gorm:"column:input_payload;type:jsonb;default:'{}'"`
-	Active          bool       `gorm:"column:active;not null;default:true"`
+	Active          bool       `gorm:"column:active;not null;default:false"`
 	NextFireAt      *time.Time `gorm:"column:next_fire_at"`
 	LastFiredAt     *time.Time `gorm:"column:last_fired_at"`
 	JitterSeconds   int        `gorm:"column:jitter_seconds;not null;default:0"`
