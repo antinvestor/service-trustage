@@ -30,6 +30,9 @@ type ScheduleRepository interface {
 	// seeds next_fire_at using the provided baseline; when deactivating, it clears
 	// next_fire_at (avoids stale due rows lingering in the partial index).
 	//
+	// Passing workflowVersion < 0 disables the version filter and matches all
+	// versions of the named workflow.
+	//
 	// Must be called inside tx so the flip is atomic with the workflow status update.
 	SetActiveByWorkflow(
 		ctx context.Context,
@@ -48,6 +51,10 @@ type ScheduleRepository interface {
 	//
 	// fireFn returns the new next_fire_at and jitter_seconds. The repository persists
 	// those onto the row before committing.
+	//
+	// The batch aborts on the first fireFn error: earlier iterations have already
+	// been committed (each schedule runs in its own transaction), so partial progress
+	// is possible when fireFn returns an error.
 	//
 	// Returns the number of schedules for which fireFn returned nil error.
 	ClaimAndFireBatch(
@@ -184,8 +191,8 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 			}
 
 			updateErr := tx.Exec(
-				"UPDATE schedule_definitions SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? WHERE id = ?",
-				now, nextFire, jitterSeconds, now, sched.ID,
+				"UPDATE schedule_definitions SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? WHERE id = ? AND tenant_id = ?",
+				now, nextFire, jitterSeconds, now, sched.ID, sched.TenantID,
 			).Error
 			if updateErr != nil {
 				return fmt.Errorf("update fire times for %s: %w", sched.ID, updateErr)

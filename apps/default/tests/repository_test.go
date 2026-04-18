@@ -1,9 +1,11 @@
 package tests_test
 
 import (
+	"context"
 	"time"
 
 	"github.com/pitabwire/frame/security"
+	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/pkg/cryptoutil"
@@ -129,25 +131,27 @@ func (s *DefaultServiceSuite) TestWorkflowExecutionRepository_FindPendingRetryTi
 	s.Len(timeoutList, 1)
 }
 
-func (s *DefaultServiceSuite) TestScheduleRepository_FindDueAndUpdate() {
+func (s *DefaultServiceSuite) TestScheduleRepository_ClaimAndFire() {
 	ctx := s.tenantCtx()
+	now := time.Now().UTC()
+	due := now.Add(-time.Minute)
 
-	nextFire := time.Now().Add(-time.Minute)
 	schedule := &models.ScheduleDefinition{
 		Name:            "sched-1",
-		CronExpr:        "* * * * *",
+		CronExpr:        "*/5 * * * *",
 		WorkflowName:    "wf",
 		WorkflowVersion: 1,
 		InputPayload:    "{}",
 		Active:          true,
-		NextFireAt:      &nextFire,
+		NextFireAt:      &due,
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, schedule))
 
-	due, err := s.scheduleRepo.FindDue(ctx, time.Now(), 10)
+	count, err := s.scheduleRepo.ClaimAndFireBatch(ctx, now, 10,
+		func(_ context.Context, _ *gorm.DB, _ *models.ScheduleDefinition) (*time.Time, int, error) {
+			next := now.Add(5 * time.Minute)
+			return &next, 0, nil
+		})
 	s.Require().NoError(err)
-	s.Len(due, 1)
-
-	newNext := time.Now().Add(time.Hour)
-	s.Require().NoError(s.scheduleRepo.UpdateFireTimes(ctx, schedule.ID, time.Now(), &newNext))
+	s.Equal(1, count)
 }

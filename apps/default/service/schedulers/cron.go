@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pitabwire/util"
+	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -63,43 +64,38 @@ func (s *CronScheduler) Start(ctx context.Context) {
 	}
 }
 
-// RunOnce performs a single sweep for due schedules.
+// RunOnce performs a single sweep for due schedules using ClaimAndFireBatch.
 func (s *CronScheduler) RunOnce(ctx context.Context) int {
 	log := util.Log(ctx)
 	now := time.Now().UTC()
 
-	due, err := s.scheduleRepo.FindDue(ctx, now, cronSchedulerBatchSize)
+	fired, err := s.scheduleRepo.ClaimAndFireBatch(ctx, now, cronSchedulerBatchSize,
+		func(innerCtx context.Context, tx *gorm.DB, sched *models.ScheduleDefinition) (*time.Time, int, error) {
+			if fireErr := s.fireSchedule(innerCtx, tx, sched, now); fireErr != nil {
+				log.WithError(fireErr).Error("cron scheduler: failed to fire schedule",
+					"schedule_id", sched.ID,
+					"schedule_name", sched.Name,
+				)
+				return nil, 0, fireErr
+			}
+
+			nextFire := computeNextFire(sched.CronExpr, now)
+			return nextFire, sched.JitterSeconds, nil
+		})
 	if err != nil {
-		log.WithError(err).Error("cron scheduler: failed to find due schedules")
-		return 0
-	}
-
-	fired := 0
-
-	for _, sched := range due {
-		if fireErr := s.fireSchedule(ctx, sched, now); fireErr != nil {
-			log.WithError(fireErr).Error("cron scheduler: failed to fire schedule",
-				"schedule_id", sched.ID,
-				"schedule_name", sched.Name,
-			)
-
-			continue
-		}
-
-		fired++
+		log.WithError(err).Error("cron scheduler: ClaimAndFireBatch failed")
 	}
 
 	return fired
 }
 
-// fireSchedule creates an event for the schedule and updates fire times.
+// fireSchedule creates an event_log entry for the schedule within the provided tx.
 func (s *CronScheduler) fireSchedule(
 	ctx context.Context,
+	tx *gorm.DB,
 	sched *models.ScheduleDefinition,
 	now time.Time,
 ) error {
-	log := util.Log(ctx)
-
 	// Build event payload.
 	payload := map[string]any{
 		"schedule_id":   sched.ID,
@@ -125,20 +121,8 @@ func (s *CronScheduler) fireSchedule(
 	}
 	eventLog.CopyPartitionInfo(&sched.BaseModel)
 
-	if err := s.eventRepo.Create(ctx, eventLog); err != nil {
-		return err
-	}
-
-	// Compute next fire time from cron expression (treated as a Go duration).
-	nextFire := computeNextFire(sched.CronExpr, now)
-
-	if updateErr := s.scheduleRepo.UpdateFireTimes(ctx, sched.ID, now, nextFire); updateErr != nil {
-		log.WithError(updateErr).Error("cron scheduler: failed to update fire times",
-			"schedule_id", sched.ID,
-		)
-	}
-
-	return nil
+	// Insert the event_log row inside the same tx so it is atomic with the schedule lock.
+	return tx.Create(eventLog).Error
 }
 
 // computeNextFire parses the cron expression as a Go duration (e.g., "1h", "30m", "24h", "7d")
