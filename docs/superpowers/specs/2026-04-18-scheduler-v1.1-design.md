@@ -1,14 +1,14 @@
 # Scheduler v1.1: batched fire, bug fixes, TZ, Archive
 
 **Date:** 2026-04-18
-**Status:** approved
+**Status:** approved (revised)
 **Scope:** `service-trustage` — builds on scheduler v1 (spec `2026-04-18-scheduler-v1-design.md`, shipped as `v0.3.34`). Direct-to-main commits.
 
 ## Why v1.1
 
 The scheduler v1 release ships a correct exactly-once fire path but four production-relevant gaps surfaced under audit:
 
-1. **Throughput ceiling is too low for the platform's target.** `ClaimAndFireBatch` opens one Postgres transaction per row. At 50 rows/batch × 30 s poll = 100 fires/min/pod = 20 fires/sec cluster-wide (12 pods HPA cap). Hundreds of millions of scheduled tasks per day requires two orders of magnitude more.
+1. **Throughput ceiling is too low.** `ClaimAndFireBatch` opens one Postgres transaction per row. At 50 rows/batch × 30 s poll = 100 fires/min/pod = 20 fires/sec cluster-wide (12 pods HPA cap). Hundreds of millions of scheduled tasks per day requires two orders of magnitude more.
 
 2. **Correctness bugs** that are tolerable at low load but unacceptable at scale:
    - `ListByWorkflow` omits tenant/partition filtering (cross-tenant read leak).
@@ -16,65 +16,116 @@ The scheduler v1 release ships a correct exactly-once fire path but four product
    - User-supplied `input_payload` can shadow system fields in `schedule.fired` events.
    - Invalid cron at fire time still emits a ghost event before parking.
 
-3. **Stateful hooks that would be misused later.** Today's interface exposes `ScheduleRepository.Pool()` (a layering leak whose only point is to enable LISTEN/NOTIFY) and `ScheduleSpec.Active *bool` (a tri-state flag whose only purpose is to enable pause/resume). Neither feature is allowed — so the hooks must go before someone tries.
+3. **No observability on the fire path.** `CronScheduler` has no trace span, no metrics. At scale, silent backlog is operationally unacceptable.
 
-4. **No observability on the fire path.** Compare to `outbox.go:107` which has a trace span + gauge. `CronScheduler` has neither. At scale, silent backlog is operationally unacceptable.
+4. **`ActivateWorkflow` is O(n) round-trips** per schedule. At 10 k schedules per workflow, activation holds a tx for seconds.
 
 Plus two allowed additions: per-schedule timezone, and `ArchiveWorkflow` RPC.
 
+## Design principles (revised)
+
+Two principles shape this release beyond the spec-is-truth one inherited from v1:
+
+1. **Narrow the interface change to what's structurally required.** The batched fire path forces `ClaimAndFireBatch`'s fireFn signature to change — that is the one unavoidable interface shift. Everything else (observability, bugs, TZ, Archive) happens behind existing-shape methods or in new single-responsibility methods.
+
+2. **Single-table transactions only, with one documented exception.** Cross-table transactions invite deadlocks that are hard to diagnose under load. Every tx in this release operates on exactly one table, with the single exception of the fire path (event_log + schedule_definitions) where exactly-once semantics demands atomicity across both. Lifecycle operations (Create / Activate / Archive) split into two sequential single-table tx with explicit ordering chosen for safe failure modes.
+
 ## Goals
 
-- **100+ M fires/day** achievable at cluster layer with DB capable of the sustained write rate (~6 k fires/sec at 12 pods, ~24 k/sec at 48 pods).
+- **100+ M fires/day** at the cluster layer (~6 k fires/sec at 12 pods, ~24 k/sec at 48 pods), DB capacity permitting.
 - Exactly-once fire semantics preserved.
-- All v1 audit bugs resolved.
-- Interface surface narrow enough that LISTEN/NOTIFY, pause/resume, and single-schedule update are structurally harder to add than to design correctly (i.e. they require new abstractions, not a tweak).
-- Timezone support (per-schedule IANA, default UTC).
-- `ArchiveWorkflow` RPC — DRAFT | ACTIVE → ARCHIVED, atomically deactivating the workflow's schedules.
-- Full Go-pattern adherence: `util.Log(ctx)`, wrapped errors, interface-first repos, table-driven tests, testcontainers (not mocks), no raw goroutines for critical work, typed event payloads in `pkg/events/`.
+- All v1 audit correctness bugs resolved.
+- Per-schedule IANA timezone (default UTC).
+- `ArchiveWorkflow` RPC — DRAFT | ACTIVE → ARCHIVED, deactivating the workflow's schedules.
+- No cross-table transactions in business logic. Each lifecycle op is two sequential single-table tx; the fire path is the one exception and lives inside the repository.
+- Go-pattern adherence: `util.Log(ctx)`, wrapped errors, interface-first repos, table-driven tests, testcontainers (not mocks), typed event payloads in `pkg/events/`.
 
 ## Non-goals (hard exclusions)
 
-- LISTEN/NOTIFY. Removing `ScheduleRepository.Pool()` from the interface is the concrete step that prevents its easy addition.
-- Pause/resume a single schedule. Removing `ScheduleSpec.Active *bool` is the concrete step that prevents its easy addition.
-- Update one schedule's `cron_expr` without shipping a new workflow version. No `UpdateSchedule` RPC, no mutable `cron_expr` business method.
+- LISTEN/NOTIFY.
+- Pause/resume a single schedule.
+- Update one schedule's `cron_expr` without shipping a new workflow version. No `UpdateSchedule` RPC.
 - Per-schedule missed-fire threshold override (global constant stays).
 - Sub-minute cron precision (5-field parser only, no seconds).
+- Reshaping every method into `-Tx` / tx-accepting variants. Changes are narrow.
+
+---
+
+## Transaction boundaries
+
+**Rule**: each business operation is composed of one or more single-table transactions, invoked in a fixed order that yields a safe failure mode if the second tx fails.
+
+**Sole exception**: `ClaimAndFireBatch` writes to both `schedule_definitions` and `event_log` atomically inside one repository-owned tx. Splitting would violate exactly-once:
+
+- event_log insert first, then `next_fire_at` advance → if the second statement fails, the event is emitted but the schedule still reads as due → **double-fire** on the next sweep.
+- `next_fire_at` advance first, then event_log insert → if the second statement fails, the schedule is advanced but no event is emitted → **silent lost fire**.
+
+The fire tx is fully enclosed inside the repository: it acquires SKIP LOCKED on `schedule_definitions` first, then INSERTs into `event_log` by new UUID key. No other transaction takes locks on both tables in opposing order, so the deadlock risk is bounded.
+
+### Lifecycle ordering
+
+Every lifecycle op is two sequential single-table tx. The order is chosen so that a failure of the second tx leaves a **benign intermediate state**.
+
+#### CreateWorkflow
+
+```
+Tx1 (workflow_definitions):  INSERT workflow row (DRAFT)
+Tx2 (schedule_definitions):  INSERT schedule rows × N in one batch tx
+```
+
+Mid-failure: Tx1 succeeded, Tx2 failed → orphan DRAFT workflow with zero or partial schedules. **DRAFT does not fire**, so this is not a user-visible bad state. Retry blocks on `idx_wd_name_version`; operator either deletes the orphan workflow (admin path) or bumps version. Upstream DSL validation eliminates almost all failure modes before Tx2 runs, so this path is rare.
+
+#### ActivateWorkflow
+
+```
+Tx1 (workflow_definitions):  UPDATE status = 'active'
+Tx2 (schedule_definitions):  one batch tx that:
+                               - DEACTIVATEs all OTHER versions' schedules
+                               - ACTIVATEs this version's schedules (VALUES-join UPDATE with next_fire_at + jitter)
+```
+
+Mid-failure: Tx1 succeeded, Tx2 failed → workflow ACTIVE but new-version schedules not yet firing; the prior version's schedules are still active and still firing. Benign — the old behavior continues, operator re-invokes `ActivateWorkflow` (idempotent on workflow status, Tx2 retries). Alert on `workflow.status == ACTIVE && this-version schedules not active` so operators notice.
+
+Ordering rationale: **workflow first** because the worst mid-failure state (prior version continues firing) is the same as pre-activation — no regression.
+
+#### ArchiveWorkflow
+
+```
+Tx1 (schedule_definitions):  UPDATE SET active=false, next_fire_at=NULL WHERE workflow_name = ...
+Tx2 (workflow_definitions):  UPDATE status = 'archived'
+```
+
+Ordering is **reversed** here: schedules off first. Mid-failure: Tx1 succeeded, Tx2 failed → schedules stopped, workflow still ACTIVE. Benign — no fires, temporary status mismatch; retry re-applies Tx1 (idempotent) and retries Tx2. The opposite order would leave workflow ARCHIVED with schedules still firing — user-visibly wrong behaviour.
 
 ---
 
 ## Architecture
 
-No new services, no new tables. Schema gains one column, one unique index, one predicate tightening. The scheduler loop becomes a single three-statement tx per sweep:
+Schema gains one column, one unique index, one predicate tightening. The scheduler fire path becomes one three-statement tx per sweep:
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│ CronScheduler.RunOnce — one sweep (configurable interval, default 1s)
-│                                                                    │
-│  tx BEGIN                                                          │
-│    1. SELECT … FOR UPDATE SKIP LOCKED LIMIT $batch  (one roundtrip)│
-│    2. INSERT INTO event_log (...), (...)... ($batch rows)          │
-│    3. UPDATE schedule_definitions s                                │
-│         SET last_fired_at, next_fire_at, jitter_seconds, modified  │
-│       FROM (VALUES (id,tenant,partition,…), …) AS v(…)             │
-│       WHERE s.id=v.id AND s.tenant_id=v.tenant_id                  │
-│         AND s.partition_id=v.partition_id                          │
-│  COMMIT                                                            │
-│                                                                    │
-│  Round-trips per sweep: 3 (plus BEGIN/COMMIT)                      │
-│  Batch size: configurable (default 500)                            │
-└────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ CronScheduler.RunOnce — one sweep (interval default 1s)          │
+│                                                                   │
+│  repo.ClaimAndFireBatch(ctx, planner, now, batch) → fired, err   │
+│                                                                   │
+│    Inside the repo, under one tx:                                 │
+│      BEGIN                                                        │
+│      1. SELECT ... FOR UPDATE SKIP LOCKED LIMIT $batch           │
+│      2. planner.Plan(ctx, batch) → per-row (event, nextFire, jit)│
+│      3. INSERT INTO event_log (...) × M                          │
+│      4. UPDATE schedule_definitions s                             │
+│           FROM (VALUES (...)) AS v(...)                           │
+│           WHERE s.id = v.id AND s.tenant_id = v.tenant_id        │
+│             AND s.partition_id = v.partition_id                   │
+│      COMMIT                                                       │
+│                                                                   │
+│  Round-trips: 3 (plus BEGIN/COMMIT).                              │
+│  planner runs in pure Go — NO DB access.                          │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-Correctness guarantees:
-
-- SKIP LOCKED holds row locks for the entire tx. No second pod sees claimed rows until COMMIT/ROLLBACK.
-- On crash or failure, the whole batch rolls back; schedules remain due; next sweep retries.
-- `IdempotencyKey = scheduleID + ":" + RFC3339Nano(now)` where `now` is the single batch timestamp — unique per row across the batch and across batches.
-- Tenant/partition filtered throughout.
-
----
-
-## Throughput model
+### Throughput model
 
 | Configuration | Per pod | 12 pods | 48 pods |
 |---|---|---|---|
@@ -82,406 +133,293 @@ Correctness guarantees:
 | v1.1 (default): batch=500, interval=1s, batched tx | 500/sec | 6 k/sec | 24 k/sec |
 | v1.1 (stress): batch=2000, interval=1s | 2 k/sec | 24 k/sec | 96 k/sec |
 
-v1.1 ceiling (default) ≈ 520 M fires/day at 12 pods, which is the headline number for the platform target. The DB — event_log inserts + partial-index updates — is the next bottleneck, and that's where the user said "if the database can cope up" kicks in.
+Default ≈ 520 M fires/day at 12 pods. Database (event_log insert, index updates) becomes the ceiling beyond that.
 
 ---
 
-## Data model changes
+## Data model
 
-### Schema (`apps/default/service/models/schedule.go`)
+### Model (`apps/default/service/models/schedule.go`)
 
-Add one column:
+One new field:
 
 | Column | Type | Default | Purpose |
 |---|---|---|---|
 | `timezone` | `varchar(64) NOT NULL` | `'UTC'` | IANA zone used to evaluate the cron expression |
 
-Existing rows receive the default on AutoMigrate — no data migration script required.
-
 ### Indexes (`apps/default/service/repository/migrate.go`)
 
-Two changes:
+1. **Tighten `idx_sd_due`** — add `next_fire_at IS NOT NULL` to the partial predicate so parked rows no longer consume index visits.
 
-1. **Tighten `idx_sd_due`** predicate to include `next_fire_at IS NOT NULL`:
-   ```sql
-   CREATE INDEX idx_sd_due ON schedule_definitions (next_fire_at ASC)
-     WHERE active = true AND deleted_at IS NULL AND next_fire_at IS NOT NULL;
-   ```
-   Eliminates parked (NULL `next_fire_at`) rows from index visits.
+2. **New `idx_sd_workflow_unique`** — unique on `(tenant_id, partition_id, workflow_name, workflow_version, name) WHERE deleted_at IS NULL`. Makes schedule materialisation idempotent at the DB layer.
 
-2. **Add unique idempotency index** preventing duplicate schedule materialisation:
-   ```sql
-   CREATE UNIQUE INDEX idx_sd_workflow_unique
-     ON schedule_definitions (tenant_id, partition_id, workflow_name, workflow_version, name)
-     WHERE deleted_at IS NULL;
-   ```
-   `materialiseSchedules` retries no longer silently duplicate rows; PG enforces uniqueness. Combined with the atomicity fix (B2), the write is idempotent at both layers.
+Migration path: the existing `idx_sd_due` is dropped once in `Migrate()` so AutoMigrate rebuilds it with the new predicate. AutoMigrate creates the new unique index if absent. The column additions are non-destructive.
 
 ---
 
-## Repository interface (`apps/default/service/repository/schedule.go`)
+## Repository interface — narrow
 
-Shrinks in visible surface, grows in tx-acceptance:
+### `ScheduleRepository` (`apps/default/service/repository/schedule.go`)
+
+Stays almost identical to v1. Only `ClaimAndFireBatch`'s fireFn signature changes; three new methods are added for batched lifecycle atomicity.
 
 ```go
 type ScheduleRepository interface {
-    // Writes — all accept an optional *gorm.DB for cross-repo tx composition.
-    CreateTx(ctx context.Context, tx *gorm.DB, schedule *models.ScheduleDefinition) error
-    // Create is the convenience wrapper for callers that don't need a shared tx.
+    // Existing — unchanged:
     Create(ctx context.Context, schedule *models.ScheduleDefinition) error
-
-    // Reads — tenant/partition filtered via BaseRepository scope (enforced).
     ListByWorkflow(ctx context.Context, workflowName string, workflowVersion int) ([]*models.ScheduleDefinition, error)
+    Pool() pool.Pool   // kept; v1.1 callers do not use it, but removing it is pure churn.
 
-    // Lifecycle — tx-bound; callers pass their own tx.
-    SetActiveByWorkflowTx(
-        ctx context.Context, tx *gorm.DB,
-        workflowName string, workflowVersion int,   // workflowVersion < 0 no longer valid; panic
+    // Signature change — batched fire (the only cross-table tx):
+    ClaimAndFireBatch(ctx context.Context, plan SchedulePlanFn, now time.Time, limit int) (fired int, err error)
+
+    // NEW — atomic single-table batch operations:
+    CreateBatch(ctx context.Context, scheds []*models.ScheduleDefinition) error
+    ActivateByWorkflow(
+        ctx context.Context,
+        workflowName string,
+        workflowVersion int,
         tenantID, partitionID string,
-        active bool,
-        seedNextFireAt *time.Time,
-        seedJitterSeconds int,
+        fires []ScheduleActivation,
     ) error
-
-    // Archive — deactivates all versions of the named workflow in one tx.
-    ArchiveWorkflowTx(
-        ctx context.Context, tx *gorm.DB,
-        workflowName, tenantID, partitionID string,
-    ) error
-
-    // Fire hot path — fully-batched, no callback, returns the plan for metrics.
-    ClaimAndFireBatch(ctx context.Context, planner FirePlanner, now time.Time, limit int) (fired int, err error)
-
-    // Expose a pool-derived tx starter so business can compose cross-repo transactions
-    // WITHOUT exposing the raw pool.Pool. One allowed tx-starter method, no direct
-    // connection access.
-    Transact(ctx context.Context, fn func(tx *gorm.DB) error) error
+    DeactivateByWorkflow(ctx context.Context, workflowName, tenantID, partitionID string) error
 }
 
-// FirePlanner builds the per-row fire plan in pure Go — no DB access inside.
-type FirePlanner interface {
-    PlanFires(ctx context.Context, batch []*models.ScheduleDefinition, now time.Time) (fires []ScheduledFire)
-}
+// SchedulePlanFn is invoked per row by the repository inside the fire tx.
+// It must be pure Go — no DB access, no I/O. It returns the event_log row
+// to emit (may be nil to park the schedule), the next fire time (may be nil
+// to park), and the jitter seconds stored on the schedule row.
+type SchedulePlanFn func(ctx context.Context, sched *models.ScheduleDefinition) (
+    event *models.EventLog,
+    nextFire *time.Time,
+    jitterSeconds int,
+    err error,
+)
 
-type ScheduledFire struct {
-    Schedule      *models.ScheduleDefinition  // source row (for audit)
-    Event         *models.EventLog            // prepared event_log row, partition info copied
-    NextFireAt    *time.Time                  // nil = park the schedule
+// ScheduleActivation is a single row's activation plan — next_fire_at + jitter.
+type ScheduleActivation struct {
+    ID            string
+    NextFireAt    time.Time
     JitterSeconds int
 }
 ```
 
-**Design decisions:**
+**What does NOT change:**
+- `Pool()` stays. Not used by v1.1 code; kept so the interface doesn't churn for a reason unrelated to this release.
+- `WorkflowDefinitionRepository` is untouched.
+- `EventLogRepository` is untouched.
+- No `-Tx` suffix methods, no `Transact(ctx, fn)`. Business composes sequential single-table ops, never a multi-table tx.
 
-- **`Pool()` is gone.** Business composes cross-repo transactions by calling `scheduleRepo.Transact(ctx, fn)` which gives them a scoped `*gorm.DB`. The raw `pool.Pool` never leaves the repository layer.
-- **`SetActiveByWorkflow(workflowVersion=-1)` is gone.** Archive has its own method `ArchiveWorkflowTx` with clear semantics.
-- **`FirePlanner` is pure.** The scheduler implements it without DB access — parses cron, computes jitter, builds event rows. The repo does the two bulk writes. Unit-testable without a DB.
-- **All tx-accepting methods have a `-Tx` suffix**, following Go conventions for dual-mode APIs (see stdlib `sql` package's `Tx`-bound methods).
+### Method behaviour
 
----
+**`ClaimAndFireBatch(ctx, plan, now, limit)`** — inside one tx owned by the repo:
 
-## Fire-path implementation (`apps/default/service/schedulers/cron.go`)
+1. `SELECT ... FOR UPDATE SKIP LOCKED LIMIT $limit` from `schedule_definitions` with the due predicate.
+2. For each row, call `plan(ctx, sched)` → `(event, nextFire, jitter, err)` in pure Go.
+3. Multi-row `INSERT INTO event_log (...) VALUES (...)...` for every non-nil event (`CreateInBatches(events, 500)`).
+4. `UPDATE schedule_definitions s SET last_fired_at=..., next_fire_at=v.next_fire_at, jitter_seconds=v.jitter_seconds, modified_at=... FROM (VALUES ...) AS v(...) WHERE s.id=v.id AND s.tenant_id=v.tenant_id AND s.partition_id=v.partition_id`.
+5. COMMIT.
 
-The scheduler becomes a thin orchestrator:
+If `plan` returns an error for a row, that row is skipped (not included in the event INSERT or the UPDATE VALUES list); other rows in the batch still commit. This preserves partial progress on transient per-row issues.
 
-```go
-type CronScheduler struct {
-    scheduleRepo repository.ScheduleRepository
-    cfg          *config.Config
-    metrics      *telemetry.Metrics
-}
+**`CreateBatch(ctx, scheds)`** — one `tx.Create(scheds)` via GORM's slice-aware insert. Single-table. Atomic.
 
-func (s *CronScheduler) RunOnce(ctx context.Context) int {
-    ctx, span := telemetry.StartSpan(ctx, telemetry.TracerEngine, telemetry.SpanSchedulerCron)
-    defer span.End()
+**`ActivateByWorkflow(ctx, workflowName, workflowVersion, tenantID, partitionID, fires)`** — one tx that:
+1. `UPDATE schedule_definitions SET active=false, next_fire_at=NULL, modified_at=now WHERE workflow_name=? AND workflow_version != ? AND tenant_id=? AND partition_id=? AND deleted_at IS NULL` — deactivates sibling versions.
+2. `UPDATE ... FROM (VALUES ...)` bulk-activates rows matching `fires`, setting `active=true, next_fire_at=v.next_fire_at, jitter_seconds=v.jitter_seconds, modified_at=now`. Filtered by tenant_id + partition_id to match the inbound `fires` values.
 
-    now := time.Now().UTC()
-    start := now
+Single-table. Atomic.
 
-    fired, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s, now, s.cfg.CronSchedulerBatchSize)
-    if err != nil {
-        util.Log(ctx).WithError(err).Error("cron scheduler: sweep failed")
-        s.metrics.SchedulerCronFired.Add(ctx, 0, attrsFail())
-        return 0
-    }
-
-    dur := time.Since(start)
-    s.metrics.SchedulerCronFired.Add(ctx, int64(fired), attrsOK())
-    s.metrics.SchedulerCronSweepDuration.Record(ctx, dur.Seconds())
-
-    return fired
-}
-
-// PlanFires implements FirePlanner — pure Go, no DB.
-func (s *CronScheduler) PlanFires(
-    ctx context.Context,
-    batch []*models.ScheduleDefinition,
-    now time.Time,
-) []repository.ScheduledFire {
-    fires := make([]repository.ScheduledFire, 0, len(batch))
-    for _, sched := range batch {
-        fire, ok := planOne(ctx, sched, now)
-        if !ok {
-            // Invalid cron: park the schedule (no event emission).
-            s.metrics.SchedulerCronInvalid.Add(ctx, 1, attrsSchedule(sched))
-            fires = append(fires, repository.ScheduledFire{
-                Schedule: sched, Event: nil, NextFireAt: nil, JitterSeconds: 0,
-            })
-            continue
-        }
-        fires = append(fires, fire)
-    }
-    return fires
-}
-```
-
-`planOne` is the unit-testable core — parses cron, computes next fire + jitter (via `dsl/schedutil`), builds `models.EventLog` with fixed system fields preceded by user `input_payload` (so system fields win on key collisions), returns a `ScheduledFire`. Pure function.
-
-`ClaimAndFireBatch` inside the repo:
-
-```go
-func (r *scheduleRepository) ClaimAndFireBatch(
-    ctx context.Context,
-    planner FirePlanner,
-    now time.Time,
-    limit int,
-) (fired int, err error) {
-    err = r.Transact(ctx, func(tx *gorm.DB) error {
-        // 1. Claim.
-        var batch []*models.ScheduleDefinition
-        if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-            Where("active = ? AND deleted_at IS NULL AND next_fire_at IS NOT NULL AND next_fire_at <= ?", true, now).
-            Order("next_fire_at ASC").
-            Limit(limit).
-            Find(&batch).Error; err != nil {
-            return fmt.Errorf("claim due batch: %w", err)
-        }
-        if len(batch) == 0 {
-            return nil
-        }
-
-        // 2. Plan (pure, no DB).
-        fires := planner.PlanFires(ctx, batch, now)
-
-        // 3. Multi-row INSERT event_log.
-        events := make([]*models.EventLog, 0, len(fires))
-        for _, f := range fires {
-            if f.Event != nil {
-                events = append(events, f.Event)
-            }
-        }
-        if len(events) > 0 {
-            if err := tx.CreateInBatches(events, 500).Error; err != nil {
-                return fmt.Errorf("batch insert event_log: %w", err)
-            }
-        }
-
-        // 4. Single UPDATE with VALUES join.
-        if err := applyFireUpdates(tx, fires, now); err != nil {
-            return fmt.Errorf("batch update schedules: %w", err)
-        }
-
-        fired = len(fires)
-        return nil
-    })
-    return
-}
-```
-
-`applyFireUpdates` constructs:
-
-```sql
-UPDATE schedule_definitions s
-   SET last_fired_at  = v.last_fired_at,
-       next_fire_at   = v.next_fire_at,
-       jitter_seconds = v.jitter_seconds,
-       modified_at    = v.modified_at
-  FROM (
-    VALUES
-      ($1::uuid, $2::text, $3::text, $4::timestamptz, $5::timestamptz, $6::int, $4::timestamptz),
-      ($7::uuid, $8::text, $9::text, $4::timestamptz, $10::timestamptz, $11::int, $4::timestamptz),
-      …
-  ) AS v(id, tenant_id, partition_id, last_fired_at, next_fire_at, jitter_seconds, modified_at)
- WHERE s.id = v.id AND s.tenant_id = v.tenant_id AND s.partition_id = v.partition_id;
-```
-
-Explicit casts on the first row are required because `VALUES` infers types from the first row and subsequent mismatched NULLs can error.
+**`DeactivateByWorkflow(ctx, workflowName, tenantID, partitionID)`** — one `UPDATE schedule_definitions SET active=false, next_fire_at=NULL, modified_at=now WHERE workflow_name=? AND tenant_id=? AND partition_id=? AND deleted_at IS NULL`. Deactivates every version's schedules. Single statement.
 
 ---
 
-## Business-layer changes (`apps/default/service/business/workflow.go`)
+## Fire path implementation (`apps/default/service/schedulers/cron.go`)
 
-### `CreateWorkflow` — atomic
+`CronScheduler` exposes a `SchedulePlanFn`-shaped method and passes it to the repo. No DB access inside the method; pure Go.
+
+```go
+func (s *CronScheduler) planOne(
+    ctx context.Context,
+    sched *models.ScheduleDefinition,
+) (event *models.EventLog, nextFire *time.Time, jitterSeconds int, err error) {
+
+    now := s.clock.Now().UTC()  // clock injected for testability
+
+    // Parse cron. Invalid → park (no event, no next fire).
+    cronSched, parseErr := dsl.ParseCron(sched.CronExpr)
+    if parseErr != nil {
+        util.Log(ctx).WithError(parseErr).Error("invalid cron, parking",
+            "schedule_id", sched.ID, "cron_expr", sched.CronExpr)
+        s.metrics.IncrementSchedulerCronInvalid(ctx, sched)
+        return nil, nil, 0, nil
+    }
+
+    // Missed-fire policy.
+    base := now
+    if sched.NextFireAt != nil && now.Sub(*sched.NextFireAt) <= cronMissedFireThreshold {
+        base = *sched.NextFireAt
+    }
+
+    nominal, zoneErr := cronSched.NextInZone(base, sched.Timezone)
+    if zoneErr != nil {
+        util.Log(ctx).WithError(zoneErr).Error("invalid timezone, parking",
+            "schedule_id", sched.ID, "timezone", sched.Timezone)
+        s.metrics.IncrementSchedulerCronInvalid(ctx, sched)
+        return nil, nil, 0, nil
+    }
+
+    jitter := dsl.JitterFor(sched.ID, cronSched, nominal)
+    next := nominal.Add(jitter)
+
+    event = buildEvent(sched, now)
+    return event, &next, int(jitter / time.Second), nil
+}
+
+// buildEvent uses events.BuildScheduleFiredPayload so system fields cannot
+// be shadowed by user input_payload.
+```
+
+`CronScheduler.RunOnce` opens a trace span, calls `scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, batchSize)`, and records metrics.
+
+---
+
+## Business layer (`apps/default/service/business/workflow.go`)
+
+All three lifecycle methods are **two sequential single-table calls** — no `Transact`, no `Pool()` access, no `*gorm.DB` handled by the business layer.
+
+### CreateWorkflow
 
 ```go
 func (b *workflowBusiness) CreateWorkflow(ctx context.Context, dslBlob json.RawMessage) (*models.WorkflowDefinition, error) {
+    // Parse + validate upstream (unchanged).
     spec, err := dsl.Parse(dslBlob)
     if err != nil { return nil, fmt.Errorf("parse DSL: %w", err) }
-    if res := dsl.Validate(spec); !res.Valid() {
-        return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, res.Error())
-    }
-    if err := validateExecutableWorkflow(spec); err != nil {
-        return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err)
-    }
+    if res := dsl.Validate(spec); !res.Valid() { return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, res.Error()) }
+    if err := validateExecutableWorkflow(spec); err != nil { return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err) }
+    if err := b.registerStepSchemas(ctx, spec); err != nil { return nil, fmt.Errorf("register schemas: %w", err) }
 
     def := buildDefinition(spec, dslBlob)
 
-    if err := b.registerStepSchemas(ctx, spec); err != nil {
-        return nil, fmt.Errorf("register schemas: %w", err)
+    // Tx1: workflow row.
+    if err := b.defRepo.Create(ctx, def); err != nil {
+        return nil, fmt.Errorf("persist workflow: %w", err)
     }
 
-    txErr := b.scheduleRepo.Transact(ctx, func(tx *gorm.DB) error {
-        if err := b.defRepo.CreateTx(ctx, tx, def); err != nil {
-            return fmt.Errorf("persist workflow: %w", err)
+    // Tx2: schedule rows as one atomic batch.
+    scheds, err := planSchedules(def, spec)
+    if err != nil { return nil, err }
+    if len(scheds) > 0 {
+        if err := b.scheduleRepo.CreateBatch(ctx, scheds); err != nil {
+            // Orphan DRAFT workflow. Harmless — DRAFT doesn't fire.
+            util.Log(ctx).WithError(err).Error("schedule materialisation failed; workflow is orphan DRAFT",
+                "workflow_id", def.ID, "name", def.Name)
+            return nil, fmt.Errorf("materialise schedules (workflow %s created but schedules missing; retry blocked by unique index): %w", def.ID, err)
         }
-        for _, sspec := range spec.Schedules {
-            sched, err := materialiseOne(def, sspec)
-            if err != nil {
-                return err
-            }
-            if err := b.scheduleRepo.CreateTx(ctx, tx, sched); err != nil {
-                return fmt.Errorf("create schedule %s: %w", sspec.Name, err)
-            }
-        }
-        return nil
-    })
-    if txErr != nil { return nil, txErr }
+    }
+
     return def, nil
 }
 ```
 
-Requires adding `CreateTx(ctx, tx, def)` to `WorkflowDefinitionRepository`.
-
-### `ActivateWorkflow` — O(1) bulk update
-
-Replaces the per-schedule UPDATE loop with one VALUES-join statement matching the fire-path shape. Same pattern: SELECT this version's schedules, build the plan (cronNext + jitter) in Go, then one bulk UPDATE — all inside the lifecycle tx. Per-schedule round-trips collapse to one regardless of schedule count.
-
-At 10 k schedules per workflow, activation goes from ~20 s (10 k × 2 ms) to ~50 ms.
-
-### `ArchiveWorkflow` — new
+### ActivateWorkflow
 
 ```go
-func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error {
-    return b.scheduleRepo.Transact(ctx, func(tx *gorm.DB) error {
-        def, err := b.defRepo.GetByIDTx(ctx, tx, id)
-        if err != nil {
-            return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
-        }
-        if err := def.TransitionTo(models.WorkflowStatusArchived); err != nil {
-            return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
-        }
-        if err := b.defRepo.UpdateTx(ctx, tx, def); err != nil {
-            return fmt.Errorf("update workflow: %w", err)
-        }
-        return b.scheduleRepo.ArchiveWorkflowTx(ctx, tx, def.Name, def.TenantID, def.PartitionID)
-    })
+func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {
+    def, err := b.defRepo.GetByID(ctx, id)
+    if err != nil { return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err) }
+    if err := def.TransitionTo(models.WorkflowStatusActive); err != nil {
+        return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
+    }
+
+    // Tx1: workflow status update.
+    if err := b.defRepo.Update(ctx, def); err != nil {
+        return fmt.Errorf("update workflow: %w", err)
+    }
+
+    // Tx2: activate this version's schedules, deactivate sibling versions.
+    fires, err := buildActivationFires(ctx, b.scheduleRepo, def)
+    if err != nil { return err }
+    if err := b.scheduleRepo.ActivateByWorkflow(
+        ctx, def.Name, def.WorkflowVersion, def.TenantID, def.PartitionID, fires,
+    ); err != nil {
+        util.Log(ctx).WithError(err).Error("activate schedules failed; workflow is ACTIVE but schedules not rolled forward; retry to reconcile",
+            "workflow_id", def.ID)
+        return fmt.Errorf("activate schedules: %w", err)
+    }
+    return nil
 }
 ```
 
-### `GetWorkflowWithSchedules` — tenancy-safe
+`buildActivationFires` calls `scheduleRepo.ListByWorkflow` (single-table read) and computes the per-row `next_fire_at = cronNext(now) + jitter` in pure Go — no tx needed, no cross-repo access. Returns `[]ScheduleActivation`.
 
-`ListByWorkflow` is already tenancy-scoped via `BaseRepository` — the audit finding (B1) is addressed by delegating to `r.BaseRepository.Pool().DB(ctx, false).Where(...)` through the scoped session, NOT the raw pool. The fix is one-line: use BaseRepository-provided tenancy scope instead of bypassing it.
+### ArchiveWorkflow (new)
+
+```go
+func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error {
+    def, err := b.defRepo.GetByID(ctx, id)
+    if err != nil { return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err) }
+    if err := def.TransitionTo(models.WorkflowStatusArchived); err != nil {
+        return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
+    }
+
+    // Tx1: schedules off FIRST — safe failure mode.
+    if err := b.scheduleRepo.DeactivateByWorkflow(ctx, def.Name, def.TenantID, def.PartitionID); err != nil {
+        return fmt.Errorf("deactivate schedules: %w", err)
+    }
+
+    // Tx2: workflow status.
+    if err := b.defRepo.Update(ctx, def); err != nil {
+        util.Log(ctx).WithError(err).Error("workflow status update failed after schedules deactivated; retry to reconcile",
+            "workflow_id", def.ID)
+        return fmt.Errorf("update workflow status: %w", err)
+    }
+    return nil
+}
+```
+
+### GetWorkflowWithSchedules — tenancy fix
+
+The v1 audit found `ListByWorkflow` bypassed BaseRepository's tenancy scope. Fix in-place: use the project's idiomatic scoped-list helper (match `WorkflowDefinitionRepository.ListActiveByName`'s pattern). Tenancy + partition filtering applied.
 
 ---
 
 ## DSL changes (`dsl/`)
 
-### `WorkflowSpec.Schedules` + `ScheduleSpec`
+Unchanged from the prior revision:
 
-```go
-type ScheduleSpec struct {
-    Name         string         `json:"name"`
-    CronExpr     string         `json:"cron_expr"`
-    Timezone     string         `json:"timezone,omitempty"`     // IANA; default "UTC"
-    InputPayload map[string]any `json:"input_payload,omitempty"`
-    // Active is REMOVED in v1.1 — DRAFT workflows never fire until activated,
-    // and there is no pause/resume RPC. Dead field in v1.
-}
-```
-
-Validator change: `validateSchedules` parses `Timezone` via `time.LoadLocation` and rejects invalid zones. Empty → `"UTC"`.
-
-### `dsl/schedule.go` — timezone-aware
-
-```go
-// Next returns the first fire time strictly after `from`, evaluated in the
-// schedule's declared timezone. Timezone-less schedules are evaluated in UTC.
-func (s CronSchedule) NextInZone(from time.Time, zone string) (time.Time, error) {
-    loc, err := time.LoadLocation(zone)
-    if err != nil {
-        return time.Time{}, fmt.Errorf("load zone %q: %w", zone, err)
-    }
-    next := s.schedule.Next(from.In(loc))
-    return next.UTC(), nil
-}
-```
-
-Legacy `Next(from)` is kept as a thin alias for `NextInZone(from, "UTC")`.
-
-### `dsl/schedutil.go` — extracted shared helper (new file)
-
-```go
-package dsl
-
-import (
-    "hash/fnv"
-    "time"
-)
-
-const (
-    CronMaxJitter           = 30 * time.Second
-    cronJitterPeriodDivisor = 10
-)
-
-// JitterFor returns a deterministic per-schedule offset to flatten thundering
-// herds at common cron boundaries. Cap = min(period/10, CronMaxJitter).
-func JitterFor(scheduleID string, cronSched CronSchedule, nominal time.Time) time.Duration {
-    following := cronSched.Next(nominal)
-    period := following.Sub(nominal)
-    if period <= 0 {
-        return 0
-    }
-    maxDur := period / cronJitterPeriodDivisor
-    if maxDur > CronMaxJitter {
-        maxDur = CronMaxJitter
-    }
-    if maxDur <= 0 {
-        return 0
-    }
-    h := fnv.New64a()
-    _, _ = h.Write([]byte(scheduleID))
-    return time.Duration(int64(h.Sum64() % uint64(maxDur)))
-}
-```
-
-Callers in `schedulers/cron.go` and `business/workflow.go` replaced with `dsl.JitterFor(...)`.
+- `ScheduleSpec.Timezone string` added (IANA, default `"UTC"`).
+- `ScheduleSpec.Active *bool` removed.
+- `CronSchedule.NextInZone(from, zone)` method added.
+- `dsl/schedutil.go` with `JitterFor` + `CronMaxJitter` extracted.
+- `validateSchedules` rejects non-loadable timezones.
 
 ---
 
-## Event types (`pkg/events/schedule.go` — new)
+## Event type (`pkg/events/schedule.go` — new)
+
+Unchanged from the prior revision:
 
 ```go
-package events
-
 const ScheduleFiredType = "schedule.fired"
 
-// ScheduleFiredPayload is the wire shape of `schedule.fired` events.
-// System fields are set LAST so user-supplied input_payload cannot shadow them.
 type ScheduleFiredPayload struct {
     ScheduleID   string         `json:"schedule_id"`
     ScheduleName string         `json:"schedule_name"`
-    FiredAt      string         `json:"fired_at"` // RFC3339
+    FiredAt      string         `json:"fired_at"`
     Input        map[string]any `json:"input,omitempty"`
 }
+
+func BuildScheduleFiredPayload(id, name, firedAt string, userInput map[string]any) ScheduleFiredPayload
 ```
 
-`planOne` in the scheduler builds this struct directly — no `maps.Copy`, no shadow risk — then JSON-marshals it for `event_log.Payload`.
+System fields live on typed struct fields — `maps.Copy` cannot shadow them.
 
 ---
 
-## Proto changes (`proto/workflow/v1/workflow.proto`)
+## Proto (`proto/workflow/v1/workflow.proto`)
 
-1. Add `timezone string` field to `ScheduleDefinition` proto message.
+1. Add `timezone string` to the `ScheduleDefinition` proto message.
 2. Add `ArchiveWorkflow` RPC:
 
 ```proto
@@ -493,94 +431,44 @@ message ArchiveWorkflowRequest  { string id = 1; }
 message ArchiveWorkflowResponse { WorkflowDefinition workflow = 1; }
 ```
 
-No new permissions (reuses `workflow_manage`).
-
-Regeneration via `make proto-gen` updates `gen/go/workflow/v1/workflow.pb.go` and `workflowv1connect/`.
+Reuses existing `workflow_manage` permission.
 
 ---
 
 ## Configuration (`apps/default/config/config.go`)
 
-Add:
-
 ```go
-type Config struct {
-    // existing fields...
+CronSchedulerBatchSize     int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`
+CronSchedulerIntervalSecs  int `env:"CRON_SCHEDULER_INTERVAL_SECONDS" envDefault:"1"`
 
-    // Scheduler tuning.
-    CronSchedulerBatchSize     int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`
-    CronSchedulerIntervalSecs  int `env:"CRON_SCHEDULER_INTERVAL_SECONDS" envDefault:"1"`
+SchedulerPoolMaxConns      int `env:"SCHEDULER_POOL_MAX_CONNS" envDefault:"10"`
+SchedulerPoolMinConns      int `env:"SCHEDULER_POOL_MIN_CONNS" envDefault:"2"`
 
-    // Dedicated scheduler DB pool sizing.
-    SchedulerPoolMaxConns      int `env:"SCHEDULER_POOL_MAX_CONNS"        envDefault:"10"`
-    SchedulerPoolMinConns      int `env:"SCHEDULER_POOL_MIN_CONNS"        envDefault:"2"`
-}
+OutboxPublishConcurrency   int `env:"OUTBOX_PUBLISH_CONCURRENCY" envDefault:"16"`
 ```
 
-`main.go` wiring:
-
-```go
-// Primary pool for handlers — unchanged.
-ctx, svc := frame.NewServiceWithContext(ctx,
-    frame.WithName(cfg.Name()),
-    frame.WithConfig(&cfg),
-    frame.WithDatastore(
-        pool.WithPreferSimpleProtocol(true),
-        pool.WithPreparedStatements(false),
-    ),
-)
-
-// Dedicated scheduler pool.
-schedulerPool := pool.NewPool(ctx)
-if err := schedulerPool.AddConnection(ctx,
-    pool.WithConnection(cfg.DatabasePrimary[0], false),
-    pool.WithPreparedStatements(false),
-    pool.WithPreferSimpleProtocol(true),
-    pool.WithMaxConnections(cfg.SchedulerPoolMaxConns),
-    pool.WithMinConnections(cfg.SchedulerPoolMinConns),
-); err != nil {
-    log.WithError(err).Fatal("scheduler pool init")
-}
-svc.DatastoreManager().AddPool(ctx, "scheduler", schedulerPool)
-
-// Scheduler repositories use the dedicated pool.
-scheduleRepoForScheduler := repository.NewScheduleRepository(schedulerPool)
-```
+`main.go` creates a dedicated scheduler pool via `pool.NewPool(ctx) + AddConnection(...) + svc.DatastoreManager().AddPool(ctx, "scheduler", pool)`. The cron scheduler uses this pool; HTTP/RPC handlers keep the default pool.
 
 ---
 
 ## Outbox batch publish (`apps/default/service/schedulers/outbox.go`)
 
-Current: loop over claimed events, call `queueMgr.Publish(subject, payload)` once per event.
-
-Change: collect a batch of serialised messages, call `queueMgr.Publish(subject, payloads ...[]byte)`. Verify Frame's `QueueManager.Publish` signature supports batched publish; if not, look for a batch variant or submit one goroutine per message via `workerpool` bounded by a config knob `OutboxPublishConcurrency`. The goal is to stop being the per-event NATS round-trip bottleneck.
-
-(Per Frame patterns: check if `QueueManager` exposes `PublishBatch` or similar; fall back to `workerpool.SubmitJob` with a bounded pool if not.)
+Investigate Frame's `QueueManager.Publish` signature during implementation. If batch publish is supported, use it. Otherwise use a bounded `workerpool` (size `OutboxPublishConcurrency`) to parallelise per-event publishes. Either approach eliminates the per-event round-trip ceiling at herd rates.
 
 ---
 
-## Observability (`apps/default/service/schedulers/cron.go` + `pkg/telemetry/`)
+## Observability (`pkg/telemetry/metrics.go` + `apps/default/service/schedulers/cron.go`)
 
-Add constants to `pkg/telemetry/metrics.go`:
+New:
 
-```go
-const (
-    SpanSchedulerCron = "scheduler.cron.sweep"
-
-    MetricSchedulerCronFired          = "scheduler_cron_fired_total"
-    MetricSchedulerCronSweepDuration  = "scheduler_cron_sweep_duration_seconds"
-    MetricSchedulerCronBacklog        = "scheduler_cron_backlog_seconds"
-    MetricSchedulerCronInvalidCron    = "scheduler_cron_invalid_cron_total"
-)
+```
+SpanSchedulerCron                     // trace span wrapping each sweep
+scheduler_cron_fired_total{result}    // counter: ok|fail
+scheduler_cron_sweep_duration_seconds // histogram
+scheduler_cron_invalid_cron_total     // counter (parse failure at fire time)
 ```
 
-Wire them on `telemetry.Metrics`:
-- `SchedulerCronFired` — counter keyed by `result ∈ {ok, fail}`.
-- `SchedulerCronSweepDuration` — histogram of sweep wall time in seconds.
-- `SchedulerCronBacklog` — gauge of `now - MIN(next_fire_at) WHERE active=true`, sampled every sweep via a `SELECT MIN(next_fire_at)`.
-- `SchedulerCronInvalid` — counter keyed by `schedule_id, tenant_id`.
-
-Pass `*telemetry.Metrics` into `NewCronScheduler`; update `main.go` wiring.
+Wired on `telemetry.Metrics` struct; injected into `NewCronScheduler(scheduleRepo, cfg, metrics)`. A nil metrics is tolerated for tests.
 
 ---
 
@@ -589,77 +477,83 @@ Pass `*telemetry.Metrics` into `NewCronScheduler`; update `main.go` wiring.
 ### Unit (no DB)
 
 - `dsl/schedutil_test.go`: `JitterFor` determinism + cap.
-- `dsl/schedule_test.go` (extended): `NextInZone` for America/New_York and non-existent times (DST forward leap) — assert deterministic.
-- `pkg/events/schedule_test.go`: payload build ordering — user `Input` map never overwrites `ScheduleID`, `ScheduleName`, `FiredAt`.
-- `apps/default/service/schedulers/cron_test.go`: `planOne` table-driven — normal, missed-fire, invalid cron, TZ aware.
+- `dsl/schedule_test.go` (extended): `NextInZone` for America/New_York; invalid zone error path.
+- `pkg/events/schedule_test.go`: payload JSON shape; `Input` namespaced so system keys cannot be shadowed.
+- `apps/default/service/schedulers/cron_test.go`: `planOne` table-driven — normal, missed-fire, invalid cron (parks), invalid TZ (parks).
 
 ### Integration (testcontainers)
 
 - `apps/default/service/repository/schedule_test.go`:
-  - `TestClaimAndFireBatch_ExactlyOnceUnderConcurrency` — 10 goroutines × 500 rows, every row fires exactly once. (Extend existing.)
-  - `TestClaimAndFireBatch_BatchedTxSemantics` — one INSERT + one UPDATE per sweep (use a `QueryMatcher` or statement counter).
-  - `TestClaimAndFireBatch_RollbackOnFailure` — inject a UPDATE failure; assert no event_log rows committed, no next_fire_at advanced.
-  - `TestUniqueIndex_PreventsDuplicateMaterialise` — insert two schedules with same (tenant, partition, workflow, version, name); second errors with unique violation.
+  - `ClaimAndFireBatch` exactly-once under 10 concurrent goroutines × 500 seeded rows.
+  - `ClaimAndFireBatch` rollback on INSERT failure (inject unique-key violation on `event_log` idempotency_key): no rows advance, no events emitted.
+  - `CreateBatch` atomicity: seed a failure (duplicate name), expect no rows persisted.
+  - `ActivateByWorkflow`: seed v1 active, v2 draft-schedules; call `ActivateByWorkflow(v2)`; assert v1 deactivated, v2 activated with `next_fire_at` in future.
+  - `DeactivateByWorkflow`: seeds 3 versions; call; all deactivated, all `next_fire_at = NULL`.
+  - Unique-index: second `Create` with duplicate `(tenant, partition, workflow_name, workflow_version, name)` errors.
 - `apps/default/service/business/workflow_integration_test.go`:
-  - `TestCreateWorkflow_Atomicity` — inject a schedule-insert failure; assert workflow row also rolled back.
-  - `TestArchiveWorkflow_DeactivatesAllVersions` + cross-tenant isolation.
-  - `TestActivateWorkflow_BulkUpdatePerformance` — 1000 schedules; activation completes in one tx (count statements via gorm callback).
+  - `CreateWorkflow_OrphanRecoveryBlocked`: simulate Tx2 failure (insert conflicting schedule name); assert Tx1's workflow row still exists; retry errors on unique index.
+  - `ActivateWorkflow_RecoversAfterTx2Failure`: inject a Tx2 failure; workflow is ACTIVE; retry idempotently succeeds; prior-version schedules deactivate on successful retry.
+  - `ArchiveWorkflow_SchedulesOffBeforeWorkflowArchived`: confirm the two-tx ordering by watching write-timestamps.
+  - `ListByWorkflow_TenantIsolated`: tenant-A and tenant-B both have a `same-name` workflow; each sees only their own.
 - `apps/default/service/schedulers/scheduler_test.go`:
-  - Backpressure: verify `RunOnce` blocking doesn't pile goroutines.
-  - Configurable batch/interval honored.
-- `apps/default/tests/e2e_test.go` (if exists): end-to-end create → activate → fire → observe event_log row with correct schema.
+  - Configurable batch/interval honored via `cfg`.
+  - `planOne` integration — `CronScheduler` implements the `SchedulePlanFn` contract that `ClaimAndFireBatch` consumes.
 
 ### Contract
 
-- `TestScheduleFiredPayload_ShapeStable` — assert serialised shape matches a golden fixture so downstream consumers aren't broken by additions.
+- `TestScheduleFiredPayload_ShapeStable` — golden fixture for the serialised `schedule.fired` payload.
 
-All DB-touching tests use `frametests.FrameBaseTestSuite` with real Postgres (testpostgres). No mocks for database.
+All DB-touching tests use `frametests.FrameBaseTestSuite` + testcontainers.
 
 ---
 
 ## Rollout
 
-1. Land the code on `main`. All commits direct; already approved path.
+Single release, direct-to-main.
+
+1. Land code on `main`.
 2. Tag `v0.3.35`; release workflow builds three images.
-3. Flux image-automation promotes `v0.3.35`; HelmRelease pre-install migration Job runs AutoMigrate which:
+3. Flux image-automation promotes `v0.3.35`; colony chart's pre-install migration Job runs AutoMigrate:
    - Adds `timezone` column.
-   - Replaces `idx_sd_due` with the tightened partial index.
+   - Drops v1 `idx_sd_due`, rebuilds with tightened predicate.
    - Creates `idx_sd_workflow_unique`.
-4. Migration Job completes; serving pods roll.
-5. **Bounce pgBouncer pods in `datastore` ns** to flush any cached plans (operational, same as v0.3.34). Absent that, the first sweep may hit `SQLSTATE 0A000` once; harmless but surfaces in logs.
-6. Observability verifies: `scheduler_cron_fired_total` counter increments, backlog gauge ≈ 0, no invalid-cron counter events for known-good schedules.
+4. Serving pods roll.
+5. **Bounce pgBouncer pods** in `datastore` ns to flush cached plans (operational; same pattern as v0.3.34).
+6. Observability verifies: `scheduler_cron_fired_total` counter increments, no `invalid_cron_total` for known-good schedules, sweep duration stable.
 
 ### Rollback
 
-- Revert `v0.3.35` tag and re-roll `v0.3.34`. Schema-wise the new column and indexes remain (additive); no schema rollback required or safe.
-- If the batched UPDATE surfaces a regression in production, the simplest mitigation is env `CRON_SCHEDULER_BATCH_SIZE=1` — reverts functional behaviour to per-row semantics while keeping the new code path. No restart needed if env is reloaded.
+- **Emergency dial-down**: set `CRON_SCHEDULER_BATCH_SIZE=1` env on the Deployment and restart. Batched path still runs but with batch size 1 — effectively per-row semantics; returns to v1 throughput without redeploy.
+- **Full rollback**: repin `v0.3.34` in `ImagePolicy` filter. Schema gains (new column, indexes) are additive; no schema rollback.
+- **Revert main**: `git revert origin/main..HEAD^` and retag as `v0.3.36`.
 
 ---
 
-## Risks & mitigations
+## Risks
 
-1. **Batched UPDATE `VALUES` typing surprises on Postgres.** Partial NULLs in `next_fire_at` require explicit `::timestamptz` casts on the first VALUES row. Integration test covers it.
-2. **`CreateInBatches(events, 500)` GORM nuances** — GORM-level batching. If GORM fragments at N < 500 we still get good throughput; if it single-statements we see one INSERT. Measure in staging before scaling.
-3. **Connection pool sizing** — default `SCHEDULER_POOL_MAX_CONNS=10` is the cluster-visible cap. If operators crank `CRON_SCHEDULER_BATCH_SIZE=2000` without bumping the pool, a single sweep holds a connection for the full sweep duration; pool underrun is possible under herd. Documented tuning guidance in `apps/default/config/config.go` comments.
-4. **Outbox publish bottleneck shifts to NATS** — we unlock the scheduler but push the load onto the outbox + NATS cluster. Outbox batching (same release) mitigates. Monitor `scheduler_outbox_lag_seconds`.
-5. **Breaking change to `ScheduleRepository` interface**: `Pool()` removed, `SetActiveByWorkflow` wildcard gone, new `FirePlanner` / `Transact` surface. All callers are in this repo; change is enclosed. No external SDK change.
-6. **DSL breaking change**: `ScheduleSpec.Active` removed. `json:"active"` still parses (Go ignores unknown fields) — but any caller today setting it is accepting silent no-op. User confirmed only the Go test helper writes schedules; no external consumers.
+1. **`VALUES` typing in the bulk UPDATE.** NULLs in `next_fire_at` mixed with timestamps require explicit `::timestamptz` casts on the first tuple. Integration test asserts this.
+2. **`CreateInBatches(events, 500)` behaviour** — GORM-level. Verified in staging before production scale.
+3. **Pool sizing tradeoff.** `SCHEDULER_POOL_MAX_CONNS=10` is the default. If operators crank `CRON_SCHEDULER_BATCH_SIZE=2000` without bumping the pool, one in-flight sweep can hold a connection for ~100 ms, leaving only 9 for other ops. Documented.
+4. **Outbox becomes the next bottleneck at herd rates.** Same release includes outbox batch/concurrent publish; monitor `scheduler_outbox_lag_seconds`.
+5. **`maps.Copy` → typed payload breaking change.** Downstream consumers that read `input_payload` by merging into the root object instead of reading `input.*` will see a shape change. Mitigated by the typed `ScheduleFiredPayload` contract test (golden fixture).
+6. **DSL breaking change**: `ScheduleSpec.Active` removed. Go silently ignores unknown fields, so in-code test helpers that set `Active: true` fail to compile; prod DSL consumers pass JSON, which is a no-op. Only the Go test helper path needed updating.
+7. **Orphan DRAFT workflow after failed materialisation** (CreateWorkflow Tx2 failure). DRAFT doesn't fire, so impact is operator-facing only; retry is blocked by `idx_wd_name_version`. Document recovery in operator runbook.
 
 ---
 
 ## Success criteria
 
-- All audit bugs closed (verified by new tests in the relevant packages).
+- All v1 audit bugs closed (verified by new tests).
 - `TestClaimAndFireBatch_ExactlyOnceUnderConcurrency` passes at `count=5 batch=500 workers=10`.
-- Staging sustained-fire benchmark: 12-pod cluster delivers ≥ 5 k fires/sec for 5 minutes without DB saturation or pod restart.
-- `ActivateWorkflow` with 1000 schedules completes in < 500 ms (currently ~2 s).
-- Cluster HelmRelease `READY=True` for ≥ 10 min post-deploy with zero restarts.
-- Observability dashboards populate: fires/sec, sweep duration p99, backlog gauge steady near 0.
+- Staging benchmark: 12-pod cluster delivers ≥ 5 k fires/sec for 5 min without pod restart or DB saturation alerts.
+- `ActivateWorkflow` with 1 000 schedules completes in < 500 ms (v1: ~2 s).
+- HelmRelease `READY=True` ≥ 10 min post-deploy, zero restarts.
+- Observability dashboards populate: fires/sec, sweep duration p99, invalid_cron counter steady at 0.
 
 ## References
 
-- v1 spec (prior): `docs/superpowers/specs/2026-04-18-scheduler-v1-design.md`
-- Audit findings (this conversation): three-axis audit — correctness/design/scale
+- v1 spec: `docs/superpowers/specs/2026-04-18-scheduler-v1-design.md`
+- Prior revision of this spec (wider interface reshape): commit `8e24921` (superseded)
 - Current fire path: `apps/default/service/schedulers/cron.go`, `apps/default/service/repository/schedule.go`
-- Activate lifecycle: `apps/default/service/business/workflow.go:300-387`
-- Memory (user feedback): `/home/j/.claude/projects/-home-j-code-antinvestor-service-trustage/memory/feedback_tenancy_filters.md`
+- Lifecycle source: `apps/default/service/business/workflow.go`
+- Tenancy memory: `/home/j/.claude/projects/-home-j-code-antinvestor-service-trustage/memory/feedback_tenancy_filters.md`
