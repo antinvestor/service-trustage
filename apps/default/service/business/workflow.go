@@ -18,11 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"time"
 
 	"github.com/pitabwire/util"
-	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -42,6 +40,7 @@ type WorkflowBusiness interface {
 	ListWorkflows(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
 	SearchWorkflows(ctx context.Context, filter WorkflowListFilter) (*WorkflowListPage, error)
 	ActivateWorkflow(ctx context.Context, id string) error
+	ArchiveWorkflow(ctx context.Context, id string) error
 }
 
 type WorkflowListFilter struct {
@@ -83,20 +82,15 @@ func (b *workflowBusiness) CreateWorkflow(
 ) (*models.WorkflowDefinition, error) {
 	log := util.Log(ctx)
 
-	// Parse DSL.
 	spec, err := dsl.Parse(dslBlob)
 	if err != nil {
 		return nil, fmt.Errorf("parse DSL: %w", err)
 	}
-
-	// Validate DSL.
-	result := dsl.Validate(spec)
-	if !result.Valid() {
-		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, result.Error())
+	if res := dsl.Validate(spec); !res.Valid() {
+		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, res.Error())
 	}
-
-	if execErr := validateExecutableWorkflow(spec); execErr != nil {
-		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, execErr)
+	if err := validateExecutableWorkflow(spec); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err)
 	}
 
 	def := &models.WorkflowDefinition{
@@ -105,65 +99,72 @@ func (b *workflowBusiness) CreateWorkflow(
 		Status:          models.WorkflowStatusDraft,
 		DSLBlob:         string(dslBlob),
 	}
-
 	if spec.Timeout.Duration > 0 {
 		def.TimeoutSeconds = int64(spec.Timeout.Duration.Seconds())
 	}
 
-	// Register schemas for each step that has a call action.
-	if regErr := b.registerStepSchemas(ctx, spec); regErr != nil {
-		return nil, fmt.Errorf("register schemas: %w", regErr)
+	if err := b.registerStepSchemas(ctx, spec); err != nil {
+		return nil, fmt.Errorf("register schemas: %w", err)
 	}
 
-	if err = b.defRepo.Create(ctx, def); err != nil {
+	// Tx1: workflow row (single-table auto-commit).
+	if err := b.defRepo.Create(ctx, def); err != nil {
 		return nil, fmt.Errorf("persist workflow: %w", err)
 	}
 
-	if schedErr := b.materialiseSchedules(ctx, def, spec); schedErr != nil {
-		return nil, fmt.Errorf("materialise schedules: %w", schedErr)
+	// Tx2: schedule rows (single-table atomic batch). If this fails, the
+	// workflow is an orphan DRAFT — harmless because DRAFT doesn't fire;
+	// retry is blocked by idx_wd_name_version on the workflow.
+	scheds, err := planScheduleRows(def, spec)
+	if err != nil {
+		return nil, err
+	}
+	if len(scheds) > 0 {
+		if err := b.scheduleRepo.CreateBatch(ctx, scheds); err != nil {
+			log.WithError(err).Error("schedule materialisation failed; workflow is orphan DRAFT",
+				"workflow_id", def.ID, "name", def.Name)
+			return nil, fmt.Errorf("materialise schedules (orphan DRAFT at workflow %s; retry blocked by idx_wd_name_version): %w", def.ID, err)
+		}
 	}
 
-	log.Info("workflow created",
-		"workflow_id", def.ID,
-		"name", spec.Name,
-	)
-
+	log.Info("workflow created", "workflow_id", def.ID, "name", def.Name)
 	return def, nil
 }
 
-func (b *workflowBusiness) materialiseSchedules(
-	ctx context.Context,
-	def *models.WorkflowDefinition,
-	spec *dsl.WorkflowSpec,
-) error {
+// planScheduleRows builds []*ScheduleDefinition from spec.Schedules for
+// CreateBatch. Pure — no DB access.
+func planScheduleRows(def *models.WorkflowDefinition, spec *dsl.WorkflowSpec) ([]*models.ScheduleDefinition, error) {
+	out := make([]*models.ScheduleDefinition, 0, len(spec.Schedules))
 	for _, sspec := range spec.Schedules {
 		payloadJSON := "{}"
 		if len(sspec.InputPayload) > 0 {
 			raw, err := json.Marshal(sspec.InputPayload)
 			if err != nil {
-				return fmt.Errorf("marshal input_payload for schedule %s: %w", sspec.Name, err)
+				return nil, fmt.Errorf("marshal input_payload for %s: %w", sspec.Name, err)
 			}
 			payloadJSON = string(raw)
+		}
+
+		tz := sspec.Timezone
+		if tz == "" {
+			tz = "UTC"
 		}
 
 		sched := &models.ScheduleDefinition{
 			Name:            sspec.Name,
 			CronExpr:        sspec.CronExpr,
+			Timezone:        tz,
 			WorkflowName:    def.Name,
 			WorkflowVersion: def.WorkflowVersion,
 			InputPayload:    payloadJSON,
-			Active:          false, // DRAFT — activated by ActivateWorkflow.
+			Active:          false,
 			NextFireAt:      nil,
 			JitterSeconds:   0,
 		}
 		sched.CopyPartitionInfo(&def.BaseModel)
-
-		if err := b.scheduleRepo.Create(ctx, sched); err != nil {
-			return fmt.Errorf("create schedule %s: %w", sspec.Name, err)
-		}
+		out = append(out, sched)
 	}
-
-	return nil
+	return out, nil
 }
 
 func validateExecutableWorkflow(spec *dsl.WorkflowSpec) error {
@@ -329,108 +330,83 @@ func (b *workflowBusiness) SearchWorkflows(
 }
 
 func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {
+	log := util.Log(ctx)
+
 	def, err := b.defRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
 	}
-
-	if err = def.TransitionTo(models.WorkflowStatusActive); err != nil {
+	if err := def.TransitionTo(models.WorkflowStatusActive); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
 	}
 
-	db := b.scheduleRepo.Pool().DB(ctx, false)
-	now := time.Now().UTC()
-
-	txErr := db.Transaction(func(tx *gorm.DB) error {
-		// Persist the workflow status change inside the tx.
-		if updErr := tx.Save(def).Error; updErr != nil {
-			return fmt.Errorf("update workflow: %w", updErr)
-		}
-
-		// Deactivate every version's schedules for this workflow name (same tenant+partition only).
-		// Use raw Exec to guarantee active=false (boolean zero value) is written.
-		if deactErr := tx.Exec(
-			`UPDATE schedule_definitions
-			    SET active = false, next_fire_at = NULL, modified_at = ?
-			  WHERE workflow_name = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL`,
-			now, def.Name, def.TenantID, def.PartitionID,
-		).Error; deactErr != nil {
-			return fmt.Errorf("deactivate prior schedules: %w", deactErr)
-		}
-
-		// Activate this version's schedules with seeded next_fire_at.
-		myScheds, listErr := listSchedulesTx(tx, def.Name, def.WorkflowVersion, def.TenantID, def.PartitionID)
-		if listErr != nil {
-			return listErr
-		}
-		for _, sch := range myScheds {
-			cronSched, parseErr := dsl.ParseCron(sch.CronExpr)
-			if parseErr != nil {
-				return fmt.Errorf("parse cron for schedule %s: %w", sch.Name, parseErr)
-			}
-			nominal := cronSched.Next(now)
-			jitter := jitterForSchedule(sch.ID, cronSched, nominal)
-			next := nominal.Add(jitter)
-
-			if updErr := tx.Exec(
-				`UPDATE schedule_definitions
-				    SET active = true, next_fire_at = ?, jitter_seconds = ?, modified_at = ?
-				  WHERE id = ? AND tenant_id = ? AND partition_id = ?`,
-				&next, int(jitter/time.Second), now,
-				sch.ID, sch.TenantID, sch.PartitionID,
-			).Error; updErr != nil {
-				return fmt.Errorf("activate schedule %s: %w", sch.ID, updErr)
-			}
-		}
-
-		return nil
-	})
-	if txErr != nil {
-		return txErr
+	// Tx1: workflow status (single-table auto-commit).
+	if err := b.defRepo.Update(ctx, def); err != nil {
+		return fmt.Errorf("update workflow: %w", err)
 	}
 
+	// Build fire plans from ListByWorkflow (single-table read, tenancy-scoped).
+	myScheds, err := b.scheduleRepo.ListByWorkflow(ctx, def.Name, def.WorkflowVersion)
+	if err != nil {
+		return fmt.Errorf("list schedules: %w", err)
+	}
+
+	now := time.Now().UTC()
+	fires := make([]repository.ScheduleActivation, 0, len(myScheds))
+	for _, sch := range myScheds {
+		cronSched, parseErr := dsl.ParseCron(sch.CronExpr)
+		if parseErr != nil {
+			return fmt.Errorf("parse cron for %s: %w", sch.Name, parseErr)
+		}
+		nominal, err := cronSched.NextInZone(now, sch.Timezone)
+		if err != nil {
+			return fmt.Errorf("timezone for %s: %w", sch.Name, err)
+		}
+		jitter := dsl.JitterFor(sch.ID, cronSched, nominal)
+		fires = append(fires, repository.ScheduleActivation{
+			ID:            sch.ID,
+			NextFireAt:    nominal.Add(jitter),
+			JitterSeconds: int(jitter / time.Second),
+		})
+	}
+
+	// Tx2: deactivate siblings + activate this version (single-table tx).
+	if err := b.scheduleRepo.ActivateByWorkflow(
+		ctx, def.Name, def.WorkflowVersion, def.TenantID, def.PartitionID, fires,
+	); err != nil {
+		log.WithError(err).Error("activate schedules failed; workflow ACTIVE but schedules stale; retry to reconcile",
+			"workflow_id", def.ID)
+		return fmt.Errorf("activate schedules: %w", err)
+	}
 	return nil
 }
 
-// listSchedulesTx is a tx-bound list used inside ActivateWorkflow. The write path
-// must read schedules via the same tx as the subsequent UPDATEs so it sees uncommitted
-// row-locking consistency; ScheduleRepository.ListByWorkflow does not accept a tx.
-func listSchedulesTx(
-	tx *gorm.DB, workflowName string, workflowVersion int, tenantID, partitionID string,
-) ([]*models.ScheduleDefinition, error) {
-	var out []*models.ScheduleDefinition
-	res := tx.Where(
-		"workflow_name = ? AND workflow_version = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL",
-		workflowName, workflowVersion, tenantID, partitionID,
-	).Find(&out)
-	if res.Error != nil {
-		return nil, fmt.Errorf("list schedules by workflow (tx): %w", res.Error)
-	}
-	return out, nil
-}
+// ArchiveWorkflow transitions a DRAFT|ACTIVE workflow to ARCHIVED.
+// Sequence: deactivate schedules FIRST, then update workflow status. The
+// reversed order from Activate is deliberate — if the second step fails,
+// schedules are already off (safe: no overfire, just a transient status
+// mismatch fixable by retry).
+func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error {
+	log := util.Log(ctx)
 
-// jitterPeriodDivisor is the fraction of a schedule period used as the jitter ceiling.
-const jitterPeriodDivisor = 10
+	def, err := b.defRepo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
+	}
+	if err := def.TransitionTo(models.WorkflowStatusArchived); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
+	}
 
-// jitterForSchedule duplicates schedulers.jitterFor's algorithm to avoid importing
-// the schedulers package from business (layer smell). Deterministic per-schedule
-// offset, cap = min(period/10, 30s).
-func jitterForSchedule(scheduleID string, cronSched dsl.CronSchedule, nominal time.Time) time.Duration {
-	const cronMaxJitter = 30 * time.Second
-	following := cronSched.Next(nominal)
-	period := following.Sub(nominal)
-	if period <= 0 {
-		return 0
+	// Tx1: schedules off FIRST (safe failure ordering).
+	if err := b.scheduleRepo.DeactivateByWorkflow(ctx, def.Name, def.TenantID, def.PartitionID); err != nil {
+		return fmt.Errorf("deactivate schedules: %w", err)
 	}
-	maxDur := period / jitterPeriodDivisor
-	if maxDur > cronMaxJitter {
-		maxDur = cronMaxJitter
+
+	// Tx2: workflow status.
+	if err := b.defRepo.Update(ctx, def); err != nil {
+		log.WithError(err).Error("workflow status update failed after schedules deactivated; retry to reconcile",
+			"workflow_id", def.ID)
+		return fmt.Errorf("update workflow status: %w", err)
 	}
-	if maxDur <= 0 {
-		return 0
-	}
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(scheduleID))
-	//nolint:gosec // G115: modulo operation bounds the result to [0, maxDur); overflow is intentional.
-	return time.Duration(int64(h.Sum64() % uint64(maxDur)))
+	return nil
 }

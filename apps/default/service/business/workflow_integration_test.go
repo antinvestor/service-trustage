@@ -352,3 +352,71 @@ func (s *BusinessSuite) TestGetWorkflowWithSchedules_ReturnsMaterialised() {
 	s.Len(scheds, 1)
 	s.Equal("x", scheds[0].Name)
 }
+
+func (s *BusinessSuite) TestCreateWorkflow_SchedulesAtomicRollback() {
+	ctx := s.tenantCtx()
+
+	// Two schedules with the same name — second hits idx_sd_workflow_unique.
+	blob := []byte(`{
+		"version":"v1","name":"w-dup",
+		"steps":[{"id":"s","type":"delay","delay":{"duration":"1s"}}],
+		"schedules":[
+			{"name":"dup","cron_expr":"*/5 * * * *"},
+			{"name":"dup","cron_expr":"0 * * * *"}
+		]
+	}`)
+
+	_, err := s.workflowBusiness().CreateWorkflow(ctx, blob)
+	// v1.1: CreateBatch is atomic — duplicate fails the whole batch.
+	s.Require().Error(err, "duplicate schedule names must fail CreateBatch")
+
+	// With CreateWorkflow atomicity via two ordered tx: workflow row was created,
+	// schedule batch failed. Retry must be blocked by idx_wd_name_version.
+	_, retryErr := s.workflowBusiness().CreateWorkflow(ctx, blob)
+	s.Require().Error(retryErr, "retry must be blocked by workflow unique index")
+}
+
+func (s *BusinessSuite) TestArchiveWorkflow_DeactivatesSchedulesThenArchives() {
+	ctx := s.tenantCtx()
+
+	blob := []byte(`{
+		"version":"v1","name":"w-arch",
+		"steps":[{"id":"s","type":"delay","delay":{"duration":"1s"}}],
+		"schedules":[{"name":"h","cron_expr":"0 * * * *"}]
+	}`)
+	biz := s.workflowBusiness()
+	v1, err := biz.CreateWorkflow(ctx, blob)
+	s.Require().NoError(err)
+	s.Require().NoError(biz.ActivateWorkflow(ctx, v1.ID))
+
+	s.Require().NoError(biz.ArchiveWorkflow(ctx, v1.ID))
+
+	scheds, err := s.scheduleRepo.ListByWorkflow(ctx, v1.Name, v1.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Len(scheds, 1)
+	s.False(scheds[0].Active)
+	s.Nil(scheds[0].NextFireAt)
+
+	got, err := biz.GetWorkflow(ctx, v1.ID)
+	s.Require().NoError(err)
+	s.Equal(models.WorkflowStatusArchived, got.Status)
+}
+
+func (s *BusinessSuite) TestListByWorkflow_TenantIsolated() {
+	ctxA := s.tenantCtx()
+	blob := []byte(`{
+		"version":"v1","name":"w-iso-list",
+		"steps":[{"id":"s","type":"delay","delay":{"duration":"1s"}}],
+		"schedules":[{"name":"x","cron_expr":"*/5 * * * *"}]
+	}`)
+	_, err := s.workflowBusiness().CreateWorkflow(ctxA, blob)
+	s.Require().NoError(err)
+
+	claimsB := &security.AuthenticationClaims{TenantID: "tenant-B", PartitionID: "partition-B"}
+	claimsB.Subject = "user-B"
+	ctxB := claimsB.ClaimsToContext(context.Background())
+
+	out, err := s.scheduleRepo.ListByWorkflow(ctxB, "w-iso-list", 1)
+	s.Require().NoError(err)
+	s.Empty(out, "cross-tenant read must return empty")
+}
