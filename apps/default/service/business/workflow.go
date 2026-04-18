@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"time"
 
 	"github.com/pitabwire/util"
+	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -301,9 +304,91 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 		return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
 	}
 
-	if err = b.defRepo.Update(ctx, def); err != nil {
-		return fmt.Errorf("update workflow: %w", err)
+	db := b.scheduleRepo.Pool().DB(ctx, false)
+	now := time.Now().UTC()
+
+	txErr := db.Transaction(func(tx *gorm.DB) error {
+		// Persist the workflow status change inside the tx.
+		if updErr := tx.Save(def).Error; updErr != nil {
+			return fmt.Errorf("update workflow: %w", updErr)
+		}
+
+		// Deactivate every version's schedules for this workflow name (wildcard).
+		// Use raw Exec to guarantee active=false (boolean zero value) is written.
+		if deactErr := tx.Exec(
+			`UPDATE schedule_definitions
+			    SET active = false, next_fire_at = NULL, modified_at = ?
+			  WHERE workflow_name = ? AND deleted_at IS NULL`,
+			now, def.Name,
+		).Error; deactErr != nil {
+			return fmt.Errorf("deactivate prior schedules: %w", deactErr)
+		}
+
+		// Activate this version's schedules with seeded next_fire_at.
+		myScheds, listErr := listSchedulesTx(tx, def.Name, def.WorkflowVersion)
+		if listErr != nil {
+			return listErr
+		}
+		for _, sch := range myScheds {
+			cronSched, parseErr := dsl.ParseCron(sch.CronExpr)
+			if parseErr != nil {
+				return fmt.Errorf("parse cron for schedule %s: %w", sch.Name, parseErr)
+			}
+			nominal := cronSched.Next(now)
+			jitter := jitterForSchedule(sch.ID, cronSched, nominal)
+			next := nominal.Add(jitter)
+
+			if updErr := tx.Exec(
+				`UPDATE schedule_definitions
+				    SET active = true, next_fire_at = ?, jitter_seconds = ?, modified_at = ?
+				  WHERE id = ? AND tenant_id = ?`,
+				&next, int(jitter/time.Second), now,
+				sch.ID, sch.TenantID,
+			).Error; updErr != nil {
+				return fmt.Errorf("activate schedule %s: %w", sch.ID, updErr)
+			}
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		return txErr
 	}
 
 	return nil
+}
+
+// listSchedulesTx is a tx-bound list used inside ActivateWorkflow. The write path
+// must read schedules via the same tx as the subsequent UPDATEs so it sees uncommitted
+// row-locking consistency; ScheduleRepository.ListByWorkflow does not accept a tx.
+func listSchedulesTx(tx *gorm.DB, workflowName string, workflowVersion int) ([]*models.ScheduleDefinition, error) {
+	var out []*models.ScheduleDefinition
+	res := tx.Where("workflow_name = ? AND workflow_version = ? AND deleted_at IS NULL",
+		workflowName, workflowVersion).Find(&out)
+	if res.Error != nil {
+		return nil, fmt.Errorf("list schedules by workflow (tx): %w", res.Error)
+	}
+	return out, nil
+}
+
+// jitterForSchedule duplicates schedulers.jitterFor's algorithm to avoid importing
+// the schedulers package from business (layer smell). Deterministic per-schedule
+// offset, cap = min(period/10, 30s).
+func jitterForSchedule(scheduleID string, cronSched dsl.CronSchedule, nominal time.Time) time.Duration {
+	const cronMaxJitter = 30 * time.Second
+	following := cronSched.Next(nominal)
+	period := following.Sub(nominal)
+	if period <= 0 {
+		return 0
+	}
+	maxDur := period / 10
+	if maxDur > cronMaxJitter {
+		maxDur = cronMaxJitter
+	}
+	if maxDur <= 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(scheduleID))
+	return time.Duration(int64(h.Sum64() % uint64(maxDur)))
 }

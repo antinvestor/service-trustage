@@ -4,6 +4,7 @@ package business
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/pkg/events"
@@ -193,6 +194,76 @@ func (s *BusinessSuite) TestEventRouter_RouteEventCreatesAndDeduplicatesInstance
 	audits, err := s.auditRepo.ListByInstance(ctx, instance.ID)
 	s.Require().NoError(err)
 	s.NotEmpty(audits)
+}
+
+func (s *BusinessSuite) TestActivateWorkflow_ActivatesSchedulesAndDeactivatesPrevious() {
+	ctx := s.tenantCtx()
+
+	// v1 with two schedules.
+	v1DSL := []byte(`{
+		"version": "v1",
+		"name": "w-activate",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [
+			{"name": "a", "cron_expr": "*/5 * * * *"},
+			{"name": "b", "cron_expr": "0 * * * *"}
+		]
+	}`)
+	biz := s.workflowBusiness()
+	v1, err := biz.CreateWorkflow(ctx, v1DSL)
+	s.Require().NoError(err)
+	s.Require().NoError(biz.ActivateWorkflow(ctx, v1.ID))
+
+	// Both v1 schedules must now be active with next_fire_at set.
+	v1Scheds, err := s.scheduleRepo.ListByWorkflow(ctx, v1.Name, v1.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Len(v1Scheds, 2)
+	for _, sch := range v1Scheds {
+		s.True(sch.Active, "schedule %s must be active after workflow activation", sch.Name)
+		s.NotNil(sch.NextFireAt)
+		s.True(sch.NextFireAt.After(time.Now()), "next_fire_at must be in the future")
+	}
+
+	// v2 of the same workflow — manually created with workflow_version=2 since
+	// CreateWorkflow always uses version=1 and the unique constraint prevents duplicates.
+	v2Def := &models.WorkflowDefinition{
+		Name:            v1.Name,
+		WorkflowVersion: 2,
+		Status:          models.WorkflowStatusDraft,
+		DSLBlob:         string(v1DSL),
+	}
+	v2Def.CopyPartitionInfo(&v1.BaseModel)
+	s.Require().NoError(s.defRepo.Create(ctx, v2Def))
+
+	v2Sched := &models.ScheduleDefinition{
+		Name:            "only",
+		CronExpr:        "*/10 * * * *",
+		WorkflowName:    v2Def.Name,
+		WorkflowVersion: v2Def.WorkflowVersion,
+		InputPayload:    "{}",
+		Active:          false,
+	}
+	v2Sched.CopyPartitionInfo(&v2Def.BaseModel)
+	s.Require().NoError(s.scheduleRepo.Create(ctx, v2Sched))
+
+	s.NotEqual(v1.WorkflowVersion, v2Def.WorkflowVersion, "v2 must have a different workflow_version")
+
+	s.Require().NoError(biz.ActivateWorkflow(ctx, v2Def.ID))
+
+	// v2 schedule now active.
+	v2Scheds, err := s.scheduleRepo.ListByWorkflow(ctx, v2Def.Name, v2Def.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Len(v2Scheds, 1)
+	s.True(v2Scheds[0].Active)
+	s.NotNil(v2Scheds[0].NextFireAt)
+
+	// v1 schedules must be deactivated.
+	v1After, err := s.scheduleRepo.ListByWorkflow(ctx, v1.Name, v1.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Len(v1After, 2)
+	for _, sch := range v1After {
+		s.False(sch.Active, "v1 schedule %s must be deactivated after v2 activation", sch.Name)
+	}
 }
 
 func (s *BusinessSuite) TestSchemaRegistry_RegisterValidateAndCache() {
