@@ -16,20 +16,20 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: proto/event/v1/event.proto
+// source: v1/event.proto
 
 package eventv1
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	_ "buf.build/gen/go/gnostic/gnostic/protocolbuffers/go/gnostic/openapi/v3"
+	_ "github.com/antinvestor/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -52,7 +52,7 @@ type EventRecord struct {
 
 func (x *EventRecord) Reset() {
 	*x = EventRecord{}
-	mi := &file_proto_event_v1_event_proto_msgTypes[0]
+	mi := &file_v1_event_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -64,7 +64,7 @@ func (x *EventRecord) String() string {
 func (*EventRecord) ProtoMessage() {}
 
 func (x *EventRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_event_v1_event_proto_msgTypes[0]
+	mi := &file_v1_event_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -77,7 +77,7 @@ func (x *EventRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventRecord.ProtoReflect.Descriptor instead.
 func (*EventRecord) Descriptor() ([]byte, []int) {
-	return file_proto_event_v1_event_proto_rawDescGZIP(), []int{0}
+	return file_v1_event_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *EventRecord) GetEventId() string {
@@ -127,7 +127,7 @@ type IngestEventRequest struct {
 
 func (x *IngestEventRequest) Reset() {
 	*x = IngestEventRequest{}
-	mi := &file_proto_event_v1_event_proto_msgTypes[1]
+	mi := &file_v1_event_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -139,7 +139,7 @@ func (x *IngestEventRequest) String() string {
 func (*IngestEventRequest) ProtoMessage() {}
 
 func (x *IngestEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_event_v1_event_proto_msgTypes[1]
+	mi := &file_v1_event_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -152,7 +152,7 @@ func (x *IngestEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IngestEventRequest.ProtoReflect.Descriptor instead.
 func (*IngestEventRequest) Descriptor() ([]byte, []int) {
-	return file_proto_event_v1_event_proto_rawDescGZIP(), []int{1}
+	return file_v1_event_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *IngestEventRequest) GetEventType() string {
@@ -193,7 +193,7 @@ type IngestEventResponse struct {
 
 func (x *IngestEventResponse) Reset() {
 	*x = IngestEventResponse{}
-	mi := &file_proto_event_v1_event_proto_msgTypes[2]
+	mi := &file_v1_event_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -205,7 +205,7 @@ func (x *IngestEventResponse) String() string {
 func (*IngestEventResponse) ProtoMessage() {}
 
 func (x *IngestEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_event_v1_event_proto_msgTypes[2]
+	mi := &file_v1_event_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -218,7 +218,7 @@ func (x *IngestEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IngestEventResponse.ProtoReflect.Descriptor instead.
 func (*IngestEventResponse) Descriptor() ([]byte, []int) {
-	return file_proto_event_v1_event_proto_rawDescGZIP(), []int{2}
+	return file_v1_event_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *IngestEventResponse) GetEvent() *EventRecord {
@@ -244,7 +244,7 @@ type GetInstanceTimelineRequest struct {
 
 func (x *GetInstanceTimelineRequest) Reset() {
 	*x = GetInstanceTimelineRequest{}
-	mi := &file_proto_event_v1_event_proto_msgTypes[3]
+	mi := &file_v1_event_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -256,7 +256,7 @@ func (x *GetInstanceTimelineRequest) String() string {
 func (*GetInstanceTimelineRequest) ProtoMessage() {}
 
 func (x *GetInstanceTimelineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_event_v1_event_proto_msgTypes[3]
+	mi := &file_v1_event_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -269,7 +269,7 @@ func (x *GetInstanceTimelineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInstanceTimelineRequest.ProtoReflect.Descriptor instead.
 func (*GetInstanceTimelineRequest) Descriptor() ([]byte, []int) {
-	return file_proto_event_v1_event_proto_rawDescGZIP(), []int{3}
+	return file_v1_event_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetInstanceTimelineRequest) GetInstanceId() string {
@@ -295,7 +295,7 @@ type TimelineEntry struct {
 
 func (x *TimelineEntry) Reset() {
 	*x = TimelineEntry{}
-	mi := &file_proto_event_v1_event_proto_msgTypes[4]
+	mi := &file_v1_event_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -307,7 +307,7 @@ func (x *TimelineEntry) String() string {
 func (*TimelineEntry) ProtoMessage() {}
 
 func (x *TimelineEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_event_v1_event_proto_msgTypes[4]
+	mi := &file_v1_event_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -320,7 +320,7 @@ func (x *TimelineEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimelineEntry.ProtoReflect.Descriptor instead.
 func (*TimelineEntry) Descriptor() ([]byte, []int) {
-	return file_proto_event_v1_event_proto_rawDescGZIP(), []int{4}
+	return file_v1_event_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *TimelineEntry) GetEventType() string {
@@ -388,7 +388,7 @@ type GetInstanceTimelineResponse struct {
 
 func (x *GetInstanceTimelineResponse) Reset() {
 	*x = GetInstanceTimelineResponse{}
-	mi := &file_proto_event_v1_event_proto_msgTypes[5]
+	mi := &file_v1_event_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +400,7 @@ func (x *GetInstanceTimelineResponse) String() string {
 func (*GetInstanceTimelineResponse) ProtoMessage() {}
 
 func (x *GetInstanceTimelineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_event_v1_event_proto_msgTypes[5]
+	mi := &file_v1_event_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +413,7 @@ func (x *GetInstanceTimelineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInstanceTimelineResponse.ProtoReflect.Descriptor instead.
 func (*GetInstanceTimelineResponse) Descriptor() ([]byte, []int) {
-	return file_proto_event_v1_event_proto_rawDescGZIP(), []int{5}
+	return file_v1_event_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetInstanceTimelineResponse) GetItems() []*TimelineEntry {
@@ -423,11 +423,11 @@ func (x *GetInstanceTimelineResponse) GetItems() []*TimelineEntry {
 	return nil
 }
 
-var File_proto_event_v1_event_proto protoreflect.FileDescriptor
+var File_v1_event_proto protoreflect.FileDescriptor
 
-const file_proto_event_v1_event_proto_rawDesc = "" +
+const file_v1_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1aproto/event/v1/event.proto\x12\bevent.v1\x1a$gnostic/openapi/v3/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x01\n" +
+	"\x0ev1/event.proto\x12\bevent.v1\x1a\x1bcommon/v1/permissions.proto\x1a$gnostic/openapi/v3/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x01\n" +
 	"\vEventRecord\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
 	"\n" +
@@ -462,28 +462,31 @@ const file_proto_event_v1_event_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"L\n" +
 	"\x1bGetInstanceTimelineResponse\x12-\n" +
-	"\x05items\x18\x01 \x03(\v2\x17.event.v1.TimelineEntryR\x05items2\xbe\x01\n" +
-	"\fEventService\x12J\n" +
-	"\vIngestEvent\x12\x1c.event.v1.IngestEventRequest\x1a\x1d.event.v1.IngestEventResponse\x12b\n" +
-	"\x13GetInstanceTimeline\x12$.event.v1.GetInstanceTimelineRequest\x1a%.event.v1.GetInstanceTimelineResponseB\x89\x02\xbaGj\x12h\n" +
+	"\x05items\x18\x01 \x03(\v2\x17.event.v1.TimelineEntryR\x05items2\xf5\a\n" +
+	"\fEventService\x12^\n" +
+	"\vIngestEvent\x12\x1c.event.v1.IngestEventRequest\x1a\x1d.event.v1.IngestEventResponse\"\x12\x82\xb5\x18\x0e\n" +
+	"\fevent_ingest\x12w\n" +
+	"\x13GetInstanceTimeline\x12$.event.v1.GetInstanceTimelineRequest\x1a%.event.v1.GetInstanceTimelineResponse\"\x13\x82\xb5\x18\x0f\n" +
+	"\rinstance_view\x1a\x8b\x06\x82\xb5\x18\x86\x06\n" +
+	"\x10service_trustage\x12\fevent_ingest\x12\rworkflow_view\x12\x0fworkflow_manage\x12\rinstance_view\x12\x0einstance_retry\x12\x0eexecution_view\x12\x0fexecution_retry\x12\x10execution_resume\x12\vsignal_send\x1a\x8f\x01\b\x01\x12\fevent_ingest\x12\rworkflow_view\x12\x0fworkflow_manage\x12\rinstance_view\x12\x0einstance_retry\x12\x0eexecution_view\x12\x0fexecution_retry\x12\x10execution_resume\x12\vsignal_send\x1a\x8f\x01\b\x02\x12\fevent_ingest\x12\rworkflow_view\x12\x0fworkflow_manage\x12\rinstance_view\x12\x0einstance_retry\x12\x0eexecution_view\x12\x0fexecution_retry\x12\x10execution_resume\x12\vsignal_send\x1aK\b\x03\x12\fevent_ingest\x12\rworkflow_view\x12\rinstance_view\x12\x0eexecution_view\x12\vsignal_send\x1a0\b\x04\x12\rworkflow_view\x12\rinstance_view\x12\x0eexecution_view\x1a0\b\x05\x12\rworkflow_view\x12\rinstance_view\x12\x0eexecution_view\x1a\x8f\x01\b\x06\x12\fevent_ingest\x12\rworkflow_view\x12\x0fworkflow_manage\x12\rinstance_view\x12\x0einstance_retry\x12\x0eexecution_view\x12\x0fexecution_retry\x12\x10execution_resume\x12\vsignal_sendB\x89\x02\xbaGj\x12h\n" +
 	"\x12Trustage Event API\x12JEvent ingestion and workflow timeline reads for the Trustage orchestrator.2\x06v1.0.0\n" +
 	"\fcom.event.v1B\n" +
 	"EventProtoP\x01Z?github.com/antinvestor/service-trustage/gen/go/event/v1;eventv1\xa2\x02\x03EXX\xaa\x02\bEvent.V1\xca\x02\bEvent\\V1\xe2\x02\x14Event\\V1\\GPBMetadata\xea\x02\tEvent::V1b\x06proto3"
 
 var (
-	file_proto_event_v1_event_proto_rawDescOnce sync.Once
-	file_proto_event_v1_event_proto_rawDescData []byte
+	file_v1_event_proto_rawDescOnce sync.Once
+	file_v1_event_proto_rawDescData []byte
 )
 
-func file_proto_event_v1_event_proto_rawDescGZIP() []byte {
-	file_proto_event_v1_event_proto_rawDescOnce.Do(func() {
-		file_proto_event_v1_event_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_event_v1_event_proto_rawDesc), len(file_proto_event_v1_event_proto_rawDesc)))
+func file_v1_event_proto_rawDescGZIP() []byte {
+	file_v1_event_proto_rawDescOnce.Do(func() {
+		file_v1_event_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_v1_event_proto_rawDesc), len(file_v1_event_proto_rawDesc)))
 	})
-	return file_proto_event_v1_event_proto_rawDescData
+	return file_v1_event_proto_rawDescData
 }
 
-var file_proto_event_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_proto_event_v1_event_proto_goTypes = []any{
+var file_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_v1_event_proto_goTypes = []any{
 	(*EventRecord)(nil),                 // 0: event.v1.EventRecord
 	(*IngestEventRequest)(nil),          // 1: event.v1.IngestEventRequest
 	(*IngestEventResponse)(nil),         // 2: event.v1.IngestEventResponse
@@ -493,7 +496,7 @@ var file_proto_event_v1_event_proto_goTypes = []any{
 	(*structpb.Struct)(nil),             // 6: google.protobuf.Struct
 	(*timestamppb.Timestamp)(nil),       // 7: google.protobuf.Timestamp
 }
-var file_proto_event_v1_event_proto_depIdxs = []int32{
+var file_v1_event_proto_depIdxs = []int32{
 	6, // 0: event.v1.EventRecord.payload:type_name -> google.protobuf.Struct
 	6, // 1: event.v1.IngestEventRequest.payload:type_name -> google.protobuf.Struct
 	0, // 2: event.v1.IngestEventResponse.event:type_name -> event.v1.EventRecord
@@ -511,26 +514,26 @@ var file_proto_event_v1_event_proto_depIdxs = []int32{
 	0, // [0:6] is the sub-list for field type_name
 }
 
-func init() { file_proto_event_v1_event_proto_init() }
-func file_proto_event_v1_event_proto_init() {
-	if File_proto_event_v1_event_proto != nil {
+func init() { file_v1_event_proto_init() }
+func file_v1_event_proto_init() {
+	if File_v1_event_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_event_v1_event_proto_rawDesc), len(file_proto_event_v1_event_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_event_proto_rawDesc), len(file_v1_event_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_event_v1_event_proto_goTypes,
-		DependencyIndexes: file_proto_event_v1_event_proto_depIdxs,
-		MessageInfos:      file_proto_event_v1_event_proto_msgTypes,
+		GoTypes:           file_v1_event_proto_goTypes,
+		DependencyIndexes: file_v1_event_proto_depIdxs,
+		MessageInfos:      file_v1_event_proto_msgTypes,
 	}.Build()
-	File_proto_event_v1_event_proto = out.File
-	file_proto_event_v1_event_proto_goTypes = nil
-	file_proto_event_v1_event_proto_depIdxs = nil
+	File_v1_event_proto = out.File
+	file_v1_event_proto_goTypes = nil
+	file_v1_event_proto_depIdxs = nil
 }

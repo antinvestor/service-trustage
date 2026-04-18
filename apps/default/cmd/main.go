@@ -155,10 +155,10 @@ func main() { //nolint:funlen // main function wiring
 	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(tenancyAccessChecker)
 
 	// Layer 2: FunctionAccessInterceptor enforces per-RPC permissions automatically.
-	workflowSD := workflowv1.File_workflow_v1_workflow_proto.Services().ByName("WorkflowService")
-	eventSD := eventv1.File_proto_event_v1_event_proto.Services().ByName("EventService")
-	runtimeSD := runtimev1.File_proto_runtime_v1_runtime_proto.Services().ByName("RuntimeService")
-	signalSD := signalv1.File_proto_signal_v1_signal_proto.Services().ByName("SignalService")
+	workflowSD := workflowv1.File_v1_workflow_proto.Services().ByName("WorkflowService")
+	eventSD := eventv1.File_v1_event_proto.Services().ByName("EventService")
+	runtimeSD := runtimev1.File_v1_runtime_proto.Services().ByName("RuntimeService")
+	signalSD := signalv1.File_v1_signal_proto.Services().ByName("SignalService")
 	procMap := permissions.BuildProcedureMap(workflowSD)
 	for k, v := range permissions.BuildProcedureMap(eventSD) {
 		procMap[k] = v

@@ -18,8 +18,8 @@ import (
 	"context"
 	"encoding/json"
 
-	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
 	"connectrpc.com/connect"
+	commonv1 "github.com/antinvestor/common/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"

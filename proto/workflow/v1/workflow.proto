@@ -139,6 +139,11 @@ service WorkflowService {
       permissions: ["workflow_manage"]
     };
   }
+  rpc ArchiveWorkflow(ArchiveWorkflowRequest) returns (ArchiveWorkflowResponse) {
+    option (common.v1.method_permissions) = {
+      permissions: ["workflow_manage"]
+    };
+  }
 }
 
 enum WorkflowStatus {
@@ -180,6 +185,7 @@ message ScheduleDefinition {
   int32 jitter_seconds = 9;
   google.protobuf.Timestamp created_at = 10;
   google.protobuf.Timestamp updated_at = 11;
+  string timezone = 12;
 }
 
 message GetWorkflowRequest {
@@ -207,5 +213,13 @@ message ActivateWorkflowRequest {
 }
 
 message ActivateWorkflowResponse {
+  WorkflowDefinition workflow = 1;
+}
+
+message ArchiveWorkflowRequest {
+  string id = 1;
+}
+
+message ArchiveWorkflowResponse {
   WorkflowDefinition workflow = 1;
 }

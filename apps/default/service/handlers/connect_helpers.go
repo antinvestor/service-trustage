@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
 	"connectrpc.com/connect"
+	commonv1 "github.com/antinvestor/common/v1"
 	"github.com/pitabwire/frame/security"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -381,6 +381,7 @@ func scheduleDefinitionsToProto(in []*models.ScheduleDefinition) []*workflowv1.S
 			WorkflowVersion: safeInt32(s.WorkflowVersion),
 			Active:          s.Active,
 			JitterSeconds:   safeInt32(s.JitterSeconds),
+			Timezone:        s.Timezone,
 			CreatedAt:       timestampFromValue(s.CreatedAt),
 			UpdatedAt:       timestampFromValue(s.ModifiedAt),
 			NextFireAt:      timestampFromPtr(s.NextFireAt),

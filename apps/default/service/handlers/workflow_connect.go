@@ -154,3 +154,29 @@ func (s *WorkflowConnectServer) ActivateWorkflow(
 		Workflow: workflowDefinitionToProto(def),
 	}), nil
 }
+
+func (s *WorkflowConnectServer) ArchiveWorkflow(
+	ctx context.Context,
+	req *connect.Request[workflowv1.ArchiveWorkflowRequest],
+) (*connect.Response[workflowv1.ArchiveWorkflowResponse], error) {
+	if err := requireConnectAuth(ctx); err != nil {
+		return nil, err
+	}
+
+	if req.Msg.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+	}
+
+	if err := s.workflowBiz.ArchiveWorkflow(ctx, req.Msg.GetId()); err != nil {
+		return nil, connectErrorForBusiness(err)
+	}
+
+	def, err := s.workflowBiz.GetWorkflow(ctx, req.Msg.GetId())
+	if err != nil {
+		return nil, connectErrorForBusiness(err)
+	}
+
+	return connect.NewResponse(&workflowv1.ArchiveWorkflowResponse{
+		Workflow: workflowDefinitionToProto(def),
+	}), nil
+}
