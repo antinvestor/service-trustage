@@ -180,7 +180,7 @@ func (s *ScheduleRepoSuite) TestBacklogSeconds_ReturnsOldestDueLag() {
 	// No due rows → zero backlog.
 	lag, err := s.repo.BacklogSeconds(ctx)
 	s.Require().NoError(err)
-	s.Equal(float64(0), lag, "no due rows → zero backlog")
+	s.InDelta(float64(0), lag, 0.001, "no due rows → zero backlog")
 
 	// Seed a row 1h in the past.
 	pastHour := time.Now().UTC().Add(-time.Hour)
@@ -209,7 +209,7 @@ func (s *ScheduleRepoSuite) TestBacklogSeconds_IgnoresInactiveAndDeletedRows() {
 
 	lag, err := s.repo.BacklogSeconds(ctx)
 	s.Require().NoError(err)
-	s.Equal(float64(0), lag, "inactive rows must not contribute to backlog")
+	s.InDelta(float64(0), lag, 0.001, "inactive rows must not contribute to backlog")
 }
 
 func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ParkEmitsNoEvent() {

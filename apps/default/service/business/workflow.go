@@ -84,12 +84,17 @@ func NewWorkflowBusiness(
 func (b *workflowBusiness) CreateWorkflow(
 	ctx context.Context,
 	dslBlob json.RawMessage,
-) (def *models.WorkflowDefinition, err error) {
+) (*models.WorkflowDefinition, error) {
 	tenantID := tenantIDFromContext(ctx)
-	defer func() {
-		b.metrics.RecordWorkflowLifecycle(ctx, "create", tenantID, err == nil)
-	}()
+	def, err := b.createWorkflow(ctx, dslBlob)
+	b.metrics.RecordWorkflowLifecycle(ctx, "create", tenantID, err == nil)
+	return def, err
+}
 
+func (b *workflowBusiness) createWorkflow(
+	ctx context.Context,
+	dslBlob json.RawMessage,
+) (*models.WorkflowDefinition, error) {
 	log := util.Log(ctx)
 
 	spec, err := dsl.Parse(dslBlob)
@@ -104,7 +109,7 @@ func (b *workflowBusiness) CreateWorkflow(
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err)
 	}
 
-	def = &models.WorkflowDefinition{
+	def := &models.WorkflowDefinition{
 		Name:            spec.Name,
 		WorkflowVersion: 1,
 		Status:          models.WorkflowStatusDraft,
@@ -355,12 +360,14 @@ func (b *workflowBusiness) SearchWorkflows(
 	}, nil
 }
 
-func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) (err error) {
+func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {
 	tenantID := tenantIDFromContext(ctx)
-	defer func() {
-		b.metrics.RecordWorkflowLifecycle(ctx, "activate", tenantID, err == nil)
-	}()
+	err := b.activateWorkflow(ctx, id)
+	b.metrics.RecordWorkflowLifecycle(ctx, "activate", tenantID, err == nil)
+	return err
+}
 
+func (b *workflowBusiness) activateWorkflow(ctx context.Context, id string) error {
 	log := util.Log(ctx)
 
 	def, err := b.defRepo.GetByID(ctx, id)
@@ -421,12 +428,14 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) (err
 // reversed order from Activate is deliberate — if the second step fails,
 // schedules are already off (safe: no overfire, just a transient status
 // mismatch fixable by retry).
-func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) (err error) {
+func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error {
 	tenantID := tenantIDFromContext(ctx)
-	defer func() {
-		b.metrics.RecordWorkflowLifecycle(ctx, "archive", tenantID, err == nil)
-	}()
+	err := b.archiveWorkflow(ctx, id)
+	b.metrics.RecordWorkflowLifecycle(ctx, "archive", tenantID, err == nil)
+	return err
+}
 
+func (b *workflowBusiness) archiveWorkflow(ctx context.Context, id string) error {
 	log := util.Log(ctx)
 
 	def, err := b.defRepo.GetByID(ctx, id)

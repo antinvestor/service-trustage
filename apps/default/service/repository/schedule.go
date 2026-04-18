@@ -42,6 +42,55 @@ const (
 	eventLogInsertBatchSize = 500
 )
 
+// schedulePlanRow holds the per-row output of the plan function inside
+// ClaimAndFireBatch. It is unexported; only the helper functions in this file
+// consume it.
+type schedulePlanRow struct {
+	sched *models.ScheduleDefinition
+	event *models.EventLog
+	next  *time.Time
+	jit   int
+}
+
+// buildBatchUpdateSQL constructs the VALUES-join UPDATE SQL and its positional
+// args for ClaimAndFireBatch. IDs are stored as character varying — the first
+// tuple casts to ::text/::timestamptz/::int so PostgreSQL can infer types for
+// the remaining plain-? rows.
+func buildBatchUpdateSQL(rows []schedulePlanRow, now time.Time) (string, []any) {
+	tuples := make([]string, 0, len(rows))
+	args := make([]any, 0, claimAndFireArgsPerRow*len(rows))
+	for i, pr := range rows {
+		if i == 0 {
+			tuples = append(tuples,
+				"(?::text, ?::text, ?::text, ?::timestamptz, ?::timestamptz, ?::int, ?::timestamptz)",
+			)
+		} else {
+			tuples = append(tuples, "(?, ?, ?, ?, ?, ?, ?)")
+		}
+		args = append(args,
+			pr.sched.ID, pr.sched.TenantID, pr.sched.PartitionID,
+			now,     // last_fired_at
+			pr.next, // nil → NULL (parks the row)
+			pr.jit,
+			now, // modified_at
+		)
+	}
+	sql := fmt.Sprintf(`
+		UPDATE schedule_definitions s
+		   SET last_fired_at  = v.last_fired_at,
+		       next_fire_at   = v.next_fire_at,
+		       jitter_seconds = v.jitter_seconds,
+		       modified_at    = v.modified_at
+		  FROM (VALUES %s)
+		    AS v(id, tenant_id, partition_id, last_fired_at, next_fire_at, jitter_seconds, modified_at)
+		 WHERE s.id = v.id
+		   AND s.tenant_id = v.tenant_id
+		   AND s.partition_id = v.partition_id`,
+		strings.Join(tuples, ", "),
+	)
+	return sql, args
+}
+
 // SchedulePlanFn is invoked per row by ClaimAndFireBatch inside the fire tx.
 // Must be pure Go — NO DB access, NO I/O. Returns:
 //   - event: event_log row to emit, or nil to park the schedule
@@ -275,32 +324,29 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 	plan SchedulePlanFn,
 	now time.Time,
 	limit int,
-) (fired int, firedByTenant map[string]int, err error) {
+) (int, map[string]int, error) {
 	db := r.p.DB(ctx, false)
+
+	var fired int
+	var firedByTenant map[string]int
 
 	txErr := db.Transaction(func(tx *gorm.DB) error {
 		// Claim up to limit due schedules under SKIP LOCKED.
 		var batch []*models.ScheduleDefinition
-		if err := tx.
+		claimErr := tx.
 			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("active = ? AND deleted_at IS NULL AND next_fire_at IS NOT NULL AND next_fire_at <= ?", true, now).
 			Order("next_fire_at ASC").
 			Limit(limit).
-			Find(&batch).Error; err != nil {
-			return fmt.Errorf("claim due batch: %w", err)
+			Find(&batch).Error
+		if claimErr != nil {
+			return fmt.Errorf("claim due batch: %w", claimErr)
 		}
 		if len(batch) == 0 {
 			return nil
 		}
 
-		type planRow struct {
-			sched *models.ScheduleDefinition
-			event *models.EventLog
-			next  *time.Time
-			jit   int
-		}
-
-		rows := make([]planRow, 0, len(batch))
+		rows := make([]schedulePlanRow, 0, len(batch))
 		eventsToInsert := make([]*models.EventLog, 0, len(batch))
 
 		for _, sched := range batch {
@@ -309,7 +355,7 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 				// Per-row error: skip this row. The batch still commits the rest.
 				continue
 			}
-			rows = append(rows, planRow{sched: sched, event: ev, next: nf, jit: j})
+			rows = append(rows, schedulePlanRow{sched: sched, event: ev, next: nf, jit: j})
 			if ev != nil {
 				eventsToInsert = append(eventsToInsert, ev)
 			}
@@ -321,50 +367,17 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 
 		// Multi-row INSERT INTO event_log (only for rows with a non-nil event).
 		if len(eventsToInsert) > 0 {
-			if err := tx.CreateInBatches(eventsToInsert, eventLogInsertBatchSize).Error; err != nil {
-				return fmt.Errorf("batch insert event_log: %w", err)
+			insertErr := tx.CreateInBatches(eventsToInsert, eventLogInsertBatchSize).Error
+			if insertErr != nil {
+				return fmt.Errorf("batch insert event_log: %w", insertErr)
 			}
 		}
 
 		// VALUES-join UPDATE for every claimed row.
-		// Parked rows (next == nil) get next_fire_at = NULL via the typed cast.
-		tuples := make([]string, 0, len(rows))
-		args := make([]any, 0, claimAndFireArgsPerRow*len(rows))
-		// IDs are stored as character varying — cast to ::text, not ::uuid.
-		for i, pr := range rows {
-			if i == 0 {
-				tuples = append(
-					tuples,
-					"(?::text, ?::text, ?::text, ?::timestamptz, ?::timestamptz, ?::int, ?::timestamptz)",
-				)
-			} else {
-				tuples = append(tuples, "(?, ?, ?, ?, ?, ?, ?)")
-			}
-			args = append(args,
-				pr.sched.ID, pr.sched.TenantID, pr.sched.PartitionID,
-				now,     // last_fired_at
-				pr.next, // nil → NULL (parks the row)
-				pr.jit,
-				now, // modified_at
-			)
-		}
-
-		updateSQL := fmt.Sprintf(`
-			UPDATE schedule_definitions s
-			   SET last_fired_at  = v.last_fired_at,
-			       next_fire_at   = v.next_fire_at,
-			       jitter_seconds = v.jitter_seconds,
-			       modified_at    = v.modified_at
-			  FROM (VALUES %s)
-			    AS v(id, tenant_id, partition_id, last_fired_at, next_fire_at, jitter_seconds, modified_at)
-			 WHERE s.id = v.id
-			   AND s.tenant_id = v.tenant_id
-			   AND s.partition_id = v.partition_id`,
-			strings.Join(tuples, ", "),
-		)
-
-		if err := tx.Exec(updateSQL, args...).Error; err != nil {
-			return fmt.Errorf("batch update schedules: %w", err)
+		updateSQL, args := buildBatchUpdateSQL(rows, now)
+		updateErr := tx.Exec(updateSQL, args...).Error
+		if updateErr != nil {
+			return fmt.Errorf("batch update schedules: %w", updateErr)
 		}
 
 		firedByTenant = make(map[string]int, len(rows))
@@ -377,7 +390,7 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 	if txErr != nil {
 		return 0, nil, txErr
 	}
-	return
+	return fired, firedByTenant, nil
 }
 
 // BacklogSeconds returns the age (in seconds) of the oldest schedule whose

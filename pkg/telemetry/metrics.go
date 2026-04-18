@@ -119,7 +119,9 @@ func NewMetrics() *Metrics {
 	)
 	workflowLifecycle, _ := meter.Int64Counter(
 		"workflow_lifecycle_total",
-		metric.WithDescription("Count of workflow lifecycle operations (create|activate|archive) by result and tenant."),
+		metric.WithDescription(
+			"Count of workflow lifecycle operations (create|activate|archive) by result and tenant.",
+		),
 	)
 
 	return &Metrics{
@@ -151,7 +153,9 @@ func NewMetrics() *Metrics {
 // histogram after one ClaimAndFireBatch sweep completes. firedByTenant may be
 // empty (no rows fired this sweep). ok=false marks a sweep that returned an
 // error; firedByTenant should be empty in that case.
-func (m *Metrics) RecordSchedulerCronSweep(ctx context.Context, firedByTenant map[string]int, dur time.Duration, ok bool) {
+func (m *Metrics) RecordSchedulerCronSweep(
+	ctx context.Context, firedByTenant map[string]int, dur time.Duration, ok bool,
+) {
 	if m == nil {
 		return
 	}
