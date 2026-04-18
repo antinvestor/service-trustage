@@ -39,6 +39,8 @@ type ScheduleRepository interface {
 		tx *gorm.DB,
 		workflowName string,
 		workflowVersion int,
+		tenantID string,
+		partitionID string,
 		active bool,
 		seedNextFireAt *time.Time,
 		seedJitterSeconds int,
@@ -120,6 +122,8 @@ func (r *scheduleRepository) SetActiveByWorkflow(
 	tx *gorm.DB,
 	workflowName string,
 	workflowVersion int,
+	tenantID string,
+	partitionID string,
 	active bool,
 	seedNextFireAt *time.Time,
 	seedJitterSeconds int,
@@ -140,7 +144,8 @@ func (r *scheduleRepository) SetActiveByWorkflow(
 	}
 
 	query := tx.Model(&models.ScheduleDefinition{}).
-		Where("workflow_name = ? AND deleted_at IS NULL", workflowName)
+		Where("workflow_name = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL",
+			workflowName, tenantID, partitionID)
 	if workflowVersion >= 0 {
 		query = query.Where("workflow_version = ?", workflowVersion)
 	}
@@ -191,8 +196,8 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 			}
 
 			updateErr := tx.Exec(
-				"UPDATE schedule_definitions SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? WHERE id = ? AND tenant_id = ?",
-				now, nextFire, jitterSeconds, now, sched.ID, sched.TenantID,
+				"UPDATE schedule_definitions SET last_fired_at = ?, next_fire_at = ?, jitter_seconds = ?, modified_at = ? WHERE id = ? AND tenant_id = ? AND partition_id = ?",
+				now, nextFire, jitterSeconds, now, sched.ID, sched.TenantID, sched.PartitionID,
 			).Error
 			if updateErr != nil {
 				return fmt.Errorf("update fire times for %s: %w", sched.ID, updateErr)

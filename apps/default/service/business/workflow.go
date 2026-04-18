@@ -313,19 +313,19 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 			return fmt.Errorf("update workflow: %w", updErr)
 		}
 
-		// Deactivate every version's schedules for this workflow name (same tenant only).
+		// Deactivate every version's schedules for this workflow name (same tenant+partition only).
 		// Use raw Exec to guarantee active=false (boolean zero value) is written.
 		if deactErr := tx.Exec(
 			`UPDATE schedule_definitions
 			    SET active = false, next_fire_at = NULL, modified_at = ?
-			  WHERE workflow_name = ? AND tenant_id = ? AND deleted_at IS NULL`,
-			now, def.Name, def.TenantID,
+			  WHERE workflow_name = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL`,
+			now, def.Name, def.TenantID, def.PartitionID,
 		).Error; deactErr != nil {
 			return fmt.Errorf("deactivate prior schedules: %w", deactErr)
 		}
 
 		// Activate this version's schedules with seeded next_fire_at.
-		myScheds, listErr := listSchedulesTx(tx, def.Name, def.WorkflowVersion)
+		myScheds, listErr := listSchedulesTx(tx, def.Name, def.WorkflowVersion, def.TenantID, def.PartitionID)
 		if listErr != nil {
 			return listErr
 		}
@@ -341,9 +341,9 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 			if updErr := tx.Exec(
 				`UPDATE schedule_definitions
 				    SET active = true, next_fire_at = ?, jitter_seconds = ?, modified_at = ?
-				  WHERE id = ? AND tenant_id = ?`,
+				  WHERE id = ? AND tenant_id = ? AND partition_id = ?`,
 				&next, int(jitter/time.Second), now,
-				sch.ID, sch.TenantID,
+				sch.ID, sch.TenantID, sch.PartitionID,
 			).Error; updErr != nil {
 				return fmt.Errorf("activate schedule %s: %w", sch.ID, updErr)
 			}
@@ -361,10 +361,12 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 // listSchedulesTx is a tx-bound list used inside ActivateWorkflow. The write path
 // must read schedules via the same tx as the subsequent UPDATEs so it sees uncommitted
 // row-locking consistency; ScheduleRepository.ListByWorkflow does not accept a tx.
-func listSchedulesTx(tx *gorm.DB, workflowName string, workflowVersion int) ([]*models.ScheduleDefinition, error) {
+func listSchedulesTx(tx *gorm.DB, workflowName string, workflowVersion int, tenantID, partitionID string) ([]*models.ScheduleDefinition, error) {
 	var out []*models.ScheduleDefinition
-	res := tx.Where("workflow_name = ? AND workflow_version = ? AND deleted_at IS NULL",
-		workflowName, workflowVersion).Find(&out)
+	res := tx.Where(
+		"workflow_name = ? AND workflow_version = ? AND tenant_id = ? AND partition_id = ? AND deleted_at IS NULL",
+		workflowName, workflowVersion, tenantID, partitionID,
+	).Find(&out)
 	if res.Error != nil {
 		return nil, fmt.Errorf("list schedules by workflow (tx): %w", res.Error)
 	}
