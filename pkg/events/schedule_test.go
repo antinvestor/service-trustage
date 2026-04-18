@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package events
+package events_test
 
 import (
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/antinvestor/service-trustage/pkg/events"
 )
 
 func TestScheduleFiredPayload_JSONShape(t *testing.T) {
-	p := ScheduleFiredPayload{
+	p := events.ScheduleFiredPayload{
 		ScheduleID: "sched-1", ScheduleName: "nightly",
 		FiredAt: "2026-04-18T00:00:00Z",
 		Input:   map[string]any{"amount": 100.0},
@@ -39,7 +41,11 @@ func TestScheduleFiredPayload_JSONShape(t *testing.T) {
 }
 
 func TestScheduleFiredPayload_OmitsInputWhenNil(t *testing.T) {
-	p := ScheduleFiredPayload{ScheduleID: "s", ScheduleName: "n", FiredAt: "2026-04-18T00:00:00Z"}
+	p := events.ScheduleFiredPayload{
+		ScheduleID:   "s",
+		ScheduleName: "n",
+		FiredAt:      "2026-04-18T00:00:00Z",
+	}
 	raw, err := json.Marshal(p)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), `"input"`)
@@ -52,7 +58,7 @@ func TestBuildScheduleFiredPayload_SystemFieldsWin(t *testing.T) {
 		"fired_at":      "1970-01-01T00:00:00Z",
 		"safe":          "stays",
 	}
-	p := BuildScheduleFiredPayload("real-id", "real-name", "2026-04-18T00:00:00Z", userInput)
+	p := events.BuildScheduleFiredPayload("real-id", "real-name", "2026-04-18T00:00:00Z", userInput)
 
 	require.Equal(t, "real-id", p.ScheduleID)
 	require.Equal(t, "real-name", p.ScheduleName)
@@ -61,11 +67,15 @@ func TestBuildScheduleFiredPayload_SystemFieldsWin(t *testing.T) {
 }
 
 func TestScheduleFiredType(t *testing.T) {
-	require.Equal(t, "schedule.fired", ScheduleFiredType)
+	require.Equal(t, "schedule.fired", events.ScheduleFiredType)
 }
 
 func TestScheduleFiredPayload_ToJSON(t *testing.T) {
-	p := ScheduleFiredPayload{ScheduleID: "s", ScheduleName: "n", FiredAt: "2026-04-18T00:00:00Z"}
+	p := events.ScheduleFiredPayload{
+		ScheduleID:   "s",
+		ScheduleName: "n",
+		FiredAt:      "2026-04-18T00:00:00Z",
+	}
 	raw, err := p.ToJSON()
 	require.NoError(t, err)
 	require.Contains(t, raw, `"schedule_id":"s"`)

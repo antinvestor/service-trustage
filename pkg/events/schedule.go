@@ -35,7 +35,10 @@ type ScheduleFiredPayload struct {
 
 // BuildScheduleFiredPayload constructs the payload with system fields set on
 // the struct (immune to user shadowing) and user input preserved under Input.
-func BuildScheduleFiredPayload(scheduleID, scheduleName, firedAtRFC3339 string, userInput map[string]any) ScheduleFiredPayload {
+func BuildScheduleFiredPayload(
+	scheduleID, scheduleName, firedAtRFC3339 string,
+	userInput map[string]any,
+) ScheduleFiredPayload {
 	return ScheduleFiredPayload{
 		ScheduleID:   scheduleID,
 		ScheduleName: scheduleName,

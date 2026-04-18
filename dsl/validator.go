@@ -75,7 +75,11 @@ func validateStepRequiredFields(step *StepSpec, result *ValidationResult) {
 		}
 	case StepTypeDelay:
 		if step.Delay == nil {
-			result.AddErrorWithStep(ErrMissingRequired, step.ID, "delay step requires 'delay' field")
+			result.AddErrorWithStep(
+				ErrMissingRequired,
+				step.ID,
+				"delay step requires 'delay' field",
+			)
 		} else if step.Delay.Duration.Duration == 0 && step.Delay.Until == "" {
 			result.AddErrorWithStep(ErrMissingRequired, step.ID, "delay requires either 'duration' or 'until'")
 		}
@@ -93,15 +97,27 @@ func validateStepRequiredFields(step *StepSpec, result *ValidationResult) {
 		}
 	case StepTypeSequence:
 		if step.Sequence == nil || len(step.Sequence.Steps) == 0 {
-			result.AddErrorWithStep(ErrMissingRequired, step.ID, "sequence.steps must have at least one step")
+			result.AddErrorWithStep(
+				ErrMissingRequired,
+				step.ID,
+				"sequence.steps must have at least one step",
+			)
 		}
 	case StepTypeParallel:
 		if step.Parallel == nil || len(step.Parallel.Steps) == 0 {
-			result.AddErrorWithStep(ErrMissingRequired, step.ID, "parallel.steps must have at least one step")
+			result.AddErrorWithStep(
+				ErrMissingRequired,
+				step.ID,
+				"parallel.steps must have at least one step",
+			)
 		}
 	case StepTypeForeach:
 		if step.Foreach == nil {
-			result.AddErrorWithStep(ErrMissingRequired, step.ID, "foreach step requires 'foreach' field")
+			result.AddErrorWithStep(
+				ErrMissingRequired,
+				step.ID,
+				"foreach step requires 'foreach' field",
+			)
 		} else {
 			if step.Foreach.Items == "" {
 				result.AddErrorWithStep(ErrMissingRequired, step.ID, "foreach.items is required")
@@ -113,11 +129,19 @@ func validateStepRequiredFields(step *StepSpec, result *ValidationResult) {
 		}
 	case StepTypeSignalWait:
 		if step.SignalWait == nil || step.SignalWait.SignalName == "" {
-			result.AddErrorWithStep(ErrMissingRequired, step.ID, "signal_wait.signal_name is required")
+			result.AddErrorWithStep(
+				ErrMissingRequired,
+				step.ID,
+				"signal_wait.signal_name is required",
+			)
 		}
 	case StepTypeSignalSend:
 		if step.SignalSend == nil {
-			result.AddErrorWithStep(ErrMissingRequired, step.ID, "signal_send step requires 'signal_send' field")
+			result.AddErrorWithStep(
+				ErrMissingRequired,
+				step.ID,
+				"signal_send step requires 'signal_send' field",
+			)
 		} else if step.SignalSend.SignalName == "" {
 			result.AddErrorWithStep(ErrMissingRequired, step.ID, "signal_send.signal_name is required")
 		}
@@ -365,11 +389,23 @@ func validateSchedules(spec *WorkflowSpec, result *ValidationResult) {
 			seen[sched.Name] = struct{}{}
 		}
 		if _, err := ParseCron(sched.CronExpr); err != nil {
-			result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d] (%s): invalid cron: %s", i, sched.Name, err))
+			result.AddError(
+				ErrInvalidSchedule,
+				fmt.Sprintf("schedules[%d] (%s): invalid cron: %s", i, sched.Name, err),
+			)
 		}
 		if sched.Timezone != "" && sched.Timezone != "UTC" {
 			if _, err := time.LoadLocation(sched.Timezone); err != nil {
-				result.AddError(ErrInvalidSchedule, fmt.Sprintf("schedules[%d] (%s): invalid timezone %q: %s", i, sched.Name, sched.Timezone, err))
+				result.AddError(
+					ErrInvalidSchedule,
+					fmt.Sprintf(
+						"schedules[%d] (%s): invalid timezone %q: %s",
+						i,
+						sched.Name,
+						sched.Timezone,
+						err,
+					),
+				)
 			}
 		}
 	}

@@ -28,6 +28,18 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
+const (
+	// activateArgsTrailingCount is the number of trailing args (tenantID, partitionID)
+	// appended after the per-activation VALUES tuples in ActivateByWorkflow.
+	activateArgsTrailingCount = 2
+	// activateArgsPerFire is the number of positional args per ScheduleActivation tuple.
+	activateArgsPerFire = 3
+	// claimAndFireArgsPerRow is the number of positional args per row in the ClaimAndFireBatch VALUES update.
+	claimAndFireArgsPerRow = 7
+	// eventLogInsertBatchSize is the GORM batch size for multi-row event_log inserts.
+	eventLogInsertBatchSize = 500
+)
+
 // SchedulePlanFn is invoked per row by ClaimAndFireBatch inside the fire tx.
 // Must be pure Go — NO DB access, NO I/O. Returns:
 //   - event: event_log row to emit, or nil to park the schedule
@@ -57,7 +69,11 @@ type ScheduleActivation struct {
 type ScheduleRepository interface {
 	Create(ctx context.Context, schedule *models.ScheduleDefinition) error
 	CreateBatch(ctx context.Context, scheds []*models.ScheduleDefinition) error
-	ListByWorkflow(ctx context.Context, workflowName string, workflowVersion int) ([]*models.ScheduleDefinition, error)
+	ListByWorkflow(
+		ctx context.Context,
+		workflowName string,
+		workflowVersion int,
+	) ([]*models.ScheduleDefinition, error)
 
 	ActivateByWorkflow(
 		ctx context.Context,
@@ -69,7 +85,12 @@ type ScheduleRepository interface {
 
 	DeactivateByWorkflow(ctx context.Context, workflowName, tenantID, partitionID string) error
 
-	ClaimAndFireBatch(ctx context.Context, plan SchedulePlanFn, now time.Time, limit int) (fired int, err error)
+	ClaimAndFireBatch(
+		ctx context.Context,
+		plan SchedulePlanFn,
+		now time.Time,
+		limit int,
+	) (fired int, err error)
 
 	Pool() pool.Pool
 }
@@ -95,14 +116,20 @@ func NewScheduleRepository(dbPool pool.Pool) ScheduleRepository {
 
 func (r *scheduleRepository) Pool() pool.Pool { return r.p }
 
-func (r *scheduleRepository) Create(ctx context.Context, schedule *models.ScheduleDefinition) error {
+func (r *scheduleRepository) Create(
+	ctx context.Context,
+	schedule *models.ScheduleDefinition,
+) error {
 	return r.BaseRepository.Create(ctx, schedule)
 }
 
 // CreateBatch inserts all schedules in a single atomic transaction.
 // If any row violates a constraint (e.g. idx_sd_workflow_unique) the entire
 // batch is rolled back — no partial inserts.
-func (r *scheduleRepository) CreateBatch(ctx context.Context, scheds []*models.ScheduleDefinition) error {
+func (r *scheduleRepository) CreateBatch(
+	ctx context.Context,
+	scheds []*models.ScheduleDefinition,
+) error {
 	if len(scheds) == 0 {
 		return nil
 	}
@@ -174,7 +201,7 @@ func (r *scheduleRepository) ActivateByWorkflow(
 		// Positional order: modified_at, then the VALUES tuples, then tenant_id, partition_id.
 		// IDs are stored as character varying — cast to ::text, not ::uuid.
 		tuples := make([]string, 0, len(fires))
-		orderedArgs := make([]any, 0, 1+3*len(fires)+2)
+		orderedArgs := make([]any, 0, 1+activateArgsPerFire*len(fires)+activateArgsTrailingCount)
 		orderedArgs = append(orderedArgs, now) // modified_at placeholder
 		for i, f := range fires {
 			if i == 0 {
@@ -231,6 +258,8 @@ func (r *scheduleRepository) DeactivateByWorkflow(
 // all claimed rows (park rows get next_fire_at = NULL).
 //
 // This is the only cross-table tx in the codebase; it is fully enclosed here.
+//
+//nolint:gocognit // complexity is inherent in the three-phase atomic tx (claim, plan, fire); further extraction would hurt readability
 func (r *scheduleRepository) ClaimAndFireBatch(
 	ctx context.Context,
 	plan SchedulePlanFn,
@@ -283,7 +312,7 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 
 		// Multi-row INSERT INTO event_log (only for rows with a non-nil event).
 		if len(eventsToInsert) > 0 {
-			if err := tx.CreateInBatches(eventsToInsert, 500).Error; err != nil {
+			if err := tx.CreateInBatches(eventsToInsert, eventLogInsertBatchSize).Error; err != nil {
 				return fmt.Errorf("batch insert event_log: %w", err)
 			}
 		}
@@ -291,11 +320,14 @@ func (r *scheduleRepository) ClaimAndFireBatch(
 		// VALUES-join UPDATE for every claimed row.
 		// Parked rows (next == nil) get next_fire_at = NULL via the typed cast.
 		tuples := make([]string, 0, len(rows))
-		args := make([]any, 0, 7*len(rows))
+		args := make([]any, 0, claimAndFireArgsPerRow*len(rows))
 		// IDs are stored as character varying — cast to ::text, not ::uuid.
 		for i, pr := range rows {
 			if i == 0 {
-				tuples = append(tuples, "(?::text, ?::text, ?::text, ?::timestamptz, ?::timestamptz, ?::int, ?::timestamptz)")
+				tuples = append(
+					tuples,
+					"(?::text, ?::text, ?::text, ?::timestamptz, ?::timestamptz, ?::int, ?::timestamptz)",
+				)
 			} else {
 				tuples = append(tuples, "(?, ?, ?, ?, ?, ?, ?)")
 			}

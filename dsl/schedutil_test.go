@@ -1,4 +1,4 @@
-package dsl
+package dsl_test
 
 import (
 	"fmt"
@@ -6,27 +6,37 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/antinvestor/service-trustage/dsl"
 )
 
 func TestJitterFor_Deterministic(t *testing.T) {
-	sched, err := ParseCron("*/5 * * * *")
+	sched, err := dsl.ParseCron("*/5 * * * *")
 	require.NoError(t, err)
 
 	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
 	nominal := sched.Next(base)
 
-	require.Equal(t, JitterFor("s-1", sched, nominal), JitterFor("s-1", sched, nominal))
+	j1 := dsl.JitterFor("s-1", sched, nominal)
+	j2 := dsl.JitterFor("s-1", sched, nominal)
+	require.Equal(t, j1, j2)
 }
 
 func TestJitterFor_RespectsCap(t *testing.T) {
-	sched, err := ParseCron("*/5 * * * *")
+	sched, err := dsl.ParseCron("*/5 * * * *")
 	require.NoError(t, err)
 
 	base := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
 	nominal := sched.Next(base)
 
-	for i := 0; i < 100; i++ {
-		j := JitterFor(fmt.Sprintf("s-%d", i), sched, nominal)
-		require.True(t, j >= 0 && j < CronMaxJitter, "jitter %v out of [0, %v)", j, CronMaxJitter)
+	for i := range 100 {
+		j := dsl.JitterFor(fmt.Sprintf("s-%d", i), sched, nominal)
+		require.True(
+			t,
+			j >= 0 && j < dsl.CronMaxJitter,
+			"jitter %v out of [0, %v)",
+			j,
+			dsl.CronMaxJitter,
+		)
 	}
 }

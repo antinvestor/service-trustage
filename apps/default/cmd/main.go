@@ -146,13 +146,22 @@ func main() { //nolint:funlen // main function wiring
 		metrics,
 		rawCache,
 	)
-	eventRouter := business.NewEventRouter(triggerRepo, defRepo, instanceRepo, auditRepo, engine, metrics)
+	eventRouter := business.NewEventRouter(
+		triggerRepo,
+		defRepo,
+		instanceRepo,
+		auditRepo,
+		engine,
+		metrics,
+	)
 	workflowBiz := business.NewWorkflowBusiness(defRepo, scheduleRepo, schemaReg)
 
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)
 	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
-	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(tenancyAccessChecker)
+	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(
+		tenancyAccessChecker,
+	)
 
 	// Layer 2: FunctionAccessInterceptor enforces per-RPC permissions automatically.
 	workflowSD := workflowv1.File_v1_workflow_proto.Services().ByName("WorkflowService")
@@ -171,7 +180,10 @@ func main() { //nolint:funlen // main function wiring
 	}
 	svcPerms := permissions.ForService(workflowSD)
 	functionChecker := authorizer.NewFunctionChecker(auth, svcPerms.Namespace)
-	functionAccessInterceptor := connectInterceptors.NewFunctionAccessInterceptor(functionChecker, procMap)
+	functionAccessInterceptor := connectInterceptors.NewFunctionAccessInterceptor(
+		functionChecker,
+		procMap,
+	)
 
 	defaultInterceptorList, err := connectInterceptors.DefaultList(
 		ctx,
@@ -189,12 +201,25 @@ func main() { //nolint:funlen // main function wiring
 
 	var schedulerWg sync.WaitGroup
 
-	dispatchSched := schedulers.NewDispatchScheduler(execRepo, engine, svc.QueueManager(), &cfg, metrics)
+	dispatchSched := schedulers.NewDispatchScheduler(
+		execRepo,
+		engine,
+		svc.QueueManager(),
+		&cfg,
+		metrics,
+	)
 	retrySched := schedulers.NewRetryScheduler(execRepo, instanceRepo, &cfg, metrics)
 	timerSched := schedulers.NewTimerScheduler(timerRepo, engine, &cfg, metrics)
 	signalSched := schedulers.NewSignalScheduler(signalWaitRepo, engine, &cfg)
 	scopeSched := schedulers.NewScopeScheduler(scopeRepo, engine, &cfg)
-	timeoutSched := schedulers.NewTimeoutScheduler(execRepo, instanceRepo, retryPolicyRepo, auditRepo, &cfg, metrics)
+	timeoutSched := schedulers.NewTimeoutScheduler(
+		execRepo,
+		instanceRepo,
+		retryPolicyRepo,
+		auditRepo,
+		&cfg,
+		metrics,
+	)
 	outboxSched := schedulers.NewOutboxScheduler(eventLogRepo, svc.QueueManager(), &cfg, metrics)
 
 	startScheduler := func(name string, startFn func(context.Context)) {
@@ -214,6 +239,7 @@ func main() { //nolint:funlen // main function wiring
 	schedulerPool := pool.NewPool(ctx)
 	dbURLs := cfg.GetDatabasePrimaryHostURL()
 	if len(dbURLs) == 0 {
+		//nolint:gocritic // exitAfterDefer: intentional startup failure; service is not yet serving
 		log.Fatal("no database primary URL available for scheduler pool")
 	}
 	if poolErr := schedulerPool.AddConnection(ctx,
@@ -244,9 +270,21 @@ func main() { //nolint:funlen // main function wiring
 	startScheduler("cron", cronSched.Start)
 
 	// HTTP handlers.
-	eventRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:event_ingest", cfg.EventIngestRateLimit)
-	formRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:form_ingress", cfg.EventIngestRateLimit)
-	webhookRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:webhook_ingress", cfg.EventIngestRateLimit)
+	eventRateLimiter := handlers.NewNamedRateLimiter(
+		rawCache,
+		"trustage:event_ingest",
+		cfg.EventIngestRateLimit,
+	)
+	formRateLimiter := handlers.NewNamedRateLimiter(
+		rawCache,
+		"trustage:form_ingress",
+		cfg.EventIngestRateLimit,
+	)
+	webhookRateLimiter := handlers.NewNamedRateLimiter(
+		rawCache,
+		"trustage:webhook_ingress",
+		cfg.EventIngestRateLimit,
+	)
 
 	formHandler := handlers.NewFormHandler(eventLogRepo, metrics, formRateLimiter)
 	webhookReceiveHandler := handlers.NewWebhookReceiveHandler(
@@ -256,7 +294,12 @@ func main() { //nolint:funlen // main function wiring
 	)
 
 	workflowServer := handlers.NewWorkflowConnectServer(workflowBiz)
-	eventServer := handlers.NewEventConnectServer(eventLogRepo, auditRepo, metrics, eventRateLimiter)
+	eventServer := handlers.NewEventConnectServer(
+		eventLogRepo,
+		auditRepo,
+		metrics,
+		eventRateLimiter,
+	)
 	runtimeServer := handlers.NewRuntimeConnectServer(
 		instanceRepo,
 		execRepo,
@@ -292,7 +335,10 @@ func main() { //nolint:funlen // main function wiring
 	protectedMux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)
 
 	// Webhook receive endpoint.
-	protectedMux.HandleFunc("POST /api/v1/webhooks/{webhook_id}", webhookReceiveHandler.ReceiveWebhook)
+	protectedMux.HandleFunc(
+		"POST /api/v1/webhooks/{webhook_id}",
+		webhookReceiveHandler.ReceiveWebhook,
+	)
 
 	// Health checks.
 	publicMux := http.NewServeMux()
@@ -313,9 +359,15 @@ func main() { //nolint:funlen // main function wiring
 	publicMux.Handle(eventPath, eventHandler)
 	publicMux.Handle(runtimePath, runtimeHandler)
 	publicMux.Handle(signalPath, signalHandler)
-	publicMux.Handle("/openapi/workflow.yaml", handlers.EmbeddedSpecHandler(workflowv1spec.APISpecFile))
+	publicMux.Handle(
+		"/openapi/workflow.yaml",
+		handlers.EmbeddedSpecHandler(workflowv1spec.APISpecFile),
+	)
 	publicMux.Handle("/openapi/event.yaml", handlers.EmbeddedSpecHandler(eventv1spec.APISpecFile))
-	publicMux.Handle("/openapi/runtime.yaml", handlers.EmbeddedSpecHandler(runtimev1spec.APISpecFile))
+	publicMux.Handle(
+		"/openapi/runtime.yaml",
+		handlers.EmbeddedSpecHandler(runtimev1spec.APISpecFile),
+	)
 	publicMux.Handle("/openapi/signal.yaml", handlers.EmbeddedSpecHandler(signalv1spec.APISpecFile))
 	publicMux.Handle("/", securityhttp.TenancyAccessMiddleware(
 		handlers.RequestIDMiddleware(handlers.LimitBodySize(protectedMux)),

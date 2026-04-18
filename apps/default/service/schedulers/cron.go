@@ -48,7 +48,11 @@ type CronScheduler struct {
 
 // NewCronScheduler wires the scheduler with its repo, config, and metrics.
 // metrics may be nil (tests pass nil).
-func NewCronScheduler(scheduleRepo repository.ScheduleRepository, cfg *config.Config, metrics *telemetry.Metrics) *CronScheduler {
+func NewCronScheduler(
+	scheduleRepo repository.ScheduleRepository,
+	cfg *config.Config,
+	metrics *telemetry.Metrics,
+) *CronScheduler {
 	return &CronScheduler{scheduleRepo: scheduleRepo, cfg: cfg, metrics: metrics}
 }
 
@@ -115,7 +119,11 @@ func (s *CronScheduler) planOne(
 		log.WithError(err).Error("cron scheduler: invalid cron, parking",
 			"schedule_id", sched.ID, "cron_expr", sched.CronExpr)
 		if s.metrics != nil {
-			s.metrics.SchedulerCronInvalid.Add(ctx, 1, metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)))
+			s.metrics.SchedulerCronInvalid.Add(
+				ctx,
+				1,
+				metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)),
+			)
 		}
 		return nil, nil, 0, nil // park: no event, clear next_fire_at
 	}
@@ -130,7 +138,11 @@ func (s *CronScheduler) planOne(
 		log.WithError(err).Error("cron scheduler: invalid timezone, parking",
 			"schedule_id", sched.ID, "timezone", sched.Timezone)
 		if s.metrics != nil {
-			s.metrics.SchedulerCronInvalid.Add(ctx, 1, metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)))
+			s.metrics.SchedulerCronInvalid.Add(
+				ctx,
+				1,
+				metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)),
+			)
 		}
 		return nil, nil, 0, nil
 	}

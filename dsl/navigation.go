@@ -16,6 +16,11 @@ package dsl
 
 import "fmt"
 
+const (
+	branchThen = "then"
+	branchElse = "else"
+)
+
 // FindStep returns the step with the given ID, including nested steps.
 func FindStep(spec *WorkflowSpec, stepID string) *StepSpec {
 	if spec == nil {
@@ -59,7 +64,11 @@ func FindNextStep(spec *WorkflowSpec, currentStepID string) *StepSpec {
 // Otherwise, falls back to implicit sequential ordering via FindNextStep.
 // The vars map is used for CEL expression evaluation in conditional transitions.
 // Returns nil (no error) when the current step is terminal.
-func ResolveNextStep(spec *WorkflowSpec, currentStepID string, vars map[string]any) (*StepSpec, error) {
+func ResolveNextStep(
+	spec *WorkflowSpec,
+	currentStepID string,
+	vars map[string]any,
+) (*StepSpec, error) {
 	if spec == nil {
 		return nil, nil //nolint:nilnil // nil spec = no next step
 	}
@@ -259,7 +268,8 @@ func resolveNextWithinStep(
 			return nil, false, nil
 		}
 
-		if next, found, err := resolveNextInSteps(spec, step.If.Then, currentStepID, vars); found || err != nil {
+		if next, found, err := resolveNextInSteps(spec, step.If.Then, currentStepID, vars); found ||
+			err != nil {
 			return next, found, err
 		}
 
@@ -302,11 +312,11 @@ func resolveCurrentStepNext(
 			return nil, err
 		}
 		switch branch {
-		case "then":
+		case branchThen:
 			if currentStep.If != nil && len(currentStep.If.Then) > 0 {
 				return currentStep.If.Then[0], nil
 			}
-		case "else":
+		case branchElse:
 			if currentStep.If != nil && len(currentStep.If.Else) > 0 {
 				return currentStep.If.Else[0], nil
 			}
@@ -339,7 +349,8 @@ func resolveExplicitTransition(
 
 func resolveIfBranch(step *StepSpec, vars map[string]any) (string, error) {
 	output, _ := vars["output"].(map[string]any)
-	if branch, ok := output["branch"].(string); ok && (branch == "then" || branch == "else") {
+	if branch, ok := output["branch"].(string); ok &&
+		(branch == branchThen || branch == branchElse) {
 		return branch, nil
 	}
 

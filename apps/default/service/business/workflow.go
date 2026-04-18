@@ -89,7 +89,8 @@ func (b *workflowBusiness) CreateWorkflow(
 	if res := dsl.Validate(spec); !res.Valid() {
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, res.Error())
 	}
-	if err := validateExecutableWorkflow(spec); err != nil {
+	err = validateExecutableWorkflow(spec)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err)
 	}
 
@@ -103,12 +104,14 @@ func (b *workflowBusiness) CreateWorkflow(
 		def.TimeoutSeconds = int64(spec.Timeout.Duration.Seconds())
 	}
 
-	if err := b.registerStepSchemas(ctx, spec); err != nil {
+	err = b.registerStepSchemas(ctx, spec)
+	if err != nil {
 		return nil, fmt.Errorf("register schemas: %w", err)
 	}
 
 	// Tx1: workflow row (single-table auto-commit).
-	if err := b.defRepo.Create(ctx, def); err != nil {
+	err = b.defRepo.Create(ctx, def)
+	if err != nil {
 		return nil, fmt.Errorf("persist workflow: %w", err)
 	}
 
@@ -120,10 +123,15 @@ func (b *workflowBusiness) CreateWorkflow(
 		return nil, err
 	}
 	if len(scheds) > 0 {
-		if err := b.scheduleRepo.CreateBatch(ctx, scheds); err != nil {
+		err = b.scheduleRepo.CreateBatch(ctx, scheds)
+		if err != nil {
 			log.WithError(err).Error("schedule materialisation failed; workflow is orphan DRAFT",
 				"workflow_id", def.ID, "name", def.Name)
-			return nil, fmt.Errorf("materialise schedules (orphan DRAFT at workflow %s; retry blocked by idx_wd_name_version): %w", def.ID, err)
+			return nil, fmt.Errorf(
+				"materialise schedules (orphan DRAFT at workflow %s; retry blocked by idx_wd_name_version): %w",
+				def.ID,
+				err,
+			)
 		}
 	}
 
@@ -133,7 +141,10 @@ func (b *workflowBusiness) CreateWorkflow(
 
 // planScheduleRows builds []*ScheduleDefinition from spec.Schedules for
 // CreateBatch. Pure — no DB access.
-func planScheduleRows(def *models.WorkflowDefinition, spec *dsl.WorkflowSpec) ([]*models.ScheduleDefinition, error) {
+func planScheduleRows(
+	def *models.WorkflowDefinition,
+	spec *dsl.WorkflowSpec,
+) ([]*models.ScheduleDefinition, error) {
 	out := make([]*models.ScheduleDefinition, 0, len(spec.Schedules))
 	for _, sspec := range spec.Schedules {
 		payloadJSON := "{}"
@@ -228,7 +239,9 @@ func (b *workflowBusiness) registerStepSchemas(
 	return nil
 }
 
-func defaultSchemasForStep(step *dsl.StepSpec) (json.RawMessage, json.RawMessage, json.RawMessage, bool) {
+func defaultSchemasForStep(
+	step *dsl.StepSpec,
+) (json.RawMessage, json.RawMessage, json.RawMessage, bool) {
 	objectSchema := json.RawMessage(`{"type":"object"}`)
 	errorSchema := json.RawMessage(`{
 		"type": "object",
@@ -274,7 +287,10 @@ func defaultSchemasForStep(step *dsl.StepSpec) (json.RawMessage, json.RawMessage
 	}
 }
 
-func (b *workflowBusiness) GetWorkflow(ctx context.Context, id string) (*models.WorkflowDefinition, error) {
+func (b *workflowBusiness) GetWorkflow(
+	ctx context.Context,
+	id string,
+) (*models.WorkflowDefinition, error) {
 	def, err := b.defRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
@@ -336,12 +352,14 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
 	}
-	if err := def.TransitionTo(models.WorkflowStatusActive); err != nil {
+	err = def.TransitionTo(models.WorkflowStatusActive)
+	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
 	}
 
 	// Tx1: workflow status (single-table auto-commit).
-	if err := b.defRepo.Update(ctx, def); err != nil {
+	err = b.defRepo.Update(ctx, def)
+	if err != nil {
 		return fmt.Errorf("update workflow: %w", err)
 	}
 
@@ -358,9 +376,9 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 		if parseErr != nil {
 			return fmt.Errorf("parse cron for %s: %w", sch.Name, parseErr)
 		}
-		nominal, err := cronSched.NextInZone(now, sch.Timezone)
-		if err != nil {
-			return fmt.Errorf("timezone for %s: %w", sch.Name, err)
+		nominal, tzErr := cronSched.NextInZone(now, sch.Timezone)
+		if tzErr != nil {
+			return fmt.Errorf("timezone for %s: %w", sch.Name, tzErr)
 		}
 		jitter := dsl.JitterFor(sch.ID, cronSched, nominal)
 		fires = append(fires, repository.ScheduleActivation{
@@ -371,11 +389,13 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 	}
 
 	// Tx2: deactivate siblings + activate this version (single-table tx).
-	if err := b.scheduleRepo.ActivateByWorkflow(
+	err = b.scheduleRepo.ActivateByWorkflow(
 		ctx, def.Name, def.WorkflowVersion, def.TenantID, def.PartitionID, fires,
-	); err != nil {
-		log.WithError(err).Error("activate schedules failed; workflow ACTIVE but schedules stale; retry to reconcile",
-			"workflow_id", def.ID)
+	)
+	if err != nil {
+		log.WithError(err).
+			Error("activate schedules failed; workflow ACTIVE but schedules stale; retry to reconcile",
+				"workflow_id", def.ID)
 		return fmt.Errorf("activate schedules: %w", err)
 	}
 	return nil
@@ -393,19 +413,23 @@ func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
 	}
-	if err := def.TransitionTo(models.WorkflowStatusArchived); err != nil {
+	err = def.TransitionTo(models.WorkflowStatusArchived)
+	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidWorkflowStatus, err)
 	}
 
 	// Tx1: schedules off FIRST (safe failure ordering).
-	if err := b.scheduleRepo.DeactivateByWorkflow(ctx, def.Name, def.TenantID, def.PartitionID); err != nil {
+	err = b.scheduleRepo.DeactivateByWorkflow(ctx, def.Name, def.TenantID, def.PartitionID)
+	if err != nil {
 		return fmt.Errorf("deactivate schedules: %w", err)
 	}
 
 	// Tx2: workflow status.
-	if err := b.defRepo.Update(ctx, def); err != nil {
-		log.WithError(err).Error("workflow status update failed after schedules deactivated; retry to reconcile",
-			"workflow_id", def.ID)
+	err = b.defRepo.Update(ctx, def)
+	if err != nil {
+		log.WithError(err).
+			Error("workflow status update failed after schedules deactivated; retry to reconcile",
+				"workflow_id", def.ID)
 		return fmt.Errorf("update workflow status: %w", err)
 	}
 	return nil

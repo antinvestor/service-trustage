@@ -76,7 +76,7 @@ func (s *ScheduleRepoSuite) tenantCtx() context.Context {
 
 func (s *ScheduleRepoSuite) seedDue(ctx context.Context, n int) {
 	due := time.Now().UTC().Add(-time.Minute)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sched := &models.ScheduleDefinition{
 			Name: fmt.Sprintf("s-%d", i), CronExpr: "*/5 * * * *", Timezone: "UTC",
 			WorkflowName: "wf", WorkflowVersion: 1, InputPayload: "{}",
@@ -86,7 +86,10 @@ func (s *ScheduleRepoSuite) seedDue(ctx context.Context, n int) {
 	}
 }
 
-func simplePlan(_ context.Context, sched *models.ScheduleDefinition) (*models.EventLog, *time.Time, int, error) {
+func simplePlan(
+	_ context.Context,
+	sched *models.ScheduleDefinition,
+) (*models.EventLog, *time.Time, int, error) {
 	now := time.Now().UTC()
 	next := now.Add(5 * time.Minute)
 
@@ -103,7 +106,10 @@ func simplePlan(_ context.Context, sched *models.ScheduleDefinition) (*models.Ev
 	return ev, &next, 0, nil
 }
 
-func parkPlan(_ context.Context, _ *models.ScheduleDefinition) (*models.EventLog, *time.Time, int, error) {
+func parkPlan(
+	_ context.Context,
+	_ *models.ScheduleDefinition,
+) (*models.EventLog, *time.Time, int, error) {
 	return nil, nil, 0, nil
 }
 
@@ -114,13 +120,13 @@ func (s *ScheduleRepoSuite) TestClaimAndFireBatch_ExactlyOnceConcurrent() {
 
 	var total atomic.Int64
 	var wg sync.WaitGroup
-	for w := 0; w < 10; w++ {
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for {
 				count, err := s.repo.ClaimAndFireBatch(ctx, simplePlan, time.Now().UTC(), 8)
-				s.Require().NoError(err)
+				s.NoError(err)
 				total.Add(int64(count))
 				if count == 0 {
 					return
@@ -179,7 +185,8 @@ func (s *ScheduleRepoSuite) TestCreateBatch_Atomic_RollbackOnConflict() {
 	s.Require().Error(err, "duplicate name must fail")
 
 	var count int64
-	s.Require().NoError(s.dbPool.DB(ctx, false).Model(&models.ScheduleDefinition{}).Count(&count).Error)
+	s.Require().
+		NoError(s.dbPool.DB(ctx, false).Model(&models.ScheduleDefinition{}).Count(&count).Error)
 	s.Equal(int64(0), count, "atomic: neither row should have persisted")
 }
 
@@ -188,9 +195,33 @@ func (s *ScheduleRepoSuite) TestCreateBatch_InsertsAll() {
 	claims := security.ClaimsFromContext(ctx)
 
 	scheds := []*models.ScheduleDefinition{
-		{Name: "a", CronExpr: "*/5 * * * *", Timezone: "UTC", WorkflowName: "wf", WorkflowVersion: 1, InputPayload: "{}", Active: false},
-		{Name: "b", CronExpr: "0 * * * *", Timezone: "UTC", WorkflowName: "wf", WorkflowVersion: 1, InputPayload: "{}", Active: false},
-		{Name: "c", CronExpr: "*/10 * * * *", Timezone: "UTC", WorkflowName: "wf", WorkflowVersion: 1, InputPayload: "{}", Active: false},
+		{
+			Name:            "a",
+			CronExpr:        "*/5 * * * *",
+			Timezone:        "UTC",
+			WorkflowName:    "wf",
+			WorkflowVersion: 1,
+			InputPayload:    "{}",
+			Active:          false,
+		},
+		{
+			Name:            "b",
+			CronExpr:        "0 * * * *",
+			Timezone:        "UTC",
+			WorkflowName:    "wf",
+			WorkflowVersion: 1,
+			InputPayload:    "{}",
+			Active:          false,
+		},
+		{
+			Name:            "c",
+			CronExpr:        "*/10 * * * *",
+			Timezone:        "UTC",
+			WorkflowName:    "wf",
+			WorkflowVersion: 1,
+			InputPayload:    "{}",
+			Active:          false,
+		},
 	}
 	for _, sch := range scheds {
 		sch.TenantID = claims.TenantID
@@ -200,7 +231,8 @@ func (s *ScheduleRepoSuite) TestCreateBatch_InsertsAll() {
 	s.Require().NoError(s.repo.CreateBatch(ctx, scheds))
 
 	var count int64
-	s.Require().NoError(s.dbPool.DB(ctx, false).Model(&models.ScheduleDefinition{}).Count(&count).Error)
+	s.Require().
+		NoError(s.dbPool.DB(ctx, false).Model(&models.ScheduleDefinition{}).Count(&count).Error)
 	s.Equal(int64(3), count)
 }
 
@@ -224,10 +256,12 @@ func (s *ScheduleRepoSuite) TestActivateByWorkflow_SwitchesVersions() {
 	fires := []ScheduleActivation{
 		{ID: v2.ID, NextFireAt: time.Now().Add(time.Hour), JitterSeconds: 3},
 	}
-	s.Require().NoError(s.repo.ActivateByWorkflow(ctx, "wf-a", 2, "test-tenant", "test-partition", fires))
+	s.Require().
+		NoError(s.repo.ActivateByWorkflow(ctx, "wf-a", 2, "test-tenant", "test-partition", fires))
 
 	var after []*models.ScheduleDefinition
-	s.Require().NoError(s.dbPool.DB(ctx, false).Where("workflow_name = ?", "wf-a").Order("workflow_version ASC").Find(&after).Error)
+	s.Require().
+		NoError(s.dbPool.DB(ctx, false).Where("workflow_name = ?", "wf-a").Order("workflow_version ASC").Find(&after).Error)
 
 	s.Len(after, 2)
 	s.Equal(1, after[0].WorkflowVersion)
@@ -272,7 +306,8 @@ func (s *ScheduleRepoSuite) TestDeactivateByWorkflow_TenantIsolated() {
 	s.Require().NoError(s.repo.Create(ctx, a))
 
 	// Deactivate scoped to a different tenant — tenant-A's row must be untouched.
-	s.Require().NoError(s.repo.DeactivateByWorkflow(ctx, "wf-tenant", "other-tenant", "other-partition"))
+	s.Require().
+		NoError(s.repo.DeactivateByWorkflow(ctx, "wf-tenant", "other-tenant", "other-partition"))
 
 	var check models.ScheduleDefinition
 	s.Require().NoError(s.dbPool.DB(ctx, false).First(&check, "id = ?", a.ID).Error)

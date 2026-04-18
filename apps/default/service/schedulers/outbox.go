@@ -116,7 +116,12 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 		leaseTTL = defaultOutboxLeaseTTL
 	}
 
-	claimed, err := s.eventRepo.ClaimUnpublished(ctx, s.cfg.OutboxBatchSize, s.owner, time.Now().Add(leaseTTL))
+	claimed, err := s.eventRepo.ClaimUnpublished(
+		ctx,
+		s.cfg.OutboxBatchSize,
+		s.owner,
+		time.Now().Add(leaseTTL),
+	)
 	if err != nil {
 		log.WithError(err).Error("outbox scheduler: claim failed")
 		return 0
@@ -152,7 +157,6 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 			// Build failed — skip publish; release happens in the ack loop below.
 			continue
 		}
-		i := i // capture
 		sem <- struct{}{}
 		eg.Go(func() error {
 			defer func() { <-sem }()
@@ -171,13 +175,15 @@ func (s *OutboxScheduler) RunOnce(ctx context.Context) int {
 	published := 0
 	for _, r := range results {
 		if r.err != nil {
-			log.WithError(r.err).Error("outbox scheduler: publish/build failed", "event_id", r.event.ID)
+			log.WithError(r.err).
+				Error("outbox scheduler: publish/build failed", "event_id", r.event.ID)
 			_ = s.eventRepo.ReleaseClaim(ctx, r.event.ID, s.owner)
 			continue
 		}
 
 		if ackErr := s.eventRepo.MarkPublishedByOwner(ctx, r.event.ID, s.owner, time.Now()); ackErr != nil {
-			log.WithError(ackErr).Error("outbox scheduler: mark published failed", "event_id", r.event.ID)
+			log.WithError(ackErr).
+				Error("outbox scheduler: mark published failed", "event_id", r.event.ID)
 			continue
 		}
 

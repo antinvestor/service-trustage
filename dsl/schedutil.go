@@ -29,5 +29,6 @@ func JitterFor(scheduleID string, cronSched CronSchedule, nominal time.Time) tim
 
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(scheduleID))
+	//nolint:gosec // maxDur is always in [1, 30s]; modulo result is always < maxDur, safe to convert
 	return time.Duration(int64(h.Sum64() % uint64(maxDur)))
 }
