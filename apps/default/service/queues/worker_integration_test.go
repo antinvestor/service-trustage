@@ -162,7 +162,7 @@ func (s *WorkerSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *WorkerSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry())
+	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry(), nil)
 }
 
 func (s *WorkerSuite) stateEngine() business.StateEngine {

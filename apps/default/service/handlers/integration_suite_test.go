@@ -188,7 +188,7 @@ func (s *HandlerSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *HandlerSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry())
+	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry(), nil)
 }
 
 func (s *HandlerSuite) stateEngine() business.StateEngine {

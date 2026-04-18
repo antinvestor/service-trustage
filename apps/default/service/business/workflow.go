@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/dsl"
+	"github.com/antinvestor/service-trustage/pkg/telemetry"
 )
 
 // WorkflowBusiness manages workflow definition lifecycle.
@@ -60,6 +62,7 @@ type workflowBusiness struct {
 	defRepo      repository.WorkflowDefinitionRepository
 	scheduleRepo repository.ScheduleRepository
 	schemaReg    SchemaRegistry
+	metrics      *telemetry.Metrics
 }
 
 // NewWorkflowBusiness creates a new WorkflowBusiness.
@@ -67,11 +70,13 @@ func NewWorkflowBusiness(
 	defRepo repository.WorkflowDefinitionRepository,
 	scheduleRepo repository.ScheduleRepository,
 	schemaReg SchemaRegistry,
+	metrics *telemetry.Metrics,
 ) WorkflowBusiness {
 	return &workflowBusiness{
 		defRepo:      defRepo,
 		scheduleRepo: scheduleRepo,
 		schemaReg:    schemaReg,
+		metrics:      metrics,
 	}
 }
 
@@ -79,7 +84,12 @@ func NewWorkflowBusiness(
 func (b *workflowBusiness) CreateWorkflow(
 	ctx context.Context,
 	dslBlob json.RawMessage,
-) (*models.WorkflowDefinition, error) {
+) (def *models.WorkflowDefinition, err error) {
+	tenantID := tenantIDFromContext(ctx)
+	defer func() {
+		b.metrics.RecordWorkflowLifecycle(ctx, "create", tenantID, err == nil)
+	}()
+
 	log := util.Log(ctx)
 
 	spec, err := dsl.Parse(dslBlob)
@@ -94,7 +104,7 @@ func (b *workflowBusiness) CreateWorkflow(
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err)
 	}
 
-	def := &models.WorkflowDefinition{
+	def = &models.WorkflowDefinition{
 		Name:            spec.Name,
 		WorkflowVersion: 1,
 		Status:          models.WorkflowStatusDraft,
@@ -345,7 +355,12 @@ func (b *workflowBusiness) SearchWorkflows(
 	}, nil
 }
 
-func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {
+func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) (err error) {
+	tenantID := tenantIDFromContext(ctx)
+	defer func() {
+		b.metrics.RecordWorkflowLifecycle(ctx, "activate", tenantID, err == nil)
+	}()
+
 	log := util.Log(ctx)
 
 	def, err := b.defRepo.GetByID(ctx, id)
@@ -406,7 +421,12 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 // reversed order from Activate is deliberate — if the second step fails,
 // schedules are already off (safe: no overfire, just a transient status
 // mismatch fixable by retry).
-func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error {
+func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) (err error) {
+	tenantID := tenantIDFromContext(ctx)
+	defer func() {
+		b.metrics.RecordWorkflowLifecycle(ctx, "archive", tenantID, err == nil)
+	}()
+
 	log := util.Log(ctx)
 
 	def, err := b.defRepo.GetByID(ctx, id)
@@ -433,4 +453,13 @@ func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error
 		return fmt.Errorf("update workflow status: %w", err)
 	}
 	return nil
+}
+
+// tenantIDFromContext returns the caller's tenant ID, empty string if unset.
+func tenantIDFromContext(ctx context.Context) string {
+	claims := security.ClaimsFromContext(ctx)
+	if claims == nil {
+		return ""
+	}
+	return claims.TenantID
 }

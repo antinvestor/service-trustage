@@ -154,7 +154,7 @@ func main() { //nolint:funlen // main function wiring
 		engine,
 		metrics,
 	)
-	workflowBiz := business.NewWorkflowBusiness(defRepo, scheduleRepo, schemaReg)
+	workflowBiz := business.NewWorkflowBusiness(defRepo, scheduleRepo, schemaReg, metrics)
 
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)
