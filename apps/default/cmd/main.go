@@ -133,7 +133,7 @@ func main() { //nolint:funlen // main function wiring
 		rawCache,
 	)
 	eventRouter := business.NewEventRouter(triggerRepo, defRepo, instanceRepo, auditRepo, engine, metrics)
-	workflowBiz := business.NewWorkflowBusiness(defRepo, schemaReg)
+	workflowBiz := business.NewWorkflowBusiness(defRepo, scheduleRepo, schemaReg)
 
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)

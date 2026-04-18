@@ -79,6 +79,52 @@ func (s *BusinessSuite) TestWorkflowBusiness_CreateActivateAndSchemaRegistration
 	}
 }
 
+func (s *BusinessSuite) TestCreateWorkflow_MaterialisesSchedules() {
+	ctx := s.tenantCtx()
+
+	dslBlob := []byte(`{
+		"version": "v1",
+		"name": "w-sched",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [
+			{"name": "nightly", "cron_expr": "0 2 * * *"},
+			{"name": "hourly",  "cron_expr": "0 * * * *"}
+		]
+	}`)
+
+	def, err := s.workflowBusiness().CreateWorkflow(ctx, dslBlob)
+	s.Require().NoError(err)
+
+	// Workflow in DRAFT.
+	s.Equal(models.WorkflowStatusDraft, def.Status)
+
+	// Schedules materialised, active=false, next_fire_at=nil.
+	out, listErr := s.scheduleRepo.ListByWorkflow(ctx, def.Name, def.WorkflowVersion)
+	s.Require().NoError(listErr)
+	s.Len(out, 2)
+	for _, sch := range out {
+		s.False(sch.Active, "new schedule should be inactive")
+		s.Nil(sch.NextFireAt, "new schedule should have no next_fire_at")
+		s.Equal(def.Name, sch.WorkflowName)
+		s.Equal(def.WorkflowVersion, sch.WorkflowVersion)
+	}
+}
+
+func (s *BusinessSuite) TestCreateWorkflow_InvalidScheduleCronRejected() {
+	ctx := s.tenantCtx()
+
+	dslBlob := []byte(`{
+		"version": "v1",
+		"name": "w-bad-sched",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [{"name": "bad", "cron_expr": "not-a-cron"}]
+	}`)
+
+	_, err := s.workflowBusiness().CreateWorkflow(ctx, dslBlob)
+	s.Require().Error(err)
+	s.Contains(err.Error(), "cron")
+}
+
 func (s *BusinessSuite) TestWorkflowBusiness_RejectsUnsupportedStepType() {
 	ctx := s.tenantCtx()
 

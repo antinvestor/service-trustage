@@ -144,7 +144,7 @@ func (s *SchedulerSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *SchedulerSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.schemaRegistry())
+	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry())
 }
 
 func (s *SchedulerSuite) stateEngine() business.StateEngine {

@@ -180,7 +180,7 @@ func (s *DefaultServiceSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *DefaultServiceSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.schemaRegistry())
+	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry())
 }
 
 func (s *DefaultServiceSuite) stateEngine() business.StateEngine {

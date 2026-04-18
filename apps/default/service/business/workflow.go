@@ -38,18 +38,21 @@ type WorkflowListPage struct {
 }
 
 type workflowBusiness struct {
-	defRepo   repository.WorkflowDefinitionRepository
-	schemaReg SchemaRegistry
+	defRepo      repository.WorkflowDefinitionRepository
+	scheduleRepo repository.ScheduleRepository
+	schemaReg    SchemaRegistry
 }
 
 // NewWorkflowBusiness creates a new WorkflowBusiness.
 func NewWorkflowBusiness(
 	defRepo repository.WorkflowDefinitionRepository,
+	scheduleRepo repository.ScheduleRepository,
 	schemaReg SchemaRegistry,
 ) WorkflowBusiness {
 	return &workflowBusiness{
-		defRepo:   defRepo,
-		schemaReg: schemaReg,
+		defRepo:      defRepo,
+		scheduleRepo: scheduleRepo,
+		schemaReg:    schemaReg,
 	}
 }
 
@@ -96,12 +99,51 @@ func (b *workflowBusiness) CreateWorkflow(
 		return nil, fmt.Errorf("persist workflow: %w", err)
 	}
 
+	if schedErr := b.materialiseSchedules(ctx, def, spec); schedErr != nil {
+		return nil, fmt.Errorf("materialise schedules: %w", schedErr)
+	}
+
 	log.Info("workflow created",
 		"workflow_id", def.ID,
 		"name", spec.Name,
 	)
 
 	return def, nil
+}
+
+func (b *workflowBusiness) materialiseSchedules(
+	ctx context.Context,
+	def *models.WorkflowDefinition,
+	spec *dsl.WorkflowSpec,
+) error {
+	for _, sspec := range spec.Schedules {
+		payloadJSON := "{}"
+		if len(sspec.InputPayload) > 0 {
+			raw, err := json.Marshal(sspec.InputPayload)
+			if err != nil {
+				return fmt.Errorf("marshal input_payload for schedule %s: %w", sspec.Name, err)
+			}
+			payloadJSON = string(raw)
+		}
+
+		sched := &models.ScheduleDefinition{
+			Name:            sspec.Name,
+			CronExpr:        sspec.CronExpr,
+			WorkflowName:    def.Name,
+			WorkflowVersion: def.WorkflowVersion,
+			InputPayload:    payloadJSON,
+			Active:          false, // DRAFT — activated by ActivateWorkflow.
+			NextFireAt:      nil,
+			JitterSeconds:   0,
+		}
+		sched.CopyPartitionInfo(&def.BaseModel)
+
+		if err := b.scheduleRepo.Create(ctx, sched); err != nil {
+			return fmt.Errorf("create schedule %s: %w", sspec.Name, err)
+		}
+	}
+
+	return nil
 }
 
 func validateExecutableWorkflow(spec *dsl.WorkflowSpec) error {

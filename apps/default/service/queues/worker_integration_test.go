@@ -40,6 +40,7 @@ type WorkerSuite struct {
 	outputRepo     repository.WorkflowOutputRepository
 	triggerRepo    repository.TriggerBindingRepository
 	retryRepo      repository.RetryPolicyRepository
+	scheduleRepo   repository.ScheduleRepository
 	timerRepo      repository.WorkflowTimerRepository
 	scopeRepo      repository.WorkflowScopeRunRepository
 	signalWaitRepo repository.WorkflowSignalWaitRepository
@@ -80,6 +81,7 @@ func (s *WorkerSuite) SetupSuite() {
 		&models.WorkflowDefinition{},
 		&models.WorkflowRetryPolicy{},
 		&models.TriggerBinding{},
+		&models.ScheduleDefinition{},
 	))
 	s.Require().NoError(db.Exec(
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_state_schema
@@ -102,6 +104,7 @@ func (s *WorkerSuite) SetupSuite() {
 	s.outputRepo = repository.NewWorkflowOutputRepository(p)
 	s.triggerRepo = repository.NewTriggerBindingRepository(p)
 	s.retryRepo = repository.NewRetryPolicyRepository(p)
+	s.scheduleRepo = repository.NewScheduleRepository(p)
 	s.timerRepo = repository.NewWorkflowTimerRepository(p)
 	s.scopeRepo = repository.NewWorkflowScopeRunRepository(p)
 	s.signalWaitRepo = repository.NewWorkflowSignalWaitRepository(p)
@@ -145,7 +148,7 @@ func (s *WorkerSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *WorkerSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.schemaRegistry())
+	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry())
 }
 
 func (s *WorkerSuite) stateEngine() business.StateEngine {

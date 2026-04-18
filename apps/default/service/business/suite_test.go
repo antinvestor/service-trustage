@@ -163,7 +163,7 @@ func (s *BusinessSuite) schemaRegistry() SchemaRegistry {
 }
 
 func (s *BusinessSuite) workflowBusiness() WorkflowBusiness {
-	return NewWorkflowBusiness(s.defRepo, s.schemaRegistry())
+	return NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry())
 }
 
 func (s *BusinessSuite) stateEngine() StateEngine {
