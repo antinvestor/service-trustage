@@ -541,7 +541,7 @@ func (s *DefaultServiceSuite) TestCronScheduler_RunOnce() {
 	}
 	s.Require().NoError(s.scheduleRepo.Create(tenantCtx, schedDef))
 
-	cron := schedulers.NewCronScheduler(s.scheduleRepo, &config.Config{})
+	cron := schedulers.NewCronScheduler(s.scheduleRepo, &config.Config{}, nil)
 	count := cron.RunOnce(ctx)
 	s.Equal(1, count)
 
@@ -607,7 +607,7 @@ func (s *DefaultServiceSuite) TestSchedulers_Start_CancelledContext() {
 	timer := schedulers.NewTimerScheduler(s.timerRepo, s.stateEngine(), cfg, s.metrics)
 	timeout := schedulers.NewTimeoutScheduler(s.execRepo, s.instanceRepo, s.retryRepo, s.auditRepo, cfg, s.metrics)
 	outbox := schedulers.NewOutboxScheduler(s.eventRepo, queueMgr, cfg, s.metrics)
-	cron := schedulers.NewCronScheduler(s.scheduleRepo, cfg)
+	cron := schedulers.NewCronScheduler(s.scheduleRepo, cfg, nil)
 	cleanup := schedulers.NewCleanupScheduler(s.eventRepo, s.auditRepo, cfg)
 
 	done := make(chan struct{})

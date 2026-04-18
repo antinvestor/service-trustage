@@ -16,6 +16,7 @@ package telemetry
 
 import (
 	"context"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -44,6 +45,7 @@ const (
 	SpanSchedulerRetry    = "scheduler.retry"
 	SpanSchedulerTimeout  = "scheduler.timeout"
 	SpanSchedulerOutbox   = "scheduler.outbox"
+	SpanSchedulerCron     = "scheduler.cron.sweep"
 	SpanCreateWorkflow    = "workflow.create"
 )
 
@@ -63,22 +65,25 @@ const (
 
 // Metrics holds all OTel instruments for the engine.
 type Metrics struct {
-	ExecutionsTotal          metric.Int64Counter
-	ExecutionLatency         metric.Float64Histogram
-	TransitionsTotal         metric.Int64Counter
-	RetriesTotal             metric.Int64Counter
-	ContractViolationsTotal  metric.Int64Counter
-	StaleExecutionsTotal     metric.Int64Counter
-	DispatchLatency          metric.Float64Histogram
-	CommitLatency            metric.Float64Histogram
-	ConnectorCallsTotal      metric.Int64Counter
-	ConnectorLatency         metric.Float64Histogram
-	EventsIngestedTotal      metric.Int64Counter
-	EventsRoutedTotal        metric.Int64Counter
-	SchedulerPendingGauge    metric.Int64Gauge
-	SchedulerRetryDueGauge   metric.Int64Gauge
-	SchedulerDispatchedGauge metric.Int64Gauge
-	SchedulerOutboxGauge     metric.Int64Gauge
+	ExecutionsTotal            metric.Int64Counter
+	ExecutionLatency           metric.Float64Histogram
+	TransitionsTotal           metric.Int64Counter
+	RetriesTotal               metric.Int64Counter
+	ContractViolationsTotal    metric.Int64Counter
+	StaleExecutionsTotal       metric.Int64Counter
+	DispatchLatency            metric.Float64Histogram
+	CommitLatency              metric.Float64Histogram
+	ConnectorCallsTotal        metric.Int64Counter
+	ConnectorLatency           metric.Float64Histogram
+	EventsIngestedTotal        metric.Int64Counter
+	EventsRoutedTotal          metric.Int64Counter
+	SchedulerPendingGauge      metric.Int64Gauge
+	SchedulerRetryDueGauge     metric.Int64Gauge
+	SchedulerDispatchedGauge   metric.Int64Gauge
+	SchedulerOutboxGauge       metric.Int64Gauge
+	SchedulerCronFired         metric.Int64Counter
+	SchedulerCronSweepDuration metric.Float64Histogram
+	SchedulerCronInvalid       metric.Int64Counter
 }
 
 // NewMetrics creates and registers all OTel instruments.
@@ -101,25 +106,45 @@ func NewMetrics() *Metrics {
 	retryDueGauge, _ := meter.Int64Gauge("scheduler.retry_due_executions")
 	dispatchedGauge, _ := meter.Int64Gauge("scheduler.dispatched_executions")
 	outboxGauge, _ := meter.Int64Gauge("scheduler.unpublished_events")
+	cronFired, _ := meter.Int64Counter("scheduler_cron_fired_total")
+	cronSweepDuration, _ := meter.Float64Histogram("scheduler_cron_sweep_duration_seconds")
+	cronInvalid, _ := meter.Int64Counter("scheduler_cron_invalid_cron_total")
 
 	return &Metrics{
-		ExecutionsTotal:          execTotal,
-		ExecutionLatency:         execLatency,
-		TransitionsTotal:         transTotal,
-		RetriesTotal:             retriesTotal,
-		ContractViolationsTotal:  violationsTotal,
-		StaleExecutionsTotal:     staleTotal,
-		DispatchLatency:          dispatchLatency,
-		CommitLatency:            commitLatency,
-		ConnectorCallsTotal:      connectorTotal,
-		ConnectorLatency:         connectorLatency,
-		EventsIngestedTotal:      eventsIngested,
-		EventsRoutedTotal:        eventsRouted,
-		SchedulerPendingGauge:    pendingGauge,
-		SchedulerRetryDueGauge:   retryDueGauge,
-		SchedulerDispatchedGauge: dispatchedGauge,
-		SchedulerOutboxGauge:     outboxGauge,
+		ExecutionsTotal:            execTotal,
+		ExecutionLatency:           execLatency,
+		TransitionsTotal:           transTotal,
+		RetriesTotal:               retriesTotal,
+		ContractViolationsTotal:    violationsTotal,
+		StaleExecutionsTotal:       staleTotal,
+		DispatchLatency:            dispatchLatency,
+		CommitLatency:              commitLatency,
+		ConnectorCallsTotal:        connectorTotal,
+		ConnectorLatency:           connectorLatency,
+		EventsIngestedTotal:        eventsIngested,
+		EventsRoutedTotal:          eventsRouted,
+		SchedulerPendingGauge:      pendingGauge,
+		SchedulerRetryDueGauge:     retryDueGauge,
+		SchedulerDispatchedGauge:   dispatchedGauge,
+		SchedulerOutboxGauge:       outboxGauge,
+		SchedulerCronFired:         cronFired,
+		SchedulerCronSweepDuration: cronSweepDuration,
+		SchedulerCronInvalid:       cronInvalid,
 	}
+}
+
+// RecordSchedulerCronSweep records a single cron sweep: fired count,
+// sweep duration, and success/failure result label.
+func (m *Metrics) RecordSchedulerCronSweep(ctx context.Context, fired int, dur time.Duration, ok bool) {
+	if m == nil {
+		return
+	}
+	result := "ok"
+	if !ok {
+		result = "fail"
+	}
+	m.SchedulerCronFired.Add(ctx, int64(fired), metric.WithAttributes(attribute.String("result", result)))
+	m.SchedulerCronSweepDuration.Record(ctx, dur.Seconds(), metric.WithAttributes(attribute.String("result", result)))
 }
 
 // StartSpan starts a new OTel span.

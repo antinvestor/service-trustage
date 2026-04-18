@@ -33,6 +33,10 @@ type Config struct {
 	CronSchedulerBatchSize    int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`
 	CronSchedulerIntervalSecs int `env:"CRON_SCHEDULER_INTERVAL_SECONDS" envDefault:"1"`
 
+	// Scheduler pool sizing (dedicated pool isolates fire-path from HTTP/RPC handlers).
+	SchedulerPoolMaxConns int `env:"SCHEDULER_POOL_MAX_CONNS" envDefault:"10"`
+	SchedulerPoolMinConns int `env:"SCHEDULER_POOL_MIN_CONNS" envDefault:"2"`
+
 	// Scheduler intervals (seconds).
 	DispatchIntervalSeconds int `env:"DISPATCH_INTERVAL_SECONDS" envDefault:"5"`
 	RetryIntervalSeconds    int `env:"RETRY_INTERVAL_SECONDS"    envDefault:"10"`

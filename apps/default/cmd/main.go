@@ -208,8 +208,30 @@ func main() { //nolint:funlen // main function wiring
 		}()
 	}
 
+	// Dedicated scheduler pool — isolates fire-path connections from HTTP/RPC handlers.
+	// Frame's primary pool is shared by all handlers + most schedulers; under herd load
+	// the cron scheduler's sustained connection hold can starve request handlers.
+	schedulerPool := pool.NewPool(ctx)
+	dbURLs := cfg.GetDatabasePrimaryHostURL()
+	if len(dbURLs) == 0 {
+		log.Fatal("no database primary URL available for scheduler pool")
+	}
+	if poolErr := schedulerPool.AddConnection(ctx,
+		pool.WithConnection(dbURLs[0], false),
+		pool.WithPreparedStatements(false),
+		pool.WithPreferSimpleProtocol(true),
+		pool.WithMaxOpen(cfg.SchedulerPoolMaxConns),
+		pool.WithMaxIdle(cfg.SchedulerPoolMinConns),
+	); poolErr != nil {
+		log.WithError(poolErr).Fatal("scheduler pool init")
+	}
+	svc.DatastoreManager().AddPool(ctx, "scheduler", schedulerPool)
+
+	// Scheduler repositories use the dedicated pool.
+	schedulerScheduleRepo := repository.NewScheduleRepository(schedulerPool)
+
 	cleanupSched := schedulers.NewCleanupScheduler(eventLogRepo, auditRepo, &cfg)
-	cronSched := schedulers.NewCronScheduler(scheduleRepo, &cfg)
+	cronSched := schedulers.NewCronScheduler(schedulerScheduleRepo, &cfg, metrics)
 
 	startScheduler("dispatch", dispatchSched.Start)
 	startScheduler("retry", retrySched.Start)

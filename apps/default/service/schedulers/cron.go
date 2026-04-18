@@ -20,12 +20,15 @@ import (
 	"time"
 
 	"github.com/pitabwire/util"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/dsl"
 	"github.com/antinvestor/service-trustage/pkg/events"
+	"github.com/antinvestor/service-trustage/pkg/telemetry"
 )
 
 const (
@@ -40,12 +43,13 @@ const (
 type CronScheduler struct {
 	scheduleRepo repository.ScheduleRepository
 	cfg          *config.Config
+	metrics      *telemetry.Metrics
 }
 
-// NewCronScheduler wires the scheduler with its repo and config. Metrics
-// injection lands in Task 9.
-func NewCronScheduler(scheduleRepo repository.ScheduleRepository, cfg *config.Config) *CronScheduler {
-	return &CronScheduler{scheduleRepo: scheduleRepo, cfg: cfg}
+// NewCronScheduler wires the scheduler with its repo, config, and metrics.
+// metrics may be nil (tests pass nil).
+func NewCronScheduler(scheduleRepo repository.ScheduleRepository, cfg *config.Config, metrics *telemetry.Metrics) *CronScheduler {
+	return &CronScheduler{scheduleRepo: scheduleRepo, cfg: cfg, metrics: metrics}
 }
 
 // Start runs the sweep loop until ctx is cancelled.
@@ -77,11 +81,21 @@ func (s *CronScheduler) RunOnce(ctx context.Context) int {
 	log := util.Log(ctx)
 	now := time.Now().UTC()
 
+	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, telemetry.SpanSchedulerCron)
+	defer telemetry.EndSpan(span, nil)
+
+	start := time.Now()
+
 	fired, err := s.scheduleRepo.ClaimAndFireBatch(ctx, s.planOne, now, s.batchSize())
+	dur := time.Since(start)
+
 	if err != nil {
 		log.WithError(err).Error("cron scheduler: sweep failed")
+		s.metrics.RecordSchedulerCronSweep(ctx, 0, dur, false)
 		return 0
 	}
+
+	s.metrics.RecordSchedulerCronSweep(ctx, fired, dur, true)
 	if fired > 0 {
 		log.Debug("cron scheduler swept", "fired", fired)
 	}
@@ -100,6 +114,9 @@ func (s *CronScheduler) planOne(
 	if err != nil {
 		log.WithError(err).Error("cron scheduler: invalid cron, parking",
 			"schedule_id", sched.ID, "cron_expr", sched.CronExpr)
+		if s.metrics != nil {
+			s.metrics.SchedulerCronInvalid.Add(ctx, 1, metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)))
+		}
 		return nil, nil, 0, nil // park: no event, clear next_fire_at
 	}
 
@@ -112,6 +129,9 @@ func (s *CronScheduler) planOne(
 	if err != nil {
 		log.WithError(err).Error("cron scheduler: invalid timezone, parking",
 			"schedule_id", sched.ID, "timezone", sched.Timezone)
+		if s.metrics != nil {
+			s.metrics.SchedulerCronInvalid.Add(ctx, 1, metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)))
+		}
 		return nil, nil, 0, nil
 	}
 

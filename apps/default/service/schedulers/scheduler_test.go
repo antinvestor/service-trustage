@@ -268,7 +268,7 @@ func (s *SchedulerSuite) TestCronScheduler_RunOnceCreatesEventAndAdvancesSchedul
 	}
 	s.Require().NoError(s.scheduleRepo.Create(ctx, sched))
 
-	scheduler := NewCronScheduler(s.scheduleRepo, s.cfg)
+	scheduler := NewCronScheduler(s.scheduleRepo, s.cfg, nil)
 	fired := scheduler.RunOnce(ctx)
 	s.Equal(1, fired)
 
