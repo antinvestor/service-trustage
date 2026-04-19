@@ -42,8 +42,15 @@ type WorkflowExecutionRepository interface {
 	VerifyAndConsumeToken(ctx context.Context, executionID, tokenHash string) (*models.WorkflowStateExecution, error)
 	VerifyAndConsumeTokenTx(tx *gorm.DB, executionID, tokenHash string) (*models.WorkflowStateExecution, error)
 	UpdateStatus(ctx context.Context, executionID string, status models.ExecutionStatus, fields map[string]any) error
+	// MarkTimedOutAndCreateRetry atomically marks oldID as timed_out and inserts
+	// the replacement retry execution in a single transaction. This prevents a
+	// pod crash between the two steps from leaving a stuck dispatched execution.
+	MarkTimedOutAndCreateRetry(ctx context.Context, oldID string, retry *models.WorkflowStateExecution) error
 	MarkStale(ctx context.Context, executionID string) error
 	Pool() pool.Pool
+	// DeleteCompletedBefore batch-deletes terminal-state executions whose
+	// finished_at is older than cutoff. Returns the number of rows deleted.
+	DeleteCompletedBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
 type WorkflowExecutionListFilter struct {
@@ -354,4 +361,80 @@ func (r *workflowExecutionRepository) UpdateStatus(
 
 func (r *workflowExecutionRepository) MarkStale(ctx context.Context, executionID string) error {
 	return r.UpdateStatus(ctx, executionID, models.ExecStatusStale, nil)
+}
+
+// MarkTimedOutAndCreateRetry atomically marks oldID as timed_out and inserts
+// the new retry execution. Using a single transaction prevents a pod crash
+// between the two statements from leaving a stuck dispatched execution.
+func (r *workflowExecutionRepository) MarkTimedOutAndCreateRetry(
+	ctx context.Context,
+	oldID string,
+	retry *models.WorkflowStateExecution,
+) error {
+	db := r.BaseRepository.Pool().DB(ctx, false)
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.WorkflowStateExecution{}).
+			Where("id = ? AND deleted_at IS NULL", oldID).
+			UpdateColumns(map[string]any{
+				"status":        string(models.ExecStatusTimedOut),
+				"error_class":   "retryable",
+				"error_message": "execution timed out",
+				"finished_at":   time.Now().UTC(),
+			}).Error; err != nil {
+			return fmt.Errorf("mark timed out: %w", err)
+		}
+
+		if err := tx.Create(retry).Error; err != nil {
+			return fmt.Errorf("create retry execution: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// DeleteCompletedBefore batch-deletes terminal-state executions whose
+// finished_at is older than cutoff. Returns the number of rows deleted.
+func (r *workflowExecutionRepository) DeleteCompletedBefore(
+	ctx context.Context,
+	cutoff time.Time,
+	limit int,
+) (int64, error) {
+	db := r.BaseRepository.Pool().DB(ctx, false)
+	if limit <= 0 {
+		limit = 100
+	}
+
+	terminalStatuses := []string{
+		string(models.ExecStatusCompleted),
+		string(models.ExecStatusFatal),
+		string(models.ExecStatusFailed),
+		string(models.ExecStatusTimedOut),
+		string(models.ExecStatusInvalidInputContract),
+		string(models.ExecStatusInvalidOutputContract),
+		string(models.ExecStatusStale),
+	}
+
+	var ids []string
+	selectResult := db.Model(&models.WorkflowStateExecution{}).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where(
+			"status IN ? AND finished_at IS NOT NULL AND finished_at < ? AND deleted_at IS NULL",
+			terminalStatuses, cutoff,
+		).
+		Limit(limit).
+		Pluck("id", &ids)
+	if selectResult.Error != nil {
+		return 0, fmt.Errorf("select completed executions: %w", selectResult.Error)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	res := db.Where("id IN ? AND deleted_at IS NULL", ids).Delete(&models.WorkflowStateExecution{})
+	if res.Error != nil {
+		return 0, fmt.Errorf("delete completed executions: %w", res.Error)
+	}
+
+	return res.RowsAffected, nil
 }

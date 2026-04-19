@@ -104,25 +104,26 @@ func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 	timedOut := 0
 
 	for _, exec := range overdue {
-		// Mark current execution as timed out.
-		updateErr := s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusTimedOut, map[string]any{
-			"error_class":   "retryable",
-			"error_message": "execution timed out",
-		})
-		if updateErr != nil {
-			log.WithError(updateErr).Error("timeout scheduler: mark timed out failed",
-				"execution_id", exec.ID,
-			)
-			continue
-		}
-
-		// Attempt to schedule a retry.
+		// Attempt to schedule a retry — builds the new execution if allowed.
+		// The mark-timed-out + create-retry steps are committed atomically to
+		// prevent a pod crash between them from leaving a stuck dispatched row.
 		if retried := s.scheduleRetryIfAllowed(ctx, exec); retried {
 			log.Debug("timeout scheduler: retry scheduled",
 				"execution_id", exec.ID,
 				"attempt", exec.Attempt,
 			)
 		} else {
+			// No retry possible — mark as timed_out then fatal and fail the instance.
+			updateErr := s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusTimedOut, map[string]any{
+				"error_class":   "retryable",
+				"error_message": "execution timed out",
+			})
+			if updateErr != nil {
+				log.WithError(updateErr).Error("timeout scheduler: mark timed out failed",
+					"execution_id", exec.ID,
+				)
+				continue
+			}
 			// No retry possible — mark as fatal and fail the instance.
 			_ = s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusFatal, map[string]any{
 				"error_class":   "retryable",
@@ -208,8 +209,10 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 		NextRetryAt:     &nextRetry,
 	}
 
-	if createErr := s.execRepo.Create(ctx, newExec); createErr != nil {
-		log.WithError(createErr).Error("timeout scheduler: create retry execution failed",
+	// Atomic: mark old execution timed_out AND insert the retry row in one tx.
+	// A pod crash between the two would otherwise leave a stuck dispatched row.
+	if createErr := s.execRepo.MarkTimedOutAndCreateRetry(ctx, exec.ID, newExec); createErr != nil {
+		log.WithError(createErr).Error("timeout scheduler: mark-timed-out+create-retry failed",
 			"execution_id", exec.ID,
 		)
 		return false
