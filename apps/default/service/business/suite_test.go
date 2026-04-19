@@ -207,6 +207,7 @@ func (s *BusinessSuite) eventRouter() EventRouter {
 		s.auditRepo,
 		s.stateEngine(),
 		s.metrics,
+		DefaultEventRouterBindingLimit,
 	)
 }
 

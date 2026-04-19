@@ -27,7 +27,14 @@ import (
 // TriggerBindingRepository manages trigger binding persistence.
 type TriggerBindingRepository interface {
 	Create(ctx context.Context, binding *models.TriggerBinding) error
-	FindByEventType(ctx context.Context, eventType string) ([]*models.TriggerBinding, error)
+	// FindByEventType returns up to limit active, non-deleted trigger bindings
+	// for the given event type. Tenancy-scoped via BaseRepository.
+	//
+	// The limit protects the event-router handler from unbounded fanout — a single
+	// event type with thousands of bindings would otherwise lock a NATS message
+	// handler long enough to trigger redelivery (consumer_ack_wait=10s), amplifying
+	// the storm. Pass a positive integer; <= 0 is clamped to 200.
+	FindByEventType(ctx context.Context, eventType string, limit int) ([]*models.TriggerBinding, error)
 }
 
 type triggerBindingRepository struct {
@@ -52,10 +59,17 @@ func (r *triggerBindingRepository) Create(ctx context.Context, binding *models.T
 	return r.BaseRepository.Create(ctx, binding)
 }
 
+const defaultFindByEventTypeLimit = 200
+
 func (r *triggerBindingRepository) FindByEventType(
 	ctx context.Context,
 	eventType string,
+	limit int,
 ) ([]*models.TriggerBinding, error) {
+	if limit <= 0 {
+		limit = defaultFindByEventTypeLimit
+	}
+
 	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var bindings []*models.TriggerBinding
@@ -63,7 +77,7 @@ func (r *triggerBindingRepository) FindByEventType(
 	result := db.Where(
 		"event_type = ? AND active = true AND deleted_at IS NULL",
 		eventType,
-	).Find(&bindings)
+	).Limit(limit).Find(&bindings)
 
 	if result.Error != nil {
 		return nil, fmt.Errorf("find trigger bindings: %w", result.Error)

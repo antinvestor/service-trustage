@@ -48,6 +48,10 @@ type EventRouter interface {
 	RouteEvent(ctx context.Context, event *events.IngestedEventMessage) (int, error)
 }
 
+// DefaultEventRouterBindingLimit is the default maximum number of trigger
+// bindings processed per event. Override via EventRouterBindingLimit in config.
+const DefaultEventRouterBindingLimit = 200
+
 type eventRouter struct {
 	triggerRepo  repository.TriggerBindingRepository
 	defRepo      repository.WorkflowDefinitionRepository
@@ -55,6 +59,7 @@ type eventRouter struct {
 	auditRepo    repository.AuditEventRepository
 	engine       StateEngine
 	metrics      *telemetry.Metrics
+	bindingLimit int
 }
 
 // NewEventRouter creates a new EventRouter.
@@ -65,7 +70,12 @@ func NewEventRouter(
 	auditRepo repository.AuditEventRepository,
 	engine StateEngine,
 	metrics *telemetry.Metrics,
+	bindingLimit int,
 ) EventRouter {
+	if bindingLimit <= 0 {
+		bindingLimit = DefaultEventRouterBindingLimit
+	}
+
 	return &eventRouter{
 		triggerRepo:  triggerRepo,
 		defRepo:      defRepo,
@@ -73,6 +83,7 @@ func NewEventRouter(
 		auditRepo:    auditRepo,
 		engine:       engine,
 		metrics:      metrics,
+		bindingLimit: bindingLimit,
 	}
 }
 
@@ -91,7 +102,7 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 
 	log := util.Log(ctx)
 
-	bindings, err := r.triggerRepo.FindByEventType(ctx, event.EventType)
+	bindings, err := r.triggerRepo.FindByEventType(ctx, event.EventType, r.bindingLimit)
 	if err != nil {
 		routeErr = fmt.Errorf("find triggers: %w", err)
 		return 0, routeErr
@@ -103,6 +114,12 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 
 	created := 0
 
+	// TODO(v1.4): batch instance creation to reduce per-binding sequential DB round-trips.
+	// Currently each matched binding incurs ~3 sequential DB ops via createInstance
+	// (defRepo.GetByNameAndVersion, instanceRepo.Create, engine.CreateInitialExecution).
+	// Batching is deferred because CreateInitialExecution performs per-row schema
+	// validation and token generation that would require non-trivial engine refactoring.
+	// Under the 200-binding cap the sequential loop is acceptable (< 10s ack window).
 	for _, binding := range bindings {
 		matched, matchErr := evaluateTriggerFilter(binding.EventFilter, event.Payload)
 		if matchErr != nil {

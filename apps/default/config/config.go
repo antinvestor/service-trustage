@@ -75,6 +75,11 @@ type Config struct {
 	// Rate limiting (per tenant, per minute).
 	EventIngestRateLimit int `env:"EVENT_INGEST_RATE_LIMIT" envDefault:"100"`
 
+	// Event router binding fanout cap. A single event type with more matching
+	// bindings than this limit would lock the NATS handler (consumer_ack_wait=10s)
+	// and trigger redelivery storms. 200 is sized to match consumer_max_ack_pending.
+	EventRouterBindingLimit int `env:"EVENT_ROUTER_BINDING_LIMIT" envDefault:"200"`
+
 	// Data retention.
 	CleanupIntervalHours      int `env:"CLEANUP_INTERVAL_HOURS"        envDefault:"6"`
 	RetentionDays             int `env:"RETENTION_DAYS"                envDefault:"90"`

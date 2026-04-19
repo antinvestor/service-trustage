@@ -192,6 +192,7 @@ func (s *WorkerSuite) eventRouter() business.EventRouter {
 		s.auditRepo,
 		s.stateEngine(),
 		s.metrics,
+		business.DefaultEventRouterBindingLimit,
 	)
 }
 

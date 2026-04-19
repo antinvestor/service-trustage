@@ -164,6 +164,7 @@ func main() { //nolint:funlen // main function wiring
 		auditRepo,
 		engine,
 		metrics,
+		cfg.EventRouterBindingLimit,
 	)
 	workflowBiz := business.NewWorkflowBusiness(defRepo, scheduleRepo, schemaReg, metrics)
 
