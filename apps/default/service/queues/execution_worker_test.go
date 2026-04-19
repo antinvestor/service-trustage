@@ -115,6 +115,10 @@ func (s *stubEngine) ReconcileBranchScope(_ context.Context, _ string) error {
 	return nil
 }
 
+func (s *stubEngine) RevertDispatch(_ context.Context, _ string) error {
+	return nil
+}
+
 type stubDefRepo struct {
 	dsl string
 	err error

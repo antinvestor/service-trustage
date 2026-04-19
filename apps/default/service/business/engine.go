@@ -117,6 +117,10 @@ type StateEngine interface {
 		step *dsl.StepSpec,
 	) error
 	ReconcileBranchScope(ctx context.Context, scopeID string) error
+	// RevertDispatch resets an execution from 'dispatched' back to 'pending'.
+	// Called when the NATS publish step fails after Dispatch has already committed
+	// the status transition, so the dispatch scheduler picks it up on the next sweep.
+	RevertDispatch(ctx context.Context, executionID string) error
 }
 
 type stateEngine struct {
@@ -303,6 +307,18 @@ func (e *stateEngine) Dispatch(
 		ExecutionToken:  rawToken,
 		TraceID:         execution.TraceID,
 	}, nil
+}
+
+// RevertDispatch resets an execution from 'dispatched' back to 'pending'.
+// It clears started_at and execution_token so the dispatch scheduler treats the
+// execution as fresh on the next sweep. The operation is idempotent: if the
+// execution is already pending (e.g. concurrent revert), UpdateStatus will
+// still succeed because the WHERE clause matches on id only.
+func (e *stateEngine) RevertDispatch(ctx context.Context, executionID string) error {
+	return e.execRepo.UpdateStatus(ctx, executionID, models.ExecStatusPending, map[string]any{
+		"started_at":      nil,
+		"execution_token": "",
+	})
 }
 
 // Commit processes a worker's result: validates output, stores it, advances state, and creates the next execution.

@@ -28,6 +28,7 @@ import (
 	"github.com/pitabwire/frame/frametests"
 	"github.com/pitabwire/frame/frametests/definition"
 	"github.com/pitabwire/frame/frametests/deps/testpostgres"
+	"github.com/pitabwire/frame/queue"
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 	"github.com/stretchr/testify/require"
@@ -851,3 +852,80 @@ func TestPlanOne_MissedFireSkipsForward(t *testing.T) {
 }
 
 var _ = telemetry.NewMetrics()
+
+// failingQueueManager is a queue.Manager stub whose Publish always returns an error.
+type failingQueueManager struct {
+	err error
+}
+
+func (f *failingQueueManager) AddPublisher(_ context.Context, _ string, _ string) error { return nil }
+func (f *failingQueueManager) GetPublisher(_ string) (queue.Publisher, error)           { return nil, nil } //nolint:ireturn
+func (f *failingQueueManager) DiscardPublisher(_ context.Context, _ string) error       { return nil }
+func (f *failingQueueManager) AddSubscriber(_ context.Context, _ string, _ string, _ ...queue.SubscribeWorker) error {
+	return nil
+}
+func (f *failingQueueManager) DiscardSubscriber(_ context.Context, _ string) error { return nil }
+func (f *failingQueueManager) GetSubscriber(_ string) (queue.Subscriber, error)    { return nil, nil } //nolint:ireturn
+func (f *failingQueueManager) Publish(_ context.Context, _ string, _ any, _ ...map[string]string) error {
+	return f.err
+}
+func (f *failingQueueManager) Init(_ context.Context) error  { return nil }
+func (f *failingQueueManager) Close(_ context.Context) error { return nil }
+
+func (s *SchedulerSuite) seedPendingExecution(ctx context.Context) *models.WorkflowStateExecution {
+	def := s.createWorkflow(ctx, `{
+  "version": "1.0",
+  "name": "revert-dispatch-workflow",
+  "steps": [
+    {"id": "step_a", "type": "call", "call": {"action": "log.entry", "input": {}}}
+  ]
+}`)
+	instance := &models.WorkflowInstance{
+		WorkflowName:    def.Name,
+		WorkflowVersion: def.WorkflowVersion,
+		CurrentState:    "step_a",
+		Status:          models.InstanceStatusRunning,
+		Revision:        1,
+	}
+	s.Require().NoError(s.instanceRepo.Create(ctx, instance))
+
+	exec := &models.WorkflowStateExecution{
+		InstanceID:      instance.ID,
+		State:           "step_a",
+		Attempt:         1,
+		Status:          models.ExecStatusPending,
+		ExecutionToken:  "",
+		InputSchemaHash: "",
+		InputPayload:    "{}",
+	}
+	s.Require().NoError(s.execRepo.Create(ctx, exec))
+	return exec
+}
+
+func (s *SchedulerSuite) TestDispatchScheduler_RevertsOnPublishFailure() {
+	ctx := context.Background()
+	tenantCtx := s.tenantCtx()
+
+	exec := s.seedPendingExecution(tenantCtx)
+
+	failQueue := &failingQueueManager{err: fmt.Errorf("nats down")}
+	sched := NewDispatchScheduler(
+		s.execRepo,
+		s.stateEngine(),
+		failQueue,
+		&config.Config{
+			DispatchBatchSize:     10,
+			QueueExecDispatchName: "exec-dispatch",
+		},
+		telemetry.NewMetrics(),
+	)
+
+	count := sched.RunOnce(ctx)
+	s.Equal(0, count, "nothing should be counted as dispatched on publish failure")
+
+	got, err := s.execRepo.GetByID(ctx, exec.ID)
+	s.Require().NoError(err)
+	s.Equal(models.ExecStatusPending, got.Status, "publish failure must revert execution to pending")
+	s.Nil(got.StartedAt, "started_at must be cleared on revert")
+	s.Empty(got.ExecutionToken, "execution_token must be cleared on revert")
+}

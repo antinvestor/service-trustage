@@ -129,9 +129,16 @@ func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
 		// Publish full ExecutionCommand to NATS (includes raw token for worker commit).
 		publishErr := s.queueMgr.Publish(ctx, s.cfg.QueueExecDispatchName, cmd)
 		if publishErr != nil {
-			log.WithError(publishErr).Error("dispatch scheduler: publish failed",
+			log.WithError(publishErr).Warn("dispatch scheduler: publish failed; reverting execution to pending",
 				"execution_id", exec.ID,
 			)
+
+			if revertErr := s.engine.RevertDispatch(ctx, exec.ID); revertErr != nil {
+				log.WithError(revertErr).Error("dispatch scheduler: revert failed — execution stranded until timeout",
+					"execution_id", exec.ID,
+					"publish_err", publishErr.Error(),
+				)
+			}
 
 			continue
 		}
