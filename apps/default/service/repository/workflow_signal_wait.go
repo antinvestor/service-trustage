@@ -46,6 +46,9 @@ type WorkflowSignalWaitRepository interface {
 	MarkCompletedByOwner(ctx context.Context, id, owner, messageID string, matchedAt time.Time) error
 	MarkTimedOutByOwner(ctx context.Context, id, owner string, timedOutAt time.Time) error
 	ReleaseClaim(ctx context.Context, id, owner string) error
+	// DeleteCompletedBefore batch-deletes terminal signal waits (matched or
+	// timed_out) whose modified_at is older than cutoff. Returns rows deleted.
+	DeleteCompletedBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
 type workflowSignalWaitRepository struct {
@@ -249,4 +252,39 @@ func (r *workflowSignalWaitRepository) ReleaseClaim(ctx context.Context, id, own
 	}
 
 	return nil
+}
+
+// DeleteCompletedBefore batch-deletes terminal signal waits (matched or
+// timed_out) whose modified_at is older than cutoff. Returns rows deleted.
+func (r *workflowSignalWaitRepository) DeleteCompletedBefore(
+	ctx context.Context,
+	cutoff time.Time,
+	limit int,
+) (int64, error) {
+	db := r.pool.DB(ctx, false)
+	if limit <= 0 {
+		limit = 100
+	}
+
+	terminalStatuses := []string{"matched", "timed_out"}
+
+	var ids []string
+	selectResult := db.Model(&models.WorkflowSignalWait{}).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("status IN ? AND modified_at < ? AND deleted_at IS NULL", terminalStatuses, cutoff).
+		Limit(limit).
+		Pluck("id", &ids)
+	if selectResult.Error != nil {
+		return 0, fmt.Errorf("select terminal signal waits: %w", selectResult.Error)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	res := db.Where("id IN ? AND deleted_at IS NULL", ids).Delete(&models.WorkflowSignalWait{})
+	if res.Error != nil {
+		return 0, fmt.Errorf("delete terminal signal waits: %w", res.Error)
+	}
+
+	return res.RowsAffected, nil
 }

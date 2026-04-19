@@ -40,6 +40,9 @@ type WorkflowTimerRepository interface {
 	MarkFiredByOwner(ctx context.Context, id string, owner string, firedAt time.Time) error
 	ReleaseClaim(ctx context.Context, id string, owner string) error
 	GetByExecutionID(ctx context.Context, executionID string) (*models.WorkflowTimer, error)
+	// DeleteCompletedBefore batch-deletes fired timers whose fired_at is older
+	// than cutoff. Returns the number of rows deleted.
+	DeleteCompletedBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
 type workflowTimerRepository struct {
@@ -176,4 +179,37 @@ func (r *workflowTimerRepository) GetByExecutionID(
 	}
 
 	return &timer, nil
+}
+
+// DeleteCompletedBefore batch-deletes fired timers whose fired_at is older
+// than cutoff. Returns the number of rows deleted.
+func (r *workflowTimerRepository) DeleteCompletedBefore(
+	ctx context.Context,
+	cutoff time.Time,
+	limit int,
+) (int64, error) {
+	db := r.pool.DB(ctx, false)
+	if limit <= 0 {
+		limit = 100
+	}
+
+	var ids []string
+	selectResult := db.Model(&models.WorkflowTimer{}).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("fired_at IS NOT NULL AND fired_at < ? AND deleted_at IS NULL", cutoff).
+		Limit(limit).
+		Pluck("id", &ids)
+	if selectResult.Error != nil {
+		return 0, fmt.Errorf("select fired timers: %w", selectResult.Error)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	res := db.Where("id IN ? AND deleted_at IS NULL", ids).Delete(&models.WorkflowTimer{})
+	if res.Error != nil {
+		return 0, fmt.Errorf("delete fired timers: %w", res.Error)
+	}
+
+	return res.RowsAffected, nil
 }

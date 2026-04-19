@@ -268,7 +268,9 @@ func main() { //nolint:funlen // main function wiring
 	// Scheduler repositories use the dedicated pool.
 	schedulerScheduleRepo := repository.NewScheduleRepository(schedulerPool)
 
-	cleanupSched := schedulers.NewCleanupScheduler(eventLogRepo, auditRepo, &cfg)
+	cleanupSched := schedulers.NewCleanupScheduler(eventLogRepo, auditRepo, &cfg,
+		schedulers.WithWorkflowRowRepos(execRepo, timerRepo, signalWaitRepo),
+	)
 	cronSched := schedulers.NewCronScheduler(schedulerScheduleRepo, &cfg, metrics)
 
 	startScheduler("dispatch", dispatchSched.Start)

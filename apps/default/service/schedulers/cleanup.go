@@ -31,12 +31,15 @@ const (
 	cleanupBatch    = 1000
 )
 
-// CleanupScheduler purges old published events and audit events
-// to prevent unbounded table growth.
+// CleanupScheduler purges old published events, audit events, and terminal
+// workflow execution rows to prevent unbounded table growth.
 type CleanupScheduler struct {
-	eventRepo repository.EventLogRepository
-	auditRepo repository.AuditEventRepository
-	cfg       *config.Config
+	eventRepo  repository.EventLogRepository
+	auditRepo  repository.AuditEventRepository
+	execRepo   repository.WorkflowExecutionRepository
+	timerRepo  repository.WorkflowTimerRepository
+	signalRepo repository.WorkflowSignalWaitRepository
+	cfg        *config.Config
 }
 
 // NewCleanupScheduler creates a new CleanupScheduler.
@@ -44,11 +47,35 @@ func NewCleanupScheduler(
 	eventRepo repository.EventLogRepository,
 	auditRepo repository.AuditEventRepository,
 	cfg *config.Config,
+	opts ...CleanupSchedulerOption,
 ) *CleanupScheduler {
-	return &CleanupScheduler{
+	s := &CleanupScheduler{
 		eventRepo: eventRepo,
 		auditRepo: auditRepo,
 		cfg:       cfg,
+	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s
+}
+
+// CleanupSchedulerOption allows optional workflow-row repos to be wired in.
+type CleanupSchedulerOption func(*CleanupScheduler)
+
+// WithWorkflowRowRepos enables retention sweeps for terminal execution, timer,
+// and signal-wait rows. Pass all three repos together.
+func WithWorkflowRowRepos(
+	execRepo repository.WorkflowExecutionRepository,
+	timerRepo repository.WorkflowTimerRepository,
+	signalRepo repository.WorkflowSignalWaitRepository,
+) CleanupSchedulerOption {
+	return func(s *CleanupScheduler) {
+		s.execRepo = execRepo
+		s.timerRepo = timerRepo
+		s.signalRepo = signalRepo
 	}
 }
 
@@ -104,6 +131,38 @@ func (s *CleanupScheduler) RunOnce(ctx context.Context) int64 {
 		log.WithError(err).Error("cleanup scheduler: delete old audit events failed")
 	} else {
 		totalDeleted += auditDeleted
+	}
+
+	// Delete old terminal workflow rows when optional repos are wired in.
+	if s.execRepo != nil || s.timerRepo != nil || s.signalRepo != nil {
+		wfCutoff := time.Now().UTC().Add(-time.Duration(s.cfg.WorkflowRowRetentionHours) * time.Hour)
+
+		if s.execRepo != nil {
+			execDeleted, execErr := s.execRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
+			if execErr != nil {
+				log.WithError(execErr).Error("cleanup scheduler: delete completed executions failed")
+			} else {
+				totalDeleted += execDeleted
+			}
+		}
+
+		if s.timerRepo != nil {
+			timerDeleted, timerErr := s.timerRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
+			if timerErr != nil {
+				log.WithError(timerErr).Error("cleanup scheduler: delete fired timers failed")
+			} else {
+				totalDeleted += timerDeleted
+			}
+		}
+
+		if s.signalRepo != nil {
+			signalDeleted, signalErr := s.signalRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
+			if signalErr != nil {
+				log.WithError(signalErr).Error("cleanup scheduler: delete terminal signal waits failed")
+			} else {
+				totalDeleted += signalDeleted
+			}
+		}
 	}
 
 	span.SetAttributes(attribute.Int64("deleted_count", totalDeleted))
