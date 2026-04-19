@@ -91,6 +91,10 @@ func (a *HTTPAdapter) Execute( //nolint:funlen,gocognit // HTTP request building
 	ctx context.Context,
 	req *connector.ExecuteRequest,
 ) (*connector.ExecuteResponse, *connector.ExecutionError) {
+	// Apply per-adapter timeout so a slow target can't pin a worker goroutine.
+	ctx, cancel := withAdapterTimeout(ctx)
+	defer cancel()
+
 	rawURL, _ := req.Input["url"].(string)
 	method, _ := req.Input["method"].(string)
 

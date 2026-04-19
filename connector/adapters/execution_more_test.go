@@ -22,9 +22,85 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/antinvestor/service-trustage/connector"
 )
+
+func TestWithAdapterTimeout_BoundedByDefault(t *testing.T) {
+	t.Parallel()
+
+	// Verify withAdapterTimeout applies a deadline within defaultAdapterHTTPTimeout.
+	ctx, cancel := withAdapterTimeout(context.Background())
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected context to have a deadline after withAdapterTimeout")
+	}
+
+	remaining := time.Until(deadline)
+	if remaining <= 0 || remaining > defaultAdapterHTTPTimeout {
+		t.Fatalf("expected deadline within %v, got %v", defaultAdapterHTTPTimeout, remaining)
+	}
+}
+
+func TestWithAdapterTimeout_RespectsShortParentDeadline(t *testing.T) {
+	t.Parallel()
+
+	// A parent with a shorter deadline must not be extended.
+	short := 5 * time.Second
+	parent, parentCancel := context.WithTimeout(context.Background(), short)
+	defer parentCancel()
+
+	ctx, cancel := withAdapterTimeout(parent)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected context to have a deadline")
+	}
+
+	// The resulting deadline must be ≤ the parent deadline.
+	parentDeadline, _ := parent.Deadline()
+	if deadline.After(parentDeadline) {
+		t.Fatalf("child deadline %v is after parent deadline %v", deadline, parentDeadline)
+	}
+}
+
+func TestWebhookAdapter_TimeoutPropagated(t *testing.T) {
+	t.Parallel()
+
+	// The adapter must surface a context error when the server is too slow.
+	blocker := make(chan struct{})
+	defer close(blocker)
+
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		select {
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		case <-blocker:
+			return nil, errors.New("unreachable")
+		}
+	})}
+
+	// Give it a context that expires very quickly so the test runs fast.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, execErr := NewWebhookAdapter(client).Execute(ctx, &connector.ExecuteRequest{
+		Input: map[string]any{
+			"url":    "https://example.com/slow",
+			"method": http.MethodPost,
+		},
+	})
+	if execErr == nil {
+		t.Fatal("expected an error from a blocking server with a short context")
+	}
+	if execErr.Code != "HTTP_ERROR" {
+		t.Fatalf("expected HTTP_ERROR, got %s", execErr.Code)
+	}
+}
 
 func TestAdapters_DisplayNames(t *testing.T) {
 	t.Parallel()

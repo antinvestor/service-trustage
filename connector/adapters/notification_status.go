@@ -88,6 +88,10 @@ func (a *NotificationStatusAdapter) Execute(
 	ctx context.Context,
 	req *connector.ExecuteRequest,
 ) (*connector.ExecuteResponse, *connector.ExecutionError) {
+	// Apply per-adapter timeout so a slow target can't pin a worker goroutine.
+	ctx, cancel := withAdapterTimeout(ctx)
+	defer cancel()
+
 	apiURL, _ := req.Config["api_url"].(string)
 	if apiURL == "" {
 		return nil, &connector.ExecutionError{

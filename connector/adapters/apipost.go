@@ -21,9 +21,31 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/antinvestor/service-trustage/connector"
 )
+
+// defaultAdapterHTTPTimeout is the per-call outbound HTTP timeout applied by
+// every adapter. Workers that process up to 500 concurrent messages (NATS
+// consumer_max_ack_pending) must not be pinned indefinitely by a slow
+// third-party endpoint. The value is intentionally conservative; operators
+// can tune per-adapter timeouts in a future release.
+//
+// TODO(v1.4): expose per-adapter timeout via config.AdapterHTTPTimeoutSeconds
+// threaded through the registry constructor.
+const defaultAdapterHTTPTimeout = 30 * time.Second
+
+// withAdapterTimeout derives a child context bounded by defaultAdapterHTTPTimeout,
+// unless the parent context already has a shorter deadline.
+func withAdapterTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= defaultAdapterHTTPTimeout {
+		// Parent context is already tighter; don't extend.
+		return context.WithCancel(ctx)
+	}
+
+	return context.WithTimeout(ctx, defaultAdapterHTTPTimeout)
+}
 
 // executeAPIPost validates the URL, POSTs the payload, reads the response,
 // and returns the parsed JSON body. It is the shared execution path for all
@@ -74,6 +96,10 @@ func doAPIPost(
 	req *connector.ExecuteRequest,
 	payload map[string]any,
 ) ([]byte, *connector.ExecutionError) {
+	// Apply per-adapter timeout so a slow target can't pin a worker goroutine.
+	ctx, cancel := withAdapterTimeout(ctx)
+	defer cancel()
+
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, &connector.ExecutionError{
