@@ -14,7 +14,12 @@
 
 package config
 
-import "github.com/pitabwire/frame/config"
+import (
+	"net/url"
+	"strconv"
+
+	"github.com/pitabwire/frame/config"
+)
 
 // Config holds all configuration for the Orchestrator service.
 type Config struct {
@@ -88,13 +93,19 @@ type Config struct {
 	// Adapter HTTP timeout — used by connector adapters making outbound HTTP calls.
 	AdapterHTTPTimeoutSeconds int `env:"ADAPTER_HTTP_TIMEOUT_SECONDS" envDefault:"30"`
 
+	// NATS consumer back-pressure — caps the number of in-flight unacked messages
+	// per subscriber. Upper bound on goroutines a slow downstream can pin. Must
+	// be > 0 to take effect; zero leaves the baked-in URL value.
+	ExecWorkerMaxAckPending  int `env:"EXEC_WORKER_MAX_ACK_PENDING"  envDefault:"1000"`
+	EventRouterMaxAckPending int `env:"EVENT_ROUTER_MAX_ACK_PENDING" envDefault:"1000"`
+
 	// Queue: Execution Dispatch (publisher).
 	QueueExecDispatchName string `env:"QUEUE_EXEC_DISPATCH_NAME" envDefault:"exec-dispatch"`
 	QueueExecDispatchURL  string `env:"QUEUE_EXEC_DISPATCH_URL"  envDefault:"nats://localhost:4222?jetstream=true&stream_name=wf-executions&stream_subjects=wf.exec.%3E&stream_retention=limits&stream_max_age=24h&stream_storage=file&stream_num_replicas=1&subject=wf.exec.dispatch"`
 
 	// Queue: Execution Worker (subscriber).
 	QueueExecWorkerName string `env:"QUEUE_EXEC_WORKER_NAME" envDefault:"exec-worker"`
-	QueueExecWorkerURL  string `env:"QUEUE_EXEC_WORKER_URL"  envDefault:"nats://localhost:4222?jetstream=true&stream_name=wf-executions&stream_subjects=wf.exec.%3E&stream_retention=limits&stream_max_age=24h&stream_storage=file&stream_num_replicas=1&consumer_durable_name=exec-worker&consumer_ack_policy=explicit&consumer_max_deliver=3&consumer_ack_wait=30s&consumer_max_ack_pending=500&consumer_deliver_policy=all&subject=wf.exec.dispatch"`
+	QueueExecWorkerURL  string `env:"QUEUE_EXEC_WORKER_URL"  envDefault:"nats://localhost:4222?jetstream=true&stream_name=wf-executions&stream_subjects=wf.exec.%3E&stream_retention=limits&stream_max_age=24h&stream_storage=file&stream_num_replicas=1&consumer_durable_name=exec-worker&consumer_ack_policy=explicit&consumer_max_deliver=3&consumer_ack_wait=30s&consumer_max_ack_pending=1000&consumer_deliver_policy=all&subject=wf.exec.dispatch"`
 
 	// Queue: Event Ingest (publisher).
 	QueueEventIngestName string `env:"QUEUE_EVENT_INGEST_NAME" envDefault:"event-ingest"`
@@ -102,5 +113,33 @@ type Config struct {
 
 	// Queue: Event Router (subscriber).
 	QueueEventRouterName string `env:"QUEUE_EVENT_ROUTER_NAME" envDefault:"event-router"`
-	QueueEventRouterURL  string `env:"QUEUE_EVENT_ROUTER_URL"  envDefault:"nats://localhost:4222?jetstream=true&stream_name=wf-events&stream_subjects=wf.events.%3E&stream_retention=limits&stream_max_age=720h&stream_storage=file&stream_num_replicas=1&consumer_durable_name=event-router&consumer_ack_policy=explicit&consumer_max_deliver=3&consumer_ack_wait=10s&consumer_max_ack_pending=200&consumer_deliver_policy=all&subject=wf.events.%3E"`
+	QueueEventRouterURL  string `env:"QUEUE_EVENT_ROUTER_URL"  envDefault:"nats://localhost:4222?jetstream=true&stream_name=wf-events&stream_subjects=wf.events.%3E&stream_retention=limits&stream_max_age=720h&stream_storage=file&stream_num_replicas=1&consumer_durable_name=event-router&consumer_ack_policy=explicit&consumer_max_deliver=3&consumer_ack_wait=10s&consumer_max_ack_pending=1000&consumer_deliver_policy=all&subject=wf.events.%3E"`
+}
+
+// injectQueryParam replaces or adds a single query parameter on a URL string.
+// Returns the original string unchanged if parse fails (URL stays usable; the
+// default baked-in value applies).
+func injectQueryParam(raw, key string, value int) string {
+	if value <= 0 {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	q.Set(key, strconv.Itoa(value))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// ApplyQueueOverrides rewrites the consumer URLs with the configured
+// back-pressure values. Safe to call once after env loading.
+func (c *Config) ApplyQueueOverrides() {
+	c.QueueExecWorkerURL = injectQueryParam(
+		c.QueueExecWorkerURL, "consumer_max_ack_pending", c.ExecWorkerMaxAckPending,
+	)
+	c.QueueEventRouterURL = injectQueryParam(
+		c.QueueEventRouterURL, "consumer_max_ack_pending", c.EventRouterMaxAckPending,
+	)
 }

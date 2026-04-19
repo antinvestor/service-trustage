@@ -68,6 +68,8 @@ func main() { //nolint:funlen // main function wiring
 		cfg.ServiceName = "trustage-api"
 	}
 
+	cfg.ApplyQueueOverrides()
+
 	// Propagate our DATABASE_POOL_MAX_CONNS into Frame's built-in field so that
 	// WithDatastore picks it up via cfg.GetMaxOpenConnections().  Frame appends
 	// pool.WithMaxOpen(GetMaxOpenConnections()) after any caller-supplied options,
@@ -90,6 +92,11 @@ func main() { //nolint:funlen // main function wiring
 	log.Info("database pools configured",
 		"primary_max_conns", cfg.DatabasePoolMaxConns,
 		"scheduler_max_conns", cfg.SchedulerPoolMaxConns,
+	)
+
+	log.Info("nats consumer back-pressure configured",
+		"exec_worker_max_ack_pending", cfg.ExecWorkerMaxAckPending,
+		"event_router_max_ack_pending", cfg.EventRouterMaxAckPending,
 	)
 
 	// Database setup.
