@@ -54,7 +54,15 @@ var validDefinitionTransitions = map[WorkflowDefinitionStatus][]WorkflowDefiniti
 }
 
 // TransitionTo validates and performs a status transition.
+// Transitioning to the same state is a no-op (idempotent): if ActivateWorkflow's
+// second transaction fails after the first has already committed the workflow to
+// ACTIVE, a retry will call TransitionTo(ACTIVE) on an already-ACTIVE record.
+// Returning nil avoids a spurious error and lets the retry succeed cleanly.
 func (w *WorkflowDefinition) TransitionTo(newStatus WorkflowDefinitionStatus) error {
+	if w.Status == newStatus {
+		return nil // idempotent no-op
+	}
+
 	allowed := validDefinitionTransitions[w.Status]
 	for _, s := range allowed {
 		if s == newStatus {
