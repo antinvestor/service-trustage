@@ -435,7 +435,7 @@ func (s *RepositorySuite) TestAuxiliaryRepositories_EventAuditScheduleSchemaOutp
 		Active:          true,
 	}
 	s.Require().NoError(s.triggerRepo.Create(ctx, trigger))
-	bindings, err := s.triggerRepo.FindByEventType(ctx, "payment.requested")
+	bindings, err := s.triggerRepo.FindByEventType(ctx, "payment.requested", 200)
 	s.Require().NoError(err)
 	s.Len(bindings, 1)
 
