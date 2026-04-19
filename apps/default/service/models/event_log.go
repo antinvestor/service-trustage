@@ -15,10 +15,20 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/pitabwire/frame/data"
+	"gorm.io/gorm"
 )
+
+// MaxEventLogPayloadBytes is the hard upper bound on event_log.Payload size.
+// The 1 MiB limit matches the HTTP body cap applied upstream; enforcing it
+// again at the GORM layer is the last line of defence against oversized
+// payloads bypassing the HTTP gateway (e.g. internal callers or future
+// protocol additions). At 20-events-per-batch outbox cycles, a hostile
+// payload could push a 512 MiB pod toward its memory limit.
+const MaxEventLogPayloadBytes = 1 << 20 // 1 MiB
 
 // EventLog records events for outbox publishing.
 type EventLog struct {
@@ -38,4 +48,17 @@ type EventLog struct {
 // TableName returns the database table name.
 func (EventLog) TableName() string {
 	return "event_log"
+}
+
+// BeforeCreate rejects oversized payloads at the GORM layer before any INSERT
+// is attempted. Enforcement upstream via HTTP body limits is the primary guard;
+// this hook is the last line of defence for internal callers and future code
+// paths that bypass the HTTP gateway.
+func (e *EventLog) BeforeCreate(_ *gorm.DB) error {
+	if len(e.Payload) > MaxEventLogPayloadBytes {
+		return fmt.Errorf("event_log payload exceeds %d bytes (got %d): reduce payload size or split into multiple events",
+			MaxEventLogPayloadBytes, len(e.Payload))
+	}
+
+	return nil
 }
