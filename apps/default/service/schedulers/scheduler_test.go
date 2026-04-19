@@ -18,6 +18,7 @@ package schedulers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -853,19 +854,37 @@ func TestPlanOne_MissedFireSkipsForward(t *testing.T) {
 
 var _ = telemetry.NewMetrics()
 
+// errNotImplemented is a sentinel returned by stub methods that must not be called.
+var errNotImplemented = errors.New("not implemented")
+
 // failingQueueManager is a queue.Manager stub whose Publish always returns an error.
 type failingQueueManager struct {
 	err error
 }
 
-func (f *failingQueueManager) AddPublisher(_ context.Context, _ string, _ string) error { return nil }
-func (f *failingQueueManager) GetPublisher(_ string) (queue.Publisher, error)           { return nil, nil } //nolint:ireturn
-func (f *failingQueueManager) DiscardPublisher(_ context.Context, _ string) error       { return nil }
-func (f *failingQueueManager) AddSubscriber(_ context.Context, _ string, _ string, _ ...queue.SubscribeWorker) error {
+func (f *failingQueueManager) AddPublisher(_ context.Context, _ string, _ string) error {
 	return nil
 }
+
+//nolint:ireturn // stub returns nil interface
+func (f *failingQueueManager) GetPublisher(_ string) (queue.Publisher, error) {
+	return nil, errNotImplemented
+}
+
+func (f *failingQueueManager) DiscardPublisher(_ context.Context, _ string) error { return nil }
+
+func (f *failingQueueManager) AddSubscriber(
+	_ context.Context, _ string, _ string, _ ...queue.SubscribeWorker,
+) error {
+	return nil
+}
+
 func (f *failingQueueManager) DiscardSubscriber(_ context.Context, _ string) error { return nil }
-func (f *failingQueueManager) GetSubscriber(_ string) (queue.Subscriber, error)    { return nil, nil } //nolint:ireturn
+
+//nolint:ireturn // stub returns nil interface
+func (f *failingQueueManager) GetSubscriber(_ string) (queue.Subscriber, error) {
+	return nil, errNotImplemented
+}
 func (f *failingQueueManager) Publish(_ context.Context, _ string, _ any, _ ...map[string]string) error {
 	return f.err
 }
@@ -908,7 +927,7 @@ func (s *SchedulerSuite) TestDispatchScheduler_RevertsOnPublishFailure() {
 
 	exec := s.seedPendingExecution(tenantCtx)
 
-	failQueue := &failingQueueManager{err: fmt.Errorf("nats down")}
+	failQueue := &failingQueueManager{err: errors.New("nats down")}
 	sched := NewDispatchScheduler(
 		s.execRepo,
 		s.stateEngine(),

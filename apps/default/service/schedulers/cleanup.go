@@ -134,38 +134,52 @@ func (s *CleanupScheduler) RunOnce(ctx context.Context) int64 {
 	}
 
 	// Delete old terminal workflow rows when optional repos are wired in.
-	if s.execRepo != nil || s.timerRepo != nil || s.signalRepo != nil {
-		wfCutoff := time.Now().UTC().Add(-time.Duration(s.cfg.WorkflowRowRetentionHours) * time.Hour)
-
-		if s.execRepo != nil {
-			execDeleted, execErr := s.execRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
-			if execErr != nil {
-				log.WithError(execErr).Error("cleanup scheduler: delete completed executions failed")
-			} else {
-				totalDeleted += execDeleted
-			}
-		}
-
-		if s.timerRepo != nil {
-			timerDeleted, timerErr := s.timerRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
-			if timerErr != nil {
-				log.WithError(timerErr).Error("cleanup scheduler: delete fired timers failed")
-			} else {
-				totalDeleted += timerDeleted
-			}
-		}
-
-		if s.signalRepo != nil {
-			signalDeleted, signalErr := s.signalRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
-			if signalErr != nil {
-				log.WithError(signalErr).Error("cleanup scheduler: delete terminal signal waits failed")
-			} else {
-				totalDeleted += signalDeleted
-			}
-		}
-	}
+	totalDeleted += s.deleteWorkflowRows(ctx)
 
 	span.SetAttributes(attribute.Int64("deleted_count", totalDeleted))
 
 	return totalDeleted
+}
+
+// deleteWorkflowRows purges terminal execution, timer, and signal-wait rows
+// that are older than WorkflowRowRetentionHours. It is a no-op when the
+// optional repos were not wired in.
+func (s *CleanupScheduler) deleteWorkflowRows(ctx context.Context) int64 {
+	if s.execRepo == nil && s.timerRepo == nil && s.signalRepo == nil {
+		return 0
+	}
+
+	log := util.Log(ctx)
+	wfCutoff := time.Now().UTC().Add(-time.Duration(s.cfg.WorkflowRowRetentionHours) * time.Hour)
+
+	var deleted int64
+
+	if s.execRepo != nil {
+		n, err := s.execRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
+		if err != nil {
+			log.WithError(err).Error("cleanup scheduler: delete completed executions failed")
+		} else {
+			deleted += n
+		}
+	}
+
+	if s.timerRepo != nil {
+		n, err := s.timerRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
+		if err != nil {
+			log.WithError(err).Error("cleanup scheduler: delete fired timers failed")
+		} else {
+			deleted += n
+		}
+	}
+
+	if s.signalRepo != nil {
+		n, err := s.signalRepo.DeleteCompletedBefore(ctx, wfCutoff, cleanupBatch)
+		if err != nil {
+			log.WithError(err).Error("cleanup scheduler: delete terminal signal waits failed")
+		} else {
+			deleted += n
+		}
+	}
+
+	return deleted
 }

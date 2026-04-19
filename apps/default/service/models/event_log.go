@@ -46,7 +46,7 @@ type EventLog struct {
 }
 
 // TableName returns the database table name.
-func (EventLog) TableName() string {
+func (*EventLog) TableName() string {
 	return "event_log"
 }
 
@@ -56,8 +56,10 @@ func (EventLog) TableName() string {
 // paths that bypass the HTTP gateway.
 func (e *EventLog) BeforeCreate(_ *gorm.DB) error {
 	if len(e.Payload) > MaxEventLogPayloadBytes {
-		return fmt.Errorf("event_log payload exceeds %d bytes (got %d): reduce payload size or split into multiple events",
-			MaxEventLogPayloadBytes, len(e.Payload))
+		return fmt.Errorf(
+			"event_log payload exceeds %d bytes (got %d): reduce payload size or split into multiple events",
+			MaxEventLogPayloadBytes, len(e.Payload),
+		)
 	}
 
 	return nil

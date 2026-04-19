@@ -81,9 +81,9 @@ type Config struct {
 	EventRouterBindingLimit int `env:"EVENT_ROUTER_BINDING_LIMIT" envDefault:"200"`
 
 	// Data retention.
-	CleanupIntervalHours      int `env:"CLEANUP_INTERVAL_HOURS"        envDefault:"6"`
-	RetentionDays             int `env:"RETENTION_DAYS"                envDefault:"90"`
-	WorkflowRowRetentionHours int `env:"WORKFLOW_ROW_RETENTION_HOURS"  envDefault:"720"`
+	CleanupIntervalHours      int `env:"CLEANUP_INTERVAL_HOURS"       envDefault:"6"`
+	RetentionDays             int `env:"RETENTION_DAYS"               envDefault:"90"`
+	WorkflowRowRetentionHours int `env:"WORKFLOW_ROW_RETENTION_HOURS" envDefault:"720"`
 
 	// Adapter HTTP timeout — used by connector adapters making outbound HTTP calls.
 	AdapterHTTPTimeoutSeconds int `env:"ADAPTER_HTTP_TIMEOUT_SECONDS" envDefault:"30"`
