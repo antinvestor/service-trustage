@@ -21,6 +21,7 @@ import (
 
 	"github.com/pitabwire/frame/datastore"
 	"github.com/pitabwire/frame/datastore/pool"
+	"gorm.io/gorm/clause"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
@@ -69,6 +70,7 @@ func (r *auditEventRepository) DeleteBefore(
 
 	var ids []string
 	selectResult := db.Model(&models.WorkflowAuditEvent{}).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("created_at < ? AND deleted_at IS NULL", before).
 		Limit(limit).
 		Pluck("id", &ids)

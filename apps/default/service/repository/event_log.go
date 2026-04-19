@@ -282,6 +282,7 @@ func (r *eventLogRepository) DeletePublishedBefore(
 
 	var ids []string
 	selectResult := db.Model(&models.EventLog{}).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("published = ? AND published_at < ? AND deleted_at IS NULL", true, before).
 		Limit(limit).
 		Pluck("id", &ids)
