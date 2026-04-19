@@ -866,12 +866,15 @@ func (s *DefaultServiceSuite) TestWorkflowHandler_Activate_AlreadyActive() {
 	h.ActivateWorkflow(w, req)
 	s.Equal(http.StatusOK, w.Code)
 
+	// Second activate on an already-active workflow must be idempotent (200),
+	// not an error. If ActivateWorkflow's Tx2 fails after Tx1 has already moved
+	// the workflow to ACTIVE, the retry must succeed without manual intervention.
 	w2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/workflows/"+def.ID+"/activate", nil)
 	req2.SetPathValue("id", def.ID)
 	req2 = req2.WithContext(ctx)
 	h.ActivateWorkflow(w2, req2)
-	s.Equal(http.StatusBadRequest, w2.Code)
+	s.Equal(http.StatusOK, w2.Code)
 }
 
 func (s *DefaultServiceSuite) TestFormHandler_ErrorsAndIdempotency() {

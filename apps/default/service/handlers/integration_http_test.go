@@ -382,6 +382,9 @@ func (s *HandlerSuite) TestFormHandler_IdempotentAndWorkflowActivateInvalidTrans
 	s.Equal(http.StatusAccepted, secondW.Code)
 	s.Contains(secondW.Body.String(), `"idempotent":true`)
 
+	// Activating an already-active workflow is idempotent (200) following Fix 2.
+	// TransitionTo(ACTIVE→ACTIVE) is now a no-op; the handler must succeed so
+	// retries after a partial failure do not require manual recovery.
 	def := s.createWorkflow(ctx, s.sampleDSL())
 	s.Require().NoError(def.TransitionTo(models.WorkflowStatusActive))
 	s.Require().NoError(s.defRepo.Update(ctx, def))
@@ -391,5 +394,5 @@ func (s *HandlerSuite) TestFormHandler_IdempotentAndWorkflowActivateInvalidTrans
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	workflowHandler.ActivateWorkflow(w, req)
-	s.Equal(http.StatusBadRequest, w.Code)
+	s.Equal(http.StatusOK, w.Code)
 }
