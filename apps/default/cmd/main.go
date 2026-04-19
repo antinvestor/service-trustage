@@ -68,6 +68,12 @@ func main() { //nolint:funlen // main function wiring
 		cfg.ServiceName = "trustage-api"
 	}
 
+	// Propagate our DATABASE_POOL_MAX_CONNS into Frame's built-in field so that
+	// WithDatastore picks it up via cfg.GetMaxOpenConnections().  Frame appends
+	// pool.WithMaxOpen(GetMaxOpenConnections()) after any caller-supplied options,
+	// so setting the embedded field is the correct override path.
+	cfg.DatabaseMaxOpenConnections = cfg.DatabasePoolMaxConns
+
 	ctx, svc := frame.NewServiceWithContext(
 		ctx,
 		frame.WithName(cfg.Name()),
@@ -80,6 +86,11 @@ func main() { //nolint:funlen // main function wiring
 	defer svc.Stop(ctx)
 
 	log := svc.Log(ctx)
+
+	log.Info("database pools configured",
+		"primary_max_conns", cfg.DatabasePoolMaxConns,
+		"scheduler_max_conns", cfg.SchedulerPoolMaxConns,
+	)
 
 	// Database setup.
 	dbManager := svc.DatastoreManager()
