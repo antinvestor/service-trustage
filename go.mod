@@ -14,7 +14,7 @@ require (
 	github.com/google/cel-go v0.28.0
 	github.com/lib/pq v1.12.3
 	github.com/openai/openai-go/v3 v3.31.0
-	github.com/pitabwire/frame v1.94.4
+	github.com/pitabwire/frame v1.94.6
 	github.com/pitabwire/util v0.8.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
@@ -76,7 +76,7 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
 	github.com/moby/moby/api v1.54.2 // indirect
-	github.com/moby/moby/client v0.4.0 // indirect
+	github.com/moby/moby/client v0.4.1 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
