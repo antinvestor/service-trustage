@@ -21,6 +21,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/antinvestor/common/permissions"
+	"github.com/antinvestor/common/timescale"
 	"github.com/pitabwire/frame"
 	"github.com/pitabwire/frame/config"
 	"github.com/pitabwire/frame/datastore"
@@ -36,6 +37,7 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	appcache "github.com/antinvestor/service-trustage/apps/default/service/cache"
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
+	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/queues"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/apps/default/service/schedulers"
@@ -115,6 +117,9 @@ func main() { //nolint:funlen // main function wiring
 	}
 
 	dbPool := dbManager.GetPool(ctx, datastore.DefaultPoolName)
+
+	// Register hypertables (no-op WARN if timescaledb extension is absent).
+	ensureHypertables(ctx, log, dbPool)
 
 	// Repositories.
 	defRepo := repository.NewWorkflowDefinitionRepository(dbPool)
@@ -447,6 +452,15 @@ func main() { //nolint:funlen // main function wiring
 	schedulerCancel()
 	schedulerWg.Wait()
 	log.Debug("all schedulers stopped")
+}
+
+// ensureHypertables registers TimescaleDB hypertables idempotently.
+// Errors are logged as warnings so the service continues when TimescaleDB
+// is not yet available.
+func ensureHypertables(ctx context.Context, log *util.LogEntry, dbPool pool.Pool) {
+	if tsErr := timescale.Ensure(ctx, dbPool.DB(ctx, false), models.Hypertables()); tsErr != nil {
+		log.WithError(tsErr).Warn("timescale hypertable setup skipped — will retry after cluster migration")
+	}
 }
 
 func setupConnectorRegistry(httpClient *http.Client) *connector.Registry {
