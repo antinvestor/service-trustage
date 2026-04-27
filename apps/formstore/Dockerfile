@@ -2,7 +2,9 @@ ARG TARGETOS
 ARG TARGETARCH
 
 # ---------- Builder ----------
-FROM golang:1.26 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
