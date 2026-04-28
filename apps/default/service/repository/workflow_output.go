@@ -77,8 +77,10 @@ func (r *workflowOutputRepository) GetByInstanceAndState(
 
 	var output models.WorkflowStateOutput
 
+	// Tie-break by id DESC: BaseModel CreatedAt is xid-derived
+	// (second-resolution), so same-second outputs sort deterministically.
 	result := db.Where("instance_id = ? AND state = ? AND deleted_at IS NULL", instanceID, state).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		First(&output)
 
 	if result.Error != nil {

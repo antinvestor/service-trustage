@@ -181,8 +181,12 @@ func (r *workflowExecutionRepository) GetLatestByInstance(
 	db := r.BaseRepository.Pool().DB(ctx, true)
 
 	var exec models.WorkflowStateExecution
+	// Order by id DESC as well: BaseModel.CreatedAt is derived from the
+	// xid timestamp (second-resolution), so multiple executions created
+	// in the same second tie. Tie-breaking by id (also xid-derived, with
+	// a monotonic counter) gives a deterministic "latest".
 	result := db.Where("instance_id = ? AND deleted_at IS NULL", instanceID).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		First(&exec)
 	if result.Error != nil {
 		return nil, fmt.Errorf("get latest execution: %w", result.Error)
