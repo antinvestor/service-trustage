@@ -13,9 +13,9 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-import '../common/v1/common.pbjson.dart' as $8;
-import '../google/protobuf/struct.pbjson.dart' as $2;
-import '../google/protobuf/timestamp.pbjson.dart' as $3;
+import '../common/v1/common.pbjson.dart' as $7;
+import '../google/protobuf/struct.pbjson.dart' as $6;
+import '../google/protobuf/timestamp.pbjson.dart' as $2;
 
 @$core.Deprecated('Use instanceStatusDescriptor instead')
 const InstanceStatus$json = {
@@ -532,15 +532,15 @@ const $core.Map<$core.String, $core.dynamic> RuntimeServiceBase$json = {
 @$core.Deprecated('Use runtimeServiceDescriptor instead')
 const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> RuntimeServiceBase$messageJson = {
   '.runtime.v1.ListInstancesRequest': ListInstancesRequest$json,
-  '.common.v1.SearchRequest': $8.SearchRequest$json,
-  '.common.v1.PageCursor': $8.PageCursor$json,
-  '.google.protobuf.Struct': $2.Struct$json,
-  '.google.protobuf.Struct.FieldsEntry': $2.Struct_FieldsEntry$json,
-  '.google.protobuf.Value': $2.Value$json,
-  '.google.protobuf.ListValue': $2.ListValue$json,
+  '.common.v1.SearchRequest': $7.SearchRequest$json,
+  '.common.v1.PageCursor': $7.PageCursor$json,
+  '.google.protobuf.Struct': $6.Struct$json,
+  '.google.protobuf.Struct.FieldsEntry': $6.Struct_FieldsEntry$json,
+  '.google.protobuf.Value': $6.Value$json,
+  '.google.protobuf.ListValue': $6.ListValue$json,
   '.runtime.v1.ListInstancesResponse': ListInstancesResponse$json,
   '.runtime.v1.WorkflowInstance': WorkflowInstance$json,
-  '.google.protobuf.Timestamp': $3.Timestamp$json,
+  '.google.protobuf.Timestamp': $2.Timestamp$json,
   '.runtime.v1.RetryInstanceRequest': RetryInstanceRequest$json,
   '.runtime.v1.RetryInstanceResponse': RetryInstanceResponse$json,
   '.runtime.v1.WorkflowExecution': WorkflowExecution$json,

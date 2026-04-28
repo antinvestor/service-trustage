@@ -14,7 +14,7 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import '../../../google/protobuf/any.pb.dart' as $0;
+import '../../../google/protobuf/any.pb.dart' as $4;
 
 enum AdditionalPropertiesItem_Oneof {
   schemaOrReference, 
@@ -99,7 +99,7 @@ class AdditionalPropertiesItem extends $pb.GeneratedMessage {
 
 class Any extends $pb.GeneratedMessage {
   factory Any({
-    $0.Any? value,
+    $4.Any? value,
     $core.String? yaml,
   }) {
     final $result = create();
@@ -116,7 +116,7 @@ class Any extends $pb.GeneratedMessage {
   factory Any.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Any', package: const $pb.PackageName(_omitMessageNames ? '' : 'gnostic.openapi.v3'), createEmptyInstance: create)
-    ..aOM<$0.Any>(1, _omitFieldNames ? '' : 'value', subBuilder: $0.Any.create)
+    ..aOM<$4.Any>(1, _omitFieldNames ? '' : 'value', subBuilder: $4.Any.create)
     ..aOS(2, _omitFieldNames ? '' : 'yaml')
     ..hasRequiredFields = false
   ;
@@ -143,15 +143,15 @@ class Any extends $pb.GeneratedMessage {
   static Any? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $0.Any get value => $_getN(0);
+  $4.Any get value => $_getN(0);
   @$pb.TagNumber(1)
-  set value($0.Any v) { setField(1, v); }
+  set value($4.Any v) { setField(1, v); }
   @$pb.TagNumber(1)
   $core.bool hasValue() => $_has(0);
   @$pb.TagNumber(1)
   void clearValue() => clearField(1);
   @$pb.TagNumber(1)
-  $0.Any ensureValue() => $_ensure(0);
+  $4.Any ensureValue() => $_ensure(0);
 
   @$pb.TagNumber(2)
   $core.String get yaml => $_getSZ(1);

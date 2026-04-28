@@ -15,24 +15,24 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'signal.pb.dart' as $10;
+import 'signal.pb.dart' as $3;
 import 'signal.pbjson.dart';
 
 export 'signal.pb.dart';
 
 abstract class SignalServiceBase extends $pb.GeneratedService {
-  $async.Future<$10.SendSignalResponse> sendSignal($pb.ServerContext ctx, $10.SendSignalRequest request);
+  $async.Future<$3.SendSignalResponse> sendSignal($pb.ServerContext ctx, $3.SendSignalRequest request);
 
   $pb.GeneratedMessage createRequest($core.String methodName) {
     switch (methodName) {
-      case 'SendSignal': return $10.SendSignalRequest();
+      case 'SendSignal': return $3.SendSignalRequest();
       default: throw $core.ArgumentError('Unknown method: $methodName');
     }
   }
 
   $async.Future<$pb.GeneratedMessage> handleCall($pb.ServerContext ctx, $core.String methodName, $pb.GeneratedMessage request) {
     switch (methodName) {
-      case 'SendSignal': return this.sendSignal(ctx, request as $10.SendSignalRequest);
+      case 'SendSignal': return this.sendSignal(ctx, request as $3.SendSignalRequest);
       default: throw $core.ArgumentError('Unknown method: $methodName');
     }
   }

@@ -13,9 +13,9 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-import '../common/v1/common.pbjson.dart' as $8;
-import '../google/protobuf/struct.pbjson.dart' as $2;
-import '../google/protobuf/timestamp.pbjson.dart' as $3;
+import '../common/v1/common.pbjson.dart' as $7;
+import '../google/protobuf/struct.pbjson.dart' as $6;
+import '../google/protobuf/timestamp.pbjson.dart' as $2;
 
 @$core.Deprecated('Use workflowStatusDescriptor instead')
 const WorkflowStatus$json = {
@@ -241,19 +241,19 @@ const $core.Map<$core.String, $core.dynamic> WorkflowServiceBase$json = {
 @$core.Deprecated('Use workflowServiceDescriptor instead')
 const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> WorkflowServiceBase$messageJson = {
   '.workflow.v1.CreateWorkflowRequest': CreateWorkflowRequest$json,
-  '.google.protobuf.Struct': $2.Struct$json,
-  '.google.protobuf.Struct.FieldsEntry': $2.Struct_FieldsEntry$json,
-  '.google.protobuf.Value': $2.Value$json,
-  '.google.protobuf.ListValue': $2.ListValue$json,
+  '.google.protobuf.Struct': $6.Struct$json,
+  '.google.protobuf.Struct.FieldsEntry': $6.Struct_FieldsEntry$json,
+  '.google.protobuf.Value': $6.Value$json,
+  '.google.protobuf.ListValue': $6.ListValue$json,
   '.workflow.v1.CreateWorkflowResponse': CreateWorkflowResponse$json,
   '.workflow.v1.WorkflowDefinition': WorkflowDefinition$json,
-  '.google.protobuf.Timestamp': $3.Timestamp$json,
+  '.google.protobuf.Timestamp': $2.Timestamp$json,
   '.workflow.v1.GetWorkflowRequest': GetWorkflowRequest$json,
   '.workflow.v1.GetWorkflowResponse': GetWorkflowResponse$json,
   '.workflow.v1.ScheduleDefinition': ScheduleDefinition$json,
   '.workflow.v1.ListWorkflowsRequest': ListWorkflowsRequest$json,
-  '.common.v1.SearchRequest': $8.SearchRequest$json,
-  '.common.v1.PageCursor': $8.PageCursor$json,
+  '.common.v1.SearchRequest': $7.SearchRequest$json,
+  '.common.v1.PageCursor': $7.PageCursor$json,
   '.workflow.v1.ListWorkflowsResponse': ListWorkflowsResponse$json,
   '.workflow.v1.ActivateWorkflowRequest': ActivateWorkflowRequest$json,
   '.workflow.v1.ActivateWorkflowResponse': ActivateWorkflowResponse$json,

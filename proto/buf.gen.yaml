@@ -3,7 +3,7 @@ managed:
   enabled: true
 
 plugins:
-  # OpenAPI spec generation
+  # OpenAPI spec generation (per-module via paths=source_relative)
   - remote: buf.build/community/sudorandom-connect-openapi
     out: ../apps/default
     opt:
@@ -11,43 +11,5 @@ plugins:
       - content-types=json
       - allow-get
 
-  # Dart protobuf generation - one output per module
-  - remote: buf.build/protocolbuffers/dart:v21.1.2
-    out: ../sdk/dart/event/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/connectrpc/dart
-    out: ../sdk/dart/event/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/protocolbuffers/dart:v21.1.2
-    out: ../sdk/dart/runtime/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/connectrpc/dart
-    out: ../sdk/dart/runtime/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/protocolbuffers/dart:v21.1.2
-    out: ../sdk/dart/signal/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/connectrpc/dart
-    out: ../sdk/dart/signal/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/protocolbuffers/dart:v21.1.2
-    out: ../sdk/dart/workflow/lib/src
-    include_imports: true
-    include_wkt: true
-
-  - remote: buf.build/connectrpc/dart
-    out: ../sdk/dart/workflow/lib/src
-    include_imports: true
-    include_wkt: true
+# Dart codegen lives in per-module buf.gen.dart.<module>.yaml so each
+# dart package contains only its own module's protos.

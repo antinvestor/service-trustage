@@ -15,9 +15,9 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import '../common/v1/common.pb.dart' as $8;
-import '../google/protobuf/struct.pb.dart' as $2;
-import '../google/protobuf/timestamp.pb.dart' as $3;
+import '../common/v1/common.pb.dart' as $7;
+import '../google/protobuf/struct.pb.dart' as $6;
+import '../google/protobuf/timestamp.pb.dart' as $2;
 import 'workflow.pbenum.dart';
 
 export 'workflow.pbenum.dart';
@@ -28,11 +28,11 @@ class WorkflowDefinition extends $pb.GeneratedMessage {
     $core.String? name,
     $core.int? version,
     WorkflowStatus? status,
-    $2.Struct? dsl,
+    $6.Struct? dsl,
     $core.String? inputSchemaHash,
     $fixnum.Int64? timeoutSeconds,
-    $3.Timestamp? createdAt,
-    $3.Timestamp? updatedAt,
+    $2.Timestamp? createdAt,
+    $2.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -73,11 +73,11 @@ class WorkflowDefinition extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..a<$core.int>(3, _omitFieldNames ? '' : 'version', $pb.PbFieldType.O3)
     ..e<WorkflowStatus>(4, _omitFieldNames ? '' : 'status', $pb.PbFieldType.OE, defaultOrMaker: WorkflowStatus.WORKFLOW_STATUS_UNSPECIFIED, valueOf: WorkflowStatus.valueOf, enumValues: WorkflowStatus.values)
-    ..aOM<$2.Struct>(5, _omitFieldNames ? '' : 'dsl', subBuilder: $2.Struct.create)
+    ..aOM<$6.Struct>(5, _omitFieldNames ? '' : 'dsl', subBuilder: $6.Struct.create)
     ..aOS(6, _omitFieldNames ? '' : 'inputSchemaHash')
     ..aInt64(7, _omitFieldNames ? '' : 'timeoutSeconds')
-    ..aOM<$3.Timestamp>(8, _omitFieldNames ? '' : 'createdAt', subBuilder: $3.Timestamp.create)
-    ..aOM<$3.Timestamp>(9, _omitFieldNames ? '' : 'updatedAt', subBuilder: $3.Timestamp.create)
+    ..aOM<$2.Timestamp>(8, _omitFieldNames ? '' : 'createdAt', subBuilder: $2.Timestamp.create)
+    ..aOM<$2.Timestamp>(9, _omitFieldNames ? '' : 'updatedAt', subBuilder: $2.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -139,15 +139,15 @@ class WorkflowDefinition extends $pb.GeneratedMessage {
   void clearStatus() => clearField(4);
 
   @$pb.TagNumber(5)
-  $2.Struct get dsl => $_getN(4);
+  $6.Struct get dsl => $_getN(4);
   @$pb.TagNumber(5)
-  set dsl($2.Struct v) { setField(5, v); }
+  set dsl($6.Struct v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasDsl() => $_has(4);
   @$pb.TagNumber(5)
   void clearDsl() => clearField(5);
   @$pb.TagNumber(5)
-  $2.Struct ensureDsl() => $_ensure(4);
+  $6.Struct ensureDsl() => $_ensure(4);
 
   @$pb.TagNumber(6)
   $core.String get inputSchemaHash => $_getSZ(5);
@@ -168,31 +168,31 @@ class WorkflowDefinition extends $pb.GeneratedMessage {
   void clearTimeoutSeconds() => clearField(7);
 
   @$pb.TagNumber(8)
-  $3.Timestamp get createdAt => $_getN(7);
+  $2.Timestamp get createdAt => $_getN(7);
   @$pb.TagNumber(8)
-  set createdAt($3.Timestamp v) { setField(8, v); }
+  set createdAt($2.Timestamp v) { setField(8, v); }
   @$pb.TagNumber(8)
   $core.bool hasCreatedAt() => $_has(7);
   @$pb.TagNumber(8)
   void clearCreatedAt() => clearField(8);
   @$pb.TagNumber(8)
-  $3.Timestamp ensureCreatedAt() => $_ensure(7);
+  $2.Timestamp ensureCreatedAt() => $_ensure(7);
 
   @$pb.TagNumber(9)
-  $3.Timestamp get updatedAt => $_getN(8);
+  $2.Timestamp get updatedAt => $_getN(8);
   @$pb.TagNumber(9)
-  set updatedAt($3.Timestamp v) { setField(9, v); }
+  set updatedAt($2.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasUpdatedAt() => $_has(8);
   @$pb.TagNumber(9)
   void clearUpdatedAt() => clearField(9);
   @$pb.TagNumber(9)
-  $3.Timestamp ensureUpdatedAt() => $_ensure(8);
+  $2.Timestamp ensureUpdatedAt() => $_ensure(8);
 }
 
 class CreateWorkflowRequest extends $pb.GeneratedMessage {
   factory CreateWorkflowRequest({
-    $2.Struct? dsl,
+    $6.Struct? dsl,
   }) {
     final $result = create();
     if (dsl != null) {
@@ -205,7 +205,7 @@ class CreateWorkflowRequest extends $pb.GeneratedMessage {
   factory CreateWorkflowRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'CreateWorkflowRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'workflow.v1'), createEmptyInstance: create)
-    ..aOM<$2.Struct>(1, _omitFieldNames ? '' : 'dsl', subBuilder: $2.Struct.create)
+    ..aOM<$6.Struct>(1, _omitFieldNames ? '' : 'dsl', subBuilder: $6.Struct.create)
     ..hasRequiredFields = false
   ;
 
@@ -231,15 +231,15 @@ class CreateWorkflowRequest extends $pb.GeneratedMessage {
   static CreateWorkflowRequest? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $2.Struct get dsl => $_getN(0);
+  $6.Struct get dsl => $_getN(0);
   @$pb.TagNumber(1)
-  set dsl($2.Struct v) { setField(1, v); }
+  set dsl($6.Struct v) { setField(1, v); }
   @$pb.TagNumber(1)
   $core.bool hasDsl() => $_has(0);
   @$pb.TagNumber(1)
   void clearDsl() => clearField(1);
   @$pb.TagNumber(1)
-  $2.Struct ensureDsl() => $_ensure(0);
+  $6.Struct ensureDsl() => $_ensure(0);
 }
 
 class CreateWorkflowResponse extends $pb.GeneratedMessage {
@@ -302,11 +302,11 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
     $core.String? workflowName,
     $core.int? workflowVersion,
     $core.bool? active,
-    $3.Timestamp? nextFireAt,
-    $3.Timestamp? lastFiredAt,
+    $2.Timestamp? nextFireAt,
+    $2.Timestamp? lastFiredAt,
     $core.int? jitterSeconds,
-    $3.Timestamp? createdAt,
-    $3.Timestamp? updatedAt,
+    $2.Timestamp? createdAt,
+    $2.Timestamp? updatedAt,
     $core.String? timezone,
   }) {
     final $result = create();
@@ -359,11 +359,11 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
     ..aOS(4, _omitFieldNames ? '' : 'workflowName')
     ..a<$core.int>(5, _omitFieldNames ? '' : 'workflowVersion', $pb.PbFieldType.O3)
     ..aOB(6, _omitFieldNames ? '' : 'active')
-    ..aOM<$3.Timestamp>(7, _omitFieldNames ? '' : 'nextFireAt', subBuilder: $3.Timestamp.create)
-    ..aOM<$3.Timestamp>(8, _omitFieldNames ? '' : 'lastFiredAt', subBuilder: $3.Timestamp.create)
+    ..aOM<$2.Timestamp>(7, _omitFieldNames ? '' : 'nextFireAt', subBuilder: $2.Timestamp.create)
+    ..aOM<$2.Timestamp>(8, _omitFieldNames ? '' : 'lastFiredAt', subBuilder: $2.Timestamp.create)
     ..a<$core.int>(9, _omitFieldNames ? '' : 'jitterSeconds', $pb.PbFieldType.O3)
-    ..aOM<$3.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $3.Timestamp.create)
-    ..aOM<$3.Timestamp>(11, _omitFieldNames ? '' : 'updatedAt', subBuilder: $3.Timestamp.create)
+    ..aOM<$2.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $2.Timestamp.create)
+    ..aOM<$2.Timestamp>(11, _omitFieldNames ? '' : 'updatedAt', subBuilder: $2.Timestamp.create)
     ..aOS(12, _omitFieldNames ? '' : 'timezone')
     ..hasRequiredFields = false
   ;
@@ -444,26 +444,26 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
   void clearActive() => clearField(6);
 
   @$pb.TagNumber(7)
-  $3.Timestamp get nextFireAt => $_getN(6);
+  $2.Timestamp get nextFireAt => $_getN(6);
   @$pb.TagNumber(7)
-  set nextFireAt($3.Timestamp v) { setField(7, v); }
+  set nextFireAt($2.Timestamp v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasNextFireAt() => $_has(6);
   @$pb.TagNumber(7)
   void clearNextFireAt() => clearField(7);
   @$pb.TagNumber(7)
-  $3.Timestamp ensureNextFireAt() => $_ensure(6);
+  $2.Timestamp ensureNextFireAt() => $_ensure(6);
 
   @$pb.TagNumber(8)
-  $3.Timestamp get lastFiredAt => $_getN(7);
+  $2.Timestamp get lastFiredAt => $_getN(7);
   @$pb.TagNumber(8)
-  set lastFiredAt($3.Timestamp v) { setField(8, v); }
+  set lastFiredAt($2.Timestamp v) { setField(8, v); }
   @$pb.TagNumber(8)
   $core.bool hasLastFiredAt() => $_has(7);
   @$pb.TagNumber(8)
   void clearLastFiredAt() => clearField(8);
   @$pb.TagNumber(8)
-  $3.Timestamp ensureLastFiredAt() => $_ensure(7);
+  $2.Timestamp ensureLastFiredAt() => $_ensure(7);
 
   @$pb.TagNumber(9)
   $core.int get jitterSeconds => $_getIZ(8);
@@ -475,26 +475,26 @@ class ScheduleDefinition extends $pb.GeneratedMessage {
   void clearJitterSeconds() => clearField(9);
 
   @$pb.TagNumber(10)
-  $3.Timestamp get createdAt => $_getN(9);
+  $2.Timestamp get createdAt => $_getN(9);
   @$pb.TagNumber(10)
-  set createdAt($3.Timestamp v) { setField(10, v); }
+  set createdAt($2.Timestamp v) { setField(10, v); }
   @$pb.TagNumber(10)
   $core.bool hasCreatedAt() => $_has(9);
   @$pb.TagNumber(10)
   void clearCreatedAt() => clearField(10);
   @$pb.TagNumber(10)
-  $3.Timestamp ensureCreatedAt() => $_ensure(9);
+  $2.Timestamp ensureCreatedAt() => $_ensure(9);
 
   @$pb.TagNumber(11)
-  $3.Timestamp get updatedAt => $_getN(10);
+  $2.Timestamp get updatedAt => $_getN(10);
   @$pb.TagNumber(11)
-  set updatedAt($3.Timestamp v) { setField(11, v); }
+  set updatedAt($2.Timestamp v) { setField(11, v); }
   @$pb.TagNumber(11)
   $core.bool hasUpdatedAt() => $_has(10);
   @$pb.TagNumber(11)
   void clearUpdatedAt() => clearField(11);
   @$pb.TagNumber(11)
-  $3.Timestamp ensureUpdatedAt() => $_ensure(10);
+  $2.Timestamp ensureUpdatedAt() => $_ensure(10);
 
   @$pb.TagNumber(12)
   $core.String get timezone => $_getSZ(11);
@@ -620,7 +620,7 @@ class ListWorkflowsRequest extends $pb.GeneratedMessage {
   factory ListWorkflowsRequest({
     $core.String? name,
     WorkflowStatus? status,
-    $8.SearchRequest? search,
+    $7.SearchRequest? search,
   }) {
     final $result = create();
     if (name != null) {
@@ -641,7 +641,7 @@ class ListWorkflowsRequest extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListWorkflowsRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'workflow.v1'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'name')
     ..e<WorkflowStatus>(2, _omitFieldNames ? '' : 'status', $pb.PbFieldType.OE, defaultOrMaker: WorkflowStatus.WORKFLOW_STATUS_UNSPECIFIED, valueOf: WorkflowStatus.valueOf, enumValues: WorkflowStatus.values)
-    ..aOM<$8.SearchRequest>(3, _omitFieldNames ? '' : 'search', subBuilder: $8.SearchRequest.create)
+    ..aOM<$7.SearchRequest>(3, _omitFieldNames ? '' : 'search', subBuilder: $7.SearchRequest.create)
     ..hasRequiredFields = false
   ;
 
@@ -685,21 +685,21 @@ class ListWorkflowsRequest extends $pb.GeneratedMessage {
   void clearStatus() => clearField(2);
 
   @$pb.TagNumber(3)
-  $8.SearchRequest get search => $_getN(2);
+  $7.SearchRequest get search => $_getN(2);
   @$pb.TagNumber(3)
-  set search($8.SearchRequest v) { setField(3, v); }
+  set search($7.SearchRequest v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasSearch() => $_has(2);
   @$pb.TagNumber(3)
   void clearSearch() => clearField(3);
   @$pb.TagNumber(3)
-  $8.SearchRequest ensureSearch() => $_ensure(2);
+  $7.SearchRequest ensureSearch() => $_ensure(2);
 }
 
 class ListWorkflowsResponse extends $pb.GeneratedMessage {
   factory ListWorkflowsResponse({
     $core.Iterable<WorkflowDefinition>? items,
-    $8.PageCursor? nextCursor,
+    $7.PageCursor? nextCursor,
   }) {
     final $result = create();
     if (items != null) {
@@ -716,7 +716,7 @@ class ListWorkflowsResponse extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ListWorkflowsResponse', package: const $pb.PackageName(_omitMessageNames ? '' : 'workflow.v1'), createEmptyInstance: create)
     ..pc<WorkflowDefinition>(1, _omitFieldNames ? '' : 'items', $pb.PbFieldType.PM, subBuilder: WorkflowDefinition.create)
-    ..aOM<$8.PageCursor>(2, _omitFieldNames ? '' : 'nextCursor', subBuilder: $8.PageCursor.create)
+    ..aOM<$7.PageCursor>(2, _omitFieldNames ? '' : 'nextCursor', subBuilder: $7.PageCursor.create)
     ..hasRequiredFields = false
   ;
 
@@ -745,15 +745,15 @@ class ListWorkflowsResponse extends $pb.GeneratedMessage {
   $core.List<WorkflowDefinition> get items => $_getList(0);
 
   @$pb.TagNumber(2)
-  $8.PageCursor get nextCursor => $_getN(1);
+  $7.PageCursor get nextCursor => $_getN(1);
   @$pb.TagNumber(2)
-  set nextCursor($8.PageCursor v) { setField(2, v); }
+  set nextCursor($7.PageCursor v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasNextCursor() => $_has(1);
   @$pb.TagNumber(2)
   void clearNextCursor() => clearField(2);
   @$pb.TagNumber(2)
-  $8.PageCursor ensureNextCursor() => $_ensure(1);
+  $7.PageCursor ensureNextCursor() => $_ensure(1);
 }
 
 class ActivateWorkflowRequest extends $pb.GeneratedMessage {

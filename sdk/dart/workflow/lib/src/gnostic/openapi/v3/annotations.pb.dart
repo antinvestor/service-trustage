@@ -13,13 +13,13 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'openapiv3.pb.dart' as $1;
+import 'openapiv3.pb.dart' as $5;
 
 class Annotations {
-  static final document = $pb.Extension<$1.Document>(_omitMessageNames ? '' : 'google.protobuf.FileOptions', _omitFieldNames ? '' : 'document', 1143, $pb.PbFieldType.OM, defaultOrMaker: $1.Document.getDefault, subBuilder: $1.Document.create);
-  static final operation = $pb.Extension<$1.Operation>(_omitMessageNames ? '' : 'google.protobuf.MethodOptions', _omitFieldNames ? '' : 'operation', 1143, $pb.PbFieldType.OM, defaultOrMaker: $1.Operation.getDefault, subBuilder: $1.Operation.create);
-  static final schema = $pb.Extension<$1.Schema>(_omitMessageNames ? '' : 'google.protobuf.MessageOptions', _omitFieldNames ? '' : 'schema', 1143, $pb.PbFieldType.OM, defaultOrMaker: $1.Schema.getDefault, subBuilder: $1.Schema.create);
-  static final property = $pb.Extension<$1.Schema>(_omitMessageNames ? '' : 'google.protobuf.FieldOptions', _omitFieldNames ? '' : 'property', 1143, $pb.PbFieldType.OM, defaultOrMaker: $1.Schema.getDefault, subBuilder: $1.Schema.create);
+  static final document = $pb.Extension<$5.Document>(_omitMessageNames ? '' : 'google.protobuf.FileOptions', _omitFieldNames ? '' : 'document', 1143, $pb.PbFieldType.OM, defaultOrMaker: $5.Document.getDefault, subBuilder: $5.Document.create);
+  static final operation = $pb.Extension<$5.Operation>(_omitMessageNames ? '' : 'google.protobuf.MethodOptions', _omitFieldNames ? '' : 'operation', 1143, $pb.PbFieldType.OM, defaultOrMaker: $5.Operation.getDefault, subBuilder: $5.Operation.create);
+  static final schema = $pb.Extension<$5.Schema>(_omitMessageNames ? '' : 'google.protobuf.MessageOptions', _omitFieldNames ? '' : 'schema', 1143, $pb.PbFieldType.OM, defaultOrMaker: $5.Schema.getDefault, subBuilder: $5.Schema.create);
+  static final property = $pb.Extension<$5.Schema>(_omitMessageNames ? '' : 'google.protobuf.FieldOptions', _omitFieldNames ? '' : 'property', 1143, $pb.PbFieldType.OM, defaultOrMaker: $5.Schema.getDefault, subBuilder: $5.Schema.create);
   static void registerAllExtensions($pb.ExtensionRegistry registry) {
     registry.add(document);
     registry.add(operation);
