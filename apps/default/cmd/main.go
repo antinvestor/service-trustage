@@ -209,11 +209,20 @@ func main() { //nolint:funlen // main function wiring
 		procMap,
 	)
 
+	// TenancyTxInterceptor opens a request-scoped transaction after auth
+	// has populated the claims, publishes app.tenant_id + app.partition_id
+	// from the claims via set_config, and binds the transaction to the
+	// request context. Repository code then calls pool.DB(ctx, _) and gets
+	// the bound tx transparently; tenancy is enforced by Row-Level Security
+	// at the database layer.
+	tenancyTxInterceptor := connectInterceptors.NewTenancyTxInterceptor(dbPool)
+
 	defaultInterceptorList, err := connectInterceptors.DefaultList(
 		ctx,
 		sm.GetAuthenticator(ctx),
 		tenancyAccessInterceptor,
 		functionAccessInterceptor,
+		tenancyTxInterceptor,
 	)
 	if err != nil {
 		log.WithError(err).Fatal("failed to create connect interceptors")
