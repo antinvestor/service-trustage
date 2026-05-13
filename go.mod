@@ -13,7 +13,7 @@ require (
 	github.com/antinvestor/common v1.4.5
 	github.com/google/cel-go v0.28.0
 	github.com/lib/pq v1.12.3
-	github.com/openai/openai-go/v3 v3.34.0
+	github.com/openai/openai-go/v3 v3.35.0
 	github.com/pitabwire/frame v1.96.0
 	github.com/pitabwire/util v0.9.0
 	github.com/robfig/cron/v3 v3.0.1
