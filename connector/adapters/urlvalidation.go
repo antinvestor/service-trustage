@@ -38,7 +38,10 @@ const trustedURLHostSuffixesEnv = "TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES"
 // defaultTrustedHostSuffixes is consulted when the env var is unset or
 // empty. ".svc" + ".svc.cluster.local" together cover both short and FQDN
 // forms produced by Kubernetes service discovery.
-var defaultTrustedHostSuffixes = []string{".svc", ".svc.cluster.local"} //nolint:gochecknoglobals // immutable default list
+// Intentional package-level default; never mutated at runtime.
+//
+//nolint:gochecknoglobals // immutable default list
+var defaultTrustedHostSuffixes = []string{".svc", ".svc.cluster.local"}
 
 // validateExternalURL checks that a URL is safe to call (no SSRF to internal networks).
 //
