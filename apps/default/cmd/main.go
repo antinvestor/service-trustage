@@ -271,7 +271,6 @@ func main() { //nolint:funlen // main function wiring
 		pool.WithPreparedStatements(false),
 		pool.WithPreferSimpleProtocol(true),
 		pool.WithMaxOpen(cfg.SchedulerPoolMaxConns),
-		pool.WithMaxIdle(cfg.SchedulerPoolMinConns),
 	); poolErr != nil {
 		log.WithError(poolErr).Fatal("scheduler pool init")
 	}
