@@ -55,6 +55,7 @@ const DefaultEventRouterBindingLimit = 200
 type eventRouter struct {
 	triggerRepo  repository.TriggerBindingRepository
 	defRepo      repository.WorkflowDefinitionRepository
+	scheduleRepo repository.ScheduleRepository
 	instanceRepo repository.WorkflowInstanceRepository
 	auditRepo    repository.AuditEventRepository
 	engine       StateEngine
@@ -66,6 +67,7 @@ type eventRouter struct {
 func NewEventRouter(
 	triggerRepo repository.TriggerBindingRepository,
 	defRepo repository.WorkflowDefinitionRepository,
+	scheduleRepo repository.ScheduleRepository,
 	instanceRepo repository.WorkflowInstanceRepository,
 	auditRepo repository.AuditEventRepository,
 	engine StateEngine,
@@ -79,6 +81,7 @@ func NewEventRouter(
 	return &eventRouter{
 		triggerRepo:  triggerRepo,
 		defRepo:      defRepo,
+		scheduleRepo: scheduleRepo,
 		instanceRepo: instanceRepo,
 		auditRepo:    auditRepo,
 		engine:       engine,
@@ -101,6 +104,10 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 	}()
 
 	log := util.Log(ctx)
+
+	if event.EventType == events.ScheduleFiredType {
+		return r.routeScheduleFired(ctx, event)
+	}
 
 	bindings, err := r.triggerRepo.FindByEventType(ctx, event.EventType, r.bindingLimit)
 	if err != nil {
@@ -153,6 +160,47 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 	r.metrics.EventsRoutedTotal.Add(ctx, int64(created))
 
 	return created, nil
+}
+
+// routeScheduleFired handles schedule.fired events by looking up the schedule
+// directly and creating a workflow instance for its associated workflow.
+// Bypasses trigger_bindings because the schedule->workflow relationship is
+// already explicit on the ScheduleDefinition.
+func (r *eventRouter) routeScheduleFired(
+	ctx context.Context,
+	event *events.IngestedEventMessage,
+) (int, error) {
+	log := util.Log(ctx)
+
+	scheduleID, _ := event.Payload["schedule_id"].(string)
+	if scheduleID == "" {
+		return 0, fmt.Errorf("schedule.fired event missing schedule_id (event=%s)", event.EventID)
+	}
+
+	sched, err := r.scheduleRepo.GetByID(ctx, scheduleID)
+	if err != nil {
+		return 0, fmt.Errorf("lookup schedule %s: %w", scheduleID, err)
+	}
+
+	binding := &models.TriggerBinding{
+		WorkflowName:    sched.WorkflowName,
+		WorkflowVersion: sched.WorkflowVersion,
+		InputMapping:    sched.InputPayload,
+	}
+
+	created, instErr := r.createInstance(ctx, binding, event)
+	if instErr != nil {
+		log.WithError(instErr).Error("schedule.fired instance create failed",
+			"schedule_id", scheduleID,
+			"workflow", sched.WorkflowName,
+		)
+		return 0, instErr
+	}
+	if created {
+		r.metrics.EventsRoutedTotal.Add(ctx, 1)
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func (r *eventRouter) createInstance(

@@ -212,6 +212,57 @@ func (s *BusinessSuite) TestEventRouter_RouteEventCreatesAndDeduplicatesInstance
 	s.NotEmpty(audits)
 }
 
+func (s *BusinessSuite) TestEventRouter_RouteScheduleFiredCreatesInstance() {
+	ctx := s.tenantCtx()
+	biz := s.workflowBusiness()
+
+	dslBlob := []byte(`{
+		"version": "v1",
+		"name": "w-sched-route",
+		"steps": [
+			{"id": "log_step", "type": "call", "call": {"action": "log.entry", "input": {"level": "info", "message": "hello"}}}
+		],
+		"schedules": [{"name": "nightly", "cron_expr": "0 2 * * *"}]
+	}`)
+	def, err := biz.CreateWorkflow(ctx, dslBlob)
+	s.Require().NoError(err)
+	s.Require().NoError(biz.ActivateWorkflow(ctx, def.ID))
+
+	scheds, err := s.scheduleRepo.ListByWorkflow(ctx, def.Name, def.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Require().Len(scheds, 1)
+	sched := scheds[0]
+
+	router := s.eventRouter()
+	event := &events.IngestedEventMessage{
+		EventID:     "evt-sched-1",
+		TenantID:    "test-tenant-001",
+		PartitionID: "test-partition-001",
+		EventType:   events.ScheduleFiredType,
+		Payload: map[string]any{
+			"schedule_id":   sched.ID,
+			"schedule_name": sched.Name,
+			"fired_at":      "2026-05-28T00:00:00Z",
+		},
+	}
+
+	created, err := router.RouteEvent(ctx, event)
+	s.Require().NoError(err)
+	s.Equal(1, created)
+
+	instance, err := s.instanceRepo.FindByTriggerEvent(ctx, def.Name, def.WorkflowVersion, event.EventID)
+	s.Require().NoError(err)
+	s.Require().NotNil(instance)
+	s.Equal(def.Name, instance.WorkflowName)
+	s.Equal(def.WorkflowVersion, instance.WorkflowVersion)
+	s.Equal(event.EventID, instance.TriggerEventID)
+
+	// Re-deliver: should dedup.
+	created, err = router.RouteEvent(ctx, event)
+	s.Require().NoError(err)
+	s.Equal(0, created)
+}
+
 func (s *BusinessSuite) TestActivateWorkflow_ActivatesSchedulesAndDeactivatesPrevious() {
 	ctx := s.tenantCtx()
 

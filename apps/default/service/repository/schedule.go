@@ -120,6 +120,7 @@ type ScheduleActivation struct {
 type ScheduleRepository interface {
 	Create(ctx context.Context, schedule *models.ScheduleDefinition) error
 	CreateBatch(ctx context.Context, scheds []*models.ScheduleDefinition) error
+	GetByID(ctx context.Context, id string) (*models.ScheduleDefinition, error)
 	ListByWorkflow(
 		ctx context.Context,
 		workflowName string,
@@ -180,6 +181,16 @@ func (r *scheduleRepository) Create(
 	schedule *models.ScheduleDefinition,
 ) error {
 	return r.BaseRepository.Create(ctx, schedule)
+}
+
+// GetByID looks up a single schedule by its primary key. Tenancy + partition
+// filtering is applied automatically by the BaseRepository via the context's
+// AuthenticationClaims (same idiom as WorkflowDefinitionRepository.GetByID).
+func (r *scheduleRepository) GetByID(
+	ctx context.Context,
+	id string,
+) (*models.ScheduleDefinition, error) {
+	return r.BaseRepository.GetByID(ctx, id)
 }
 
 // CreateBatch inserts all schedules in a single atomic transaction.

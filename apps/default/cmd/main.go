@@ -172,6 +172,7 @@ func main() { //nolint:funlen // main function wiring
 	eventRouter := business.NewEventRouter(
 		triggerRepo,
 		defRepo,
+		scheduleRepo,
 		instanceRepo,
 		auditRepo,
 		engine,

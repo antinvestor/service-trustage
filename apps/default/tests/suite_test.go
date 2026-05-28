@@ -220,6 +220,7 @@ func (s *DefaultServiceSuite) eventRouter() business.EventRouter {
 	return business.NewEventRouter(
 		s.triggerRepo,
 		s.defRepo,
+		s.scheduleRepo,
 		s.instanceRepo,
 		s.auditRepo,
 		s.stateEngine(),
