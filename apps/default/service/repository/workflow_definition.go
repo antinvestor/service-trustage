@@ -83,7 +83,10 @@ func (r *workflowDefinitionRepository) GetByID(ctx context.Context, id string) (
 // silently skipping the mutation — the read-your-writes hazard that left
 // runtime-created (RPC) per-source schedules stuck in DRAFT while dir-synced
 // ones (created+activated in separate passes) worked.
-func (r *workflowDefinitionRepository) GetByIDForUpdate(ctx context.Context, id string) (*models.WorkflowDefinition, error) {
+func (r *workflowDefinitionRepository) GetByIDForUpdate(
+	ctx context.Context,
+	id string,
+) (*models.WorkflowDefinition, error) {
 	var def models.WorkflowDefinition
 	err := r.BaseRepository.Pool().DB(ctx, false).
 		Where("id = ? AND deleted_at IS NULL", id).First(&def).Error
