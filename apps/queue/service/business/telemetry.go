@@ -15,53 +15,53 @@
 package business
 
 import (
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/metric"
+	"github.com/pitabwire/frame/telemetry"
 )
 
 //nolint:gochecknoglobals // metrics are process-wide singletons
-var queueMeter = otel.Meter("service-trustage/queue")
+var queueMetrics = telemetry.NewBusinessMetrics("service-trustage/queue")
 
-// Queue business metrics.
+// Queue business metrics. Tenant-scoped transparently: every measurement
+// carries tenant_id/partition_id from the claims context.
 //
 //nolint:gochecknoglobals // metrics are process-wide singletons
 var (
-	enqueueCounter, _ = queueMeter.Int64Counter(
+	enqueueCounter = queueMetrics.Counter(
 		"queue.enqueue.total",
-		metric.WithDescription("Total enqueue operations"),
+		"Total enqueue operations",
 	)
-	enqueueErrorCounter, _ = queueMeter.Int64Counter(
+	enqueueErrorCounter = queueMetrics.Counter(
 		"queue.enqueue.errors",
-		metric.WithDescription("Total enqueue errors"),
+		"Total enqueue errors",
 	)
-	dequeueCounter, _ = queueMeter.Int64Counter(
+	dequeueCounter = queueMetrics.Counter(
 		"queue.dequeue.total",
-		metric.WithDescription("Total dequeue (call-next) operations"),
+		"Total dequeue (call-next) operations",
 	)
-	dequeueErrorCounter, _ = queueMeter.Int64Counter(
+	dequeueErrorCounter = queueMetrics.Counter(
 		"queue.dequeue.errors",
-		metric.WithDescription("Total dequeue errors"),
+		"Total dequeue errors",
 	)
-	completeCounter, _ = queueMeter.Int64Counter(
+	completeCounter = queueMetrics.Counter(
 		"queue.complete.total",
-		metric.WithDescription("Total service completions"),
+		"Total service completions",
 	)
-	cancelCounter, _ = queueMeter.Int64Counter(
+	cancelCounter = queueMetrics.Counter(
 		"queue.cancel.total",
-		metric.WithDescription("Total cancellations"),
+		"Total cancellations",
 	)
-	noShowCounter, _    = queueMeter.Int64Counter("queue.noshow.total", metric.WithDescription("Total no-shows"))
-	transferCounter, _  = queueMeter.Int64Counter("queue.transfer.total", metric.WithDescription("Total transfers"))
-	enqueueHistogram, _ = queueMeter.Float64Histogram(
+	noShowCounter    = queueMetrics.Counter("queue.noshow.total", "Total no-shows")
+	transferCounter  = queueMetrics.Counter("queue.transfer.total", "Total transfers")
+	enqueueHistogram = queueMetrics.Histogram(
 		"queue.enqueue.duration_ms",
-		metric.WithDescription("Enqueue duration in milliseconds"),
+		"Enqueue duration in milliseconds",
 	)
-	dequeueHistogram, _ = queueMeter.Float64Histogram(
+	dequeueHistogram = queueMetrics.Histogram(
 		"queue.dequeue.duration_ms",
-		metric.WithDescription("Dequeue duration in milliseconds"),
+		"Dequeue duration in milliseconds",
 	)
-	queueFullCounter, _ = queueMeter.Int64Counter(
+	queueFullCounter = queueMetrics.Counter(
 		"queue.full.total",
-		metric.WithDescription("Times enqueue rejected due to capacity"),
+		"Times enqueue rejected due to capacity",
 	)
 )

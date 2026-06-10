@@ -20,10 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/antinvestor/service-trustage/apps/formstore/service/models"
 	"github.com/antinvestor/service-trustage/apps/formstore/service/repository"
@@ -151,7 +148,6 @@ func (b *formStoreBusiness) DeleteDefinition(ctx context.Context, id string) err
 func (b *formStoreBusiness) CreateSubmission(ctx context.Context, sub *models.FormSubmission) error {
 	log := util.Log(ctx)
 	start := time.Now()
-	attrs := metric.WithAttributes(attribute.String("tenant_id", tenantFromContext(ctx)))
 
 	// Ensure JSONB fields contain valid JSON for PostgreSQL.
 	if sub.Metadata == "" {
@@ -162,10 +158,10 @@ func (b *formStoreBusiness) CreateSubmission(ctx context.Context, sub *models.Fo
 	if sub.FormID != "" {
 		def, defErr := b.defRepo.GetByFormID(ctx, sub.FormID)
 		if defErr == nil && def != nil && def.JSONSchema != "" && def.JSONSchema != "{}" {
-			schemaValidationCounter.Add(ctx, 1, attrs)
+			schemaValidationCounter.Add(ctx, 1)
 
 			if valErr := b.validator.Validate(def.JSONSchema, sub.Data); valErr != nil {
-				schemaValidationErrors.Add(ctx, 1, attrs)
+				schemaValidationErrors.Add(ctx, 1)
 				return valErr
 			}
 		}
@@ -212,15 +208,15 @@ func (b *formStoreBusiness) CreateSubmission(ctx context.Context, sub *models.Fo
 			}
 		}
 
-		submissionErrorCounter.Add(ctx, 1, attrs)
+		submissionErrorCounter.Add(ctx, 1)
 		return fmt.Errorf("persist form submission: %w", err)
 	}
 
-	submissionCreateCounter.Add(ctx, 1, attrs)
-	submissionHistogram.Record(ctx, float64(time.Since(start).Milliseconds()), attrs)
+	submissionCreateCounter.Add(ctx, 1)
+	submissionHistogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 
 	if sub.FileCount > 0 {
-		fileUploadCounter.Add(ctx, int64(sub.FileCount), attrs)
+		fileUploadCounter.Add(ctx, int64(sub.FileCount))
 	}
 
 	log.Info("form submission created",
@@ -283,15 +279,6 @@ func (b *formStoreBusiness) UpdateSubmission(ctx context.Context, sub *models.Fo
 	}
 
 	return nil
-}
-
-func tenantFromContext(ctx context.Context) string {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil || claims.GetTenantID() == "" {
-		return "unknown"
-	}
-
-	return claims.GetTenantID()
 }
 
 func (b *formStoreBusiness) DeleteSubmission(ctx context.Context, id string) error {

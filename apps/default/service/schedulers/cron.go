@@ -21,7 +21,6 @@ import (
 
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -138,10 +137,12 @@ func (s *CronScheduler) planOne(
 		log.WithError(err).Error("cron scheduler: invalid cron, parking",
 			"schedule_id", sched.ID, "cron_expr", sched.CronExpr)
 		if s.metrics != nil {
+			// System context: the swept schedule's tenant is the only source,
+			// so attribute it explicitly (explicit attrs override ctx attrs).
 			s.metrics.SchedulerCronInvalid.Add(
 				ctx,
 				1,
-				metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)),
+				attribute.String("tenant_id", sched.TenantID),
 			)
 		}
 		return nil, nil, 0, nil // park: no event, clear next_fire_at
@@ -160,7 +161,7 @@ func (s *CronScheduler) planOne(
 			s.metrics.SchedulerCronInvalid.Add(
 				ctx,
 				1,
-				metric.WithAttributes(attribute.String("tenant_id", sched.TenantID)),
+				attribute.String("tenant_id", sched.TenantID),
 			)
 		}
 		return nil, nil, 0, nil

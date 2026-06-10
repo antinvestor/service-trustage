@@ -27,7 +27,6 @@ import (
 	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
@@ -380,9 +379,9 @@ func (e *stateEngine) Commit( //nolint:funlen // commit coordinates validation, 
 			exec,
 			models.ExecStatusInvalidOutputContract,
 		)
-		e.metrics.ContractViolationsTotal.Add(ctx, 1, metric.WithAttributes(
+		e.metrics.ContractViolationsTotal.Add(ctx, 1,
 			attribute.String(telemetry.AttrViolationType, "output"),
-		))
+		)
 
 		commitErr = fmt.Errorf("%w: %w", ErrOutputContractViolation, validateErr)
 		return commitErr
@@ -447,10 +446,10 @@ func (e *stateEngine) Commit( //nolint:funlen // commit coordinates validation, 
 	}
 
 	if nextState != "" {
-		e.metrics.TransitionsTotal.Add(ctx, 1, metric.WithAttributes(
+		e.metrics.TransitionsTotal.Add(ctx, 1,
 			attribute.String(telemetry.AttrFromState, exec.State),
 			attribute.String(telemetry.AttrToState, nextState),
-		))
+		)
 	}
 
 	// Audit: completion event (outside tx, best-effort).
@@ -551,9 +550,9 @@ func (e *stateEngine) ResumeWaitingExecution(
 			exec,
 			models.ExecStatusInvalidOutputContract,
 		)
-		e.metrics.ContractViolationsTotal.Add(ctx, 1, metric.WithAttributes(
+		e.metrics.ContractViolationsTotal.Add(ctx, 1,
 			attribute.String(telemetry.AttrViolationType, "output"),
-		))
+		)
 
 		return fmt.Errorf("%w: %w", ErrOutputContractViolation, validateErr)
 	}
@@ -819,9 +818,9 @@ func (e *stateEngine) scheduleRetryIfAllowed(
 		return false, fmt.Errorf("schedule retry: %w", updateErr)
 	}
 
-	e.metrics.RetriesTotal.Add(ctx, 1, metric.WithAttributes(
+	e.metrics.RetriesTotal.Add(ctx, 1,
 		attribute.String(telemetry.AttrState, exec.State),
-	))
+	)
 
 	_ = e.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
 		InstanceID:  exec.InstanceID,
