@@ -29,6 +29,8 @@ import (
 type WorkflowDefinitionRepository interface {
 	Create(ctx context.Context, def *models.WorkflowDefinition) error
 	GetByID(ctx context.Context, id string) (*models.WorkflowDefinition, error)
+	// GetByIDForUpdate reads from the PRIMARY for read-modify-write flows.
+	GetByIDForUpdate(ctx context.Context, id string) (*models.WorkflowDefinition, error)
 	GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error)
 	ListActiveByName(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
 	ListPage(ctx context.Context, filter WorkflowDefinitionListFilter) (*WorkflowDefinitionPage, error)
@@ -72,6 +74,23 @@ func (r *workflowDefinitionRepository) Create(ctx context.Context, def *models.W
 
 func (r *workflowDefinitionRepository) GetByID(ctx context.Context, id string) (*models.WorkflowDefinition, error) {
 	return r.BaseRepository.GetByID(ctx, id)
+}
+
+// GetByIDForUpdate reads from the PRIMARY (not a read replica) so a workflow
+// created milliseconds earlier is always visible. The lifecycle mutations
+// (activate/archive) read-then-write the definition; a replica read here can
+// miss a just-created workflow under replication lag and return NotFound,
+// silently skipping the mutation — the read-your-writes hazard that left
+// runtime-created (RPC) per-source schedules stuck in DRAFT while dir-synced
+// ones (created+activated in separate passes) worked.
+func (r *workflowDefinitionRepository) GetByIDForUpdate(ctx context.Context, id string) (*models.WorkflowDefinition, error) {
+	var def models.WorkflowDefinition
+	err := r.BaseRepository.Pool().DB(ctx, false).
+		Where("id = ? AND deleted_at IS NULL", id).First(&def).Error
+	if err != nil {
+		return nil, fmt.Errorf("get workflow by id (primary): %w", err)
+	}
+	return &def, nil
 }
 
 func (r *workflowDefinitionRepository) GetByNameAndVersion(

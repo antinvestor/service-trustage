@@ -126,6 +126,13 @@ type ScheduleRepository interface {
 		workflowName string,
 		workflowVersion int,
 	) ([]*models.ScheduleDefinition, error)
+	// ListByWorkflowForUpdate is ListByWorkflow but reads the PRIMARY, for the
+	// activation flow's read-your-writes (schedules just created on the primary).
+	ListByWorkflowForUpdate(
+		ctx context.Context,
+		workflowName string,
+		workflowVersion int,
+	) ([]*models.ScheduleDefinition, error)
 
 	ActivateByWorkflow(
 		ctx context.Context,
@@ -220,7 +227,27 @@ func (r *scheduleRepository) ListByWorkflow(
 	workflowName string,
 	workflowVersion int,
 ) ([]*models.ScheduleDefinition, error) {
-	db := r.p.DB(ctx, true)
+	return r.listByWorkflow(ctx, true, workflowName, workflowVersion)
+}
+
+// ListByWorkflowForUpdate is ListByWorkflow but reads the PRIMARY, so the
+// activation flow sees schedules just created on the primary even before they
+// replicate (read-your-writes). See GetByIDForUpdate for the same hazard.
+func (r *scheduleRepository) ListByWorkflowForUpdate(
+	ctx context.Context,
+	workflowName string,
+	workflowVersion int,
+) ([]*models.ScheduleDefinition, error) {
+	return r.listByWorkflow(ctx, false, workflowName, workflowVersion)
+}
+
+func (r *scheduleRepository) listByWorkflow(
+	ctx context.Context,
+	readOnly bool,
+	workflowName string,
+	workflowVersion int,
+) ([]*models.ScheduleDefinition, error) {
+	db := r.p.DB(ctx, readOnly)
 
 	var out []*models.ScheduleDefinition
 	result := db.Where(
