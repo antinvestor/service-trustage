@@ -3,7 +3,7 @@ description: >
   Queue management UI for Antinvestor.
   Screens, widgets, providers, and routing for the Queue REST API —
   queue definitions, items, counters, and live statistics.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/antinvestor/service-trustage
 homepage: https://github.com/antinvestor/service-trustage/tree/main/ui_queuestore
 issue_tracker: https://github.com/antinvestor/service-trustage/issues
