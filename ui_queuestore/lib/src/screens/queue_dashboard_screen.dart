@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import 'package:antinvestor_ui_core/widgets/metadata_row.dart';
 
+import '../analytics/queue_activity_section.dart';
 import '../models/queue_definition.dart';
 import '../models/queue_counter.dart';
 import '../providers/queuestore_providers.dart';
@@ -38,9 +39,7 @@ class _QueueDashboardScreenState extends ConsumerState<QueueDashboardScreen> {
     final queue = asyncQueue.value ?? widget.initialQueue;
 
     if (queue == null && asyncQueue.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (queue == null) {
@@ -93,6 +92,10 @@ class _QueueDashboardScreenState extends ConsumerState<QueueDashboardScreen> {
               _CountersSection(queueId: widget.queueId),
               const SizedBox(height: 24),
               _WaitingItemsSection(queueId: widget.queueId),
+              const SizedBox(height: 32),
+              // Service-level activity trends from the Thesa analytics
+              // gate; per-queue snapshot stats above stay on the queue API.
+              const QueueActivitySection(),
             ],
           ),
         ),
@@ -118,14 +121,19 @@ class _QueueDashboardScreenState extends ConsumerState<QueueDashboardScreen> {
             if (q.description.isNotEmpty)
               MetadataRow(label: 'Description', value: q.description),
             MetadataRow(
-                label: 'Status', value: q.active ? 'Active' : 'Inactive'),
+              label: 'Status',
+              value: q.active ? 'Active' : 'Inactive',
+            ),
             MetadataRow(
-                label: 'Priority Levels',
-                value: q.priorityLevels.toString()),
+              label: 'Priority Levels',
+              value: q.priorityLevels.toString(),
+            ),
             MetadataRow(
-                label: 'Max Capacity',
-                value:
-                    q.maxCapacity == 0 ? 'Unlimited' : q.maxCapacity.toString()),
+              label: 'Max Capacity',
+              value: q.maxCapacity == 0
+                  ? 'Unlimited'
+                  : q.maxCapacity.toString(),
+            ),
             MetadataRow(label: 'SLA', value: '${q.slaMinutes} minutes'),
             if (q.createdAt != null)
               MetadataRow(
@@ -146,11 +154,13 @@ class _QueueDashboardScreenState extends ConsumerState<QueueDashboardScreen> {
         content: Text('Are you sure you want to delete "${q.name}"?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -164,9 +174,9 @@ class _QueueDashboardScreenState extends ConsumerState<QueueDashboardScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isDeleting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
   }
@@ -210,8 +220,7 @@ class _CountersSection extends ConsumerWidget {
             Text('Counters', style: theme.textTheme.titleMedium),
             const Spacer(),
             FilledButton.tonalIcon(
-              onPressed: () =>
-                  _showCreateCounterDialog(context, ref, queueId),
+              onPressed: () => _showCreateCounterDialog(context, ref, queueId),
               icon: const Icon(Icons.add, size: 16),
               label: const Text('Add Counter'),
             ),
@@ -232,8 +241,7 @@ class _CountersSection extends ConsumerWidget {
             }
             return Column(
               children: counters.map((c) {
-                final notifier =
-                    ref.read(counterNotifierProvider.notifier);
+                final notifier = ref.read(counterNotifierProvider.notifier);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: CounterTile(
@@ -255,7 +263,10 @@ class _CountersSection extends ConsumerWidget {
   }
 
   Future<void> _showCreateCounterDialog(
-      BuildContext context, WidgetRef ref, String queueId) async {
+    BuildContext context,
+    WidgetRef ref,
+    String queueId,
+  ) async {
     final nameCtl = TextEditingController();
     final result = await showDialog<String>(
       context: context,
@@ -271,11 +282,13 @@ class _CountersSection extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, nameCtl.text),
-              child: const Text('Create')),
+            onPressed: () => Navigator.pop(ctx, nameCtl.text),
+            child: const Text('Create'),
+          ),
         ],
       ),
     );
@@ -283,19 +296,15 @@ class _CountersSection extends ConsumerWidget {
 
     if (result == null || result.isEmpty) return;
 
-    final counter = QueueCounter(
-      id: '',
-      queueId: queueId,
-      name: result,
-    );
+    final counter = QueueCounter(id: '', queueId: queueId, name: result);
 
     try {
       await ref.read(counterNotifierProvider.notifier).create(queueId, counter);
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create counter: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to create counter: $e')));
       }
     }
   }
@@ -339,16 +348,18 @@ class _WaitingItemsSection extends ConsumerWidget {
             }
             return Column(
               children: items
-                  .map((item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: QueueItemTile(
-                          item: item,
-                          onTap: () => context.go(
-                            '/queuestore/item/${item.id}',
-                            extra: item,
-                          ),
+                  .map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: QueueItemTile(
+                        item: item,
+                        onTap: () => context.go(
+                          '/queuestore/item/${item.id}',
+                          extra: item,
                         ),
-                      ))
+                      ),
+                    ),
+                  )
                   .toList(),
             );
           },

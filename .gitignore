@@ -38,7 +38,11 @@ apps/ui/dist/
 .flutter-plugins
 .flutter-plugins-dependencies
 pubspec.lock
+ui_queuestore/build/
 
 # Shared Makefile cache
 .tmp/
 WORK_STATE.md
+
+# Local-only pub dependency overrides (unpublished ui_core)
+pubspec_overrides.yaml
