@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -86,9 +85,8 @@ func (b *workflowBusiness) CreateWorkflow(
 	ctx context.Context,
 	dslBlob json.RawMessage,
 ) (*models.WorkflowDefinition, error) {
-	tenantID := tenantIDFromContext(ctx)
 	def, err := b.createWorkflow(ctx, dslBlob)
-	b.metrics.RecordWorkflowLifecycle(ctx, "create", tenantID, err == nil)
+	b.metrics.RecordWorkflowLifecycle(ctx, "create", err == nil)
 	return def, err
 }
 
@@ -401,9 +399,8 @@ func (b *workflowBusiness) SearchWorkflows(
 }
 
 func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) error {
-	tenantID := tenantIDFromContext(ctx)
 	err := b.activateWorkflow(ctx, id)
-	b.metrics.RecordWorkflowLifecycle(ctx, "activate", tenantID, err == nil)
+	b.metrics.RecordWorkflowLifecycle(ctx, "activate", err == nil)
 	return err
 }
 
@@ -472,9 +469,8 @@ func (b *workflowBusiness) activateWorkflow(ctx context.Context, id string) erro
 // schedules are already off (safe: no overfire, just a transient status
 // mismatch fixable by retry).
 func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error {
-	tenantID := tenantIDFromContext(ctx)
 	err := b.archiveWorkflow(ctx, id)
-	b.metrics.RecordWorkflowLifecycle(ctx, "archive", tenantID, err == nil)
+	b.metrics.RecordWorkflowLifecycle(ctx, "archive", err == nil)
 	return err
 }
 
@@ -507,13 +503,4 @@ func (b *workflowBusiness) archiveWorkflow(ctx context.Context, id string) error
 		return fmt.Errorf("update workflow status: %w", err)
 	}
 	return nil
-}
-
-// tenantIDFromContext returns the caller's tenant ID, empty string if unset.
-func tenantIDFromContext(ctx context.Context) string {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil {
-		return ""
-	}
-	return claims.TenantID
 }

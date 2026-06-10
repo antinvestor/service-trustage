@@ -14,7 +14,7 @@ require (
 	github.com/google/cel-go v0.28.1
 	github.com/lib/pq v1.12.3
 	github.com/openai/openai-go/v3 v3.39.0
-	github.com/pitabwire/frame v1.98.1
+	github.com/pitabwire/frame v1.98.4
 	github.com/pitabwire/util v0.9.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
@@ -22,6 +22,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.42.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0
+	go.opentelemetry.io/otel/sdk/metric v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	golang.org/x/sync v0.21.0
 	google.golang.org/protobuf v1.36.11
@@ -136,7 +137,6 @@ require (
 	go.opentelemetry.io/otel/log v0.20.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.20.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

@@ -18,6 +18,7 @@ import (
 	"context"
 	"time"
 
+	frametelemetry "github.com/pitabwire/frame/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -63,89 +64,94 @@ const (
 	AttrEventType     = "event_type"
 )
 
-// Metrics holds all OTel instruments for the engine.
+// Metrics holds all OTel instruments for the engine. Instruments come from
+// frame's BusinessMetrics factory, so every measurement transparently carries
+// tenant_id/partition_id from the claims context. Scheduler sweeps run on a
+// system context (no claims) and attribute tenants explicitly where the
+// recorded tenant is not the caller's tenant.
 type Metrics struct {
-	ExecutionsTotal            metric.Int64Counter
-	ExecutionLatency           metric.Float64Histogram
-	TransitionsTotal           metric.Int64Counter
-	RetriesTotal               metric.Int64Counter
-	ContractViolationsTotal    metric.Int64Counter
-	StaleExecutionsTotal       metric.Int64Counter
-	DispatchLatency            metric.Float64Histogram
-	CommitLatency              metric.Float64Histogram
-	ConnectorCallsTotal        metric.Int64Counter
-	ConnectorLatency           metric.Float64Histogram
-	EventsIngestedTotal        metric.Int64Counter
-	EventsRoutedTotal          metric.Int64Counter
-	SchedulerPendingGauge      metric.Int64Gauge
-	SchedulerRetryDueGauge     metric.Int64Gauge
-	SchedulerDispatchedGauge   metric.Int64Gauge
-	SchedulerOutboxGauge       metric.Int64Gauge
-	SchedulerCronFired         metric.Int64Counter
-	SchedulerCronSweepDuration metric.Float64Histogram
-	SchedulerCronInvalid       metric.Int64Counter
+	ExecutionsTotal            frametelemetry.Counter
+	ExecutionLatency           frametelemetry.Histogram
+	TransitionsTotal           frametelemetry.Counter
+	RetriesTotal               frametelemetry.Counter
+	ContractViolationsTotal    frametelemetry.Counter
+	StaleExecutionsTotal       frametelemetry.Counter
+	DispatchLatency            frametelemetry.Histogram
+	CommitLatency              frametelemetry.Histogram
+	ConnectorCallsTotal        frametelemetry.Counter
+	ConnectorLatency           frametelemetry.Histogram
+	EventsIngestedTotal        frametelemetry.Counter
+	EventsRoutedTotal          frametelemetry.Counter
+	SchedulerPendingGauge      frametelemetry.Gauge
+	SchedulerRetryDueGauge     frametelemetry.Gauge
+	SchedulerDispatchedGauge   frametelemetry.Gauge
+	SchedulerOutboxGauge       frametelemetry.Gauge
+	SchedulerCronFired         frametelemetry.Counter
+	SchedulerCronSweepDuration frametelemetry.Histogram
+	SchedulerCronInvalid       frametelemetry.Counter
 	// v1.2 observability — backlog gauge, tenant-attributed fire counter, lifecycle counter.
-	SchedulerCronBacklog   metric.Float64Gauge // scheduler_cron_backlog_seconds
-	WorkflowLifecycleTotal metric.Int64Counter // workflow_lifecycle_total
+	SchedulerCronBacklog   frametelemetry.FloatGauge // scheduler_cron_backlog_seconds
+	WorkflowLifecycleTotal frametelemetry.Counter    // workflow_lifecycle_total
 }
 
 // NewMetrics creates and registers all OTel instruments.
 func NewMetrics() *Metrics {
-	meter := otel.Meter("trustage")
-
-	execTotal, _ := meter.Int64Counter("engine.executions.total")
-	execLatency, _ := meter.Float64Histogram("engine.execution.latency_ms")
-	transTotal, _ := meter.Int64Counter("engine.transitions.total")
-	retriesTotal, _ := meter.Int64Counter("engine.retries.total")
-	violationsTotal, _ := meter.Int64Counter("engine.contract_violations.total")
-	staleTotal, _ := meter.Int64Counter("engine.stale_executions.total")
-	dispatchLatency, _ := meter.Float64Histogram("engine.dispatch.latency_ms")
-	commitLatency, _ := meter.Float64Histogram("engine.commit.latency_ms")
-	connectorTotal, _ := meter.Int64Counter("connector.calls.total")
-	connectorLatency, _ := meter.Float64Histogram("connector.latency_ms")
-	eventsIngested, _ := meter.Int64Counter("events.ingested.total")
-	eventsRouted, _ := meter.Int64Counter("events.routed.total")
-	pendingGauge, _ := meter.Int64Gauge("scheduler.pending_executions")
-	retryDueGauge, _ := meter.Int64Gauge("scheduler.retry_due_executions")
-	dispatchedGauge, _ := meter.Int64Gauge("scheduler.dispatched_executions")
-	outboxGauge, _ := meter.Int64Gauge("scheduler.unpublished_events")
-	cronFired, _ := meter.Int64Counter("scheduler_cron_fired_total")
-	cronSweepDuration, _ := meter.Float64Histogram("scheduler_cron_sweep_duration_seconds")
-	cronInvalid, _ := meter.Int64Counter("scheduler_cron_invalid_cron_total")
-	cronBacklog, _ := meter.Float64Gauge(
-		"scheduler_cron_backlog_seconds",
-		metric.WithDescription("Age (in seconds) of the oldest due schedule. 0 if no schedules are currently due."),
-		metric.WithUnit("s"),
-	)
-	workflowLifecycle, _ := meter.Int64Counter(
-		"workflow_lifecycle_total",
-		metric.WithDescription(
-			"Count of workflow lifecycle operations (create|activate|archive) by result and tenant.",
-		),
-	)
+	bm := frametelemetry.NewBusinessMetrics("trustage")
 
 	return &Metrics{
-		ExecutionsTotal:            execTotal,
-		ExecutionLatency:           execLatency,
-		TransitionsTotal:           transTotal,
-		RetriesTotal:               retriesTotal,
-		ContractViolationsTotal:    violationsTotal,
-		StaleExecutionsTotal:       staleTotal,
-		DispatchLatency:            dispatchLatency,
-		CommitLatency:              commitLatency,
-		ConnectorCallsTotal:        connectorTotal,
-		ConnectorLatency:           connectorLatency,
-		EventsIngestedTotal:        eventsIngested,
-		EventsRoutedTotal:          eventsRouted,
-		SchedulerPendingGauge:      pendingGauge,
-		SchedulerRetryDueGauge:     retryDueGauge,
-		SchedulerDispatchedGauge:   dispatchedGauge,
-		SchedulerOutboxGauge:       outboxGauge,
-		SchedulerCronFired:         cronFired,
-		SchedulerCronSweepDuration: cronSweepDuration,
-		SchedulerCronInvalid:       cronInvalid,
-		SchedulerCronBacklog:       cronBacklog,
-		WorkflowLifecycleTotal:     workflowLifecycle,
+		ExecutionsTotal:         bm.Counter("engine.executions.total", "Total workflow state executions dispatched"),
+		ExecutionLatency:        bm.Histogram("engine.execution.latency_ms", "End-to-end execution latency"),
+		TransitionsTotal:        bm.Counter("engine.transitions.total", "Total state transitions committed"),
+		RetriesTotal:            bm.Counter("engine.retries.total", "Total execution retries scheduled"),
+		ContractViolationsTotal: bm.Counter("engine.contract_violations.total", "Total schema contract violations"),
+		StaleExecutionsTotal: bm.Counter(
+			"engine.stale_executions.total",
+			"Total stale execution mutations rejected",
+		),
+		DispatchLatency:     bm.Histogram("engine.dispatch.latency_ms", "Dispatch latency"),
+		CommitLatency:       bm.Histogram("engine.commit.latency_ms", "Commit latency"),
+		ConnectorCallsTotal: bm.Counter("connector.calls.total", "Total connector invocations"),
+		ConnectorLatency:    bm.Histogram("connector.latency_ms", "Connector call latency"),
+		EventsIngestedTotal: bm.Counter("events.ingested.total", "Total events ingested"),
+		EventsRoutedTotal:   bm.Counter("events.routed.total", "Total events routed to workflow instances"),
+		SchedulerPendingGauge: bm.Gauge(
+			"scheduler.pending_executions",
+			"Pending executions seen by the dispatch sweep",
+		),
+		SchedulerRetryDueGauge: bm.Gauge(
+			"scheduler.retry_due_executions",
+			"Retry-due executions seen by the retry sweep",
+		),
+		SchedulerDispatchedGauge: bm.Gauge(
+			"scheduler.dispatched_executions",
+			"Overdue dispatched executions seen by the timeout sweep",
+		),
+		SchedulerOutboxGauge: bm.Gauge(
+			"scheduler.unpublished_events",
+			"Unpublished events claimed by the outbox sweep",
+		),
+		SchedulerCronFired: bm.Counter(
+			"scheduler_cron_fired_total",
+			"Schedules fired per sweep, attributed per tenant",
+		),
+		SchedulerCronSweepDuration: bm.Histogram(
+			"scheduler_cron_sweep_duration_seconds",
+			"Duration of one ClaimAndFireBatch sweep",
+			metric.WithUnit("s"),
+		),
+		SchedulerCronInvalid: bm.Counter(
+			"scheduler_cron_invalid_cron_total",
+			"Schedules parked due to invalid cron/timezone",
+		),
+		SchedulerCronBacklog: bm.FloatGauge(
+			"scheduler_cron_backlog_seconds",
+			"Age (in seconds) of the oldest due schedule. 0 if no schedules are currently due.",
+			metric.WithUnit("s"),
+		),
+		WorkflowLifecycleTotal: bm.Counter(
+			"workflow_lifecycle_total",
+			"Count of workflow lifecycle operations (create|activate|archive) by result and tenant.",
+		),
 	}
 }
 
@@ -153,6 +159,11 @@ func NewMetrics() *Metrics {
 // histogram after one ClaimAndFireBatch sweep completes. firedByTenant may be
 // empty (no rows fired this sweep). ok=false marks a sweep that returned an
 // error; firedByTenant should be empty in that case.
+//
+// The sweep runs on a system context (no claims), so the wrapper cannot infer
+// a tenant; the per-tenant attribution from firedByTenant is the only source
+// and stays explicit. Explicit attrs are appended after ctx attrs, so they
+// win regardless.
 func (m *Metrics) RecordSchedulerCronSweep(
 	ctx context.Context, firedByTenant map[string]int, dur time.Duration, ok bool,
 ) {
@@ -167,26 +178,24 @@ func (m *Metrics) RecordSchedulerCronSweep(
 
 	// Histogram: one observation per sweep.
 	m.SchedulerCronSweepDuration.Record(ctx, dur.Seconds(),
-		metric.WithAttributes(attribute.String("result", result)))
+		attribute.String("result", result))
 
 	// Counter: one increment per tenant in the sweep. On failure, emit a
 	// single fail counter with empty tenant so the fail rate is always visible
 	// even if no rows were fired.
 	if !ok || len(firedByTenant) == 0 {
 		m.SchedulerCronFired.Add(ctx, 0,
-			metric.WithAttributes(
-				attribute.String("result", result),
-				attribute.String("tenant_id", ""),
-			))
+			attribute.String("result", result),
+			attribute.String("tenant_id", ""),
+		)
 		return
 	}
 
 	for tenantID, count := range firedByTenant {
 		m.SchedulerCronFired.Add(ctx, int64(count),
-			metric.WithAttributes(
-				attribute.String("result", result),
-				attribute.String("tenant_id", tenantID),
-			))
+			attribute.String("result", result),
+			attribute.String("tenant_id", tenantID),
+		)
 	}
 }
 
@@ -200,9 +209,10 @@ func (m *Metrics) ObserveSchedulerBacklog(ctx context.Context, seconds float64) 
 }
 
 // RecordWorkflowLifecycle increments workflow_lifecycle_total for the given
-// operation (create|activate|archive), tenant, and result. Called by the
-// business layer at the end of each lifecycle method.
-func (m *Metrics) RecordWorkflowLifecycle(ctx context.Context, op, tenantID string, ok bool) {
+// operation (create|activate|archive) and result. Called by the business
+// layer at the end of each lifecycle method on the caller's request context,
+// so tenant_id/partition_id are attached transparently by the wrapper.
+func (m *Metrics) RecordWorkflowLifecycle(ctx context.Context, op string, ok bool) {
 	if m == nil {
 		return
 	}
@@ -211,11 +221,9 @@ func (m *Metrics) RecordWorkflowLifecycle(ctx context.Context, op, tenantID stri
 		result = "fail"
 	}
 	m.WorkflowLifecycleTotal.Add(ctx, 1,
-		metric.WithAttributes(
-			attribute.String("op", op),
-			attribute.String("result", result),
-			attribute.String("tenant_id", tenantID),
-		))
+		attribute.String("op", op),
+		attribute.String("result", result),
+	)
 }
 
 // StartSpan starts a new OTel span.

@@ -22,10 +22,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/pitabwire/frame/security"
 	"github.com/pitabwire/util"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"gorm.io/gorm"
 
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
@@ -144,12 +141,11 @@ func (m *queueManager) DeleteQueue(ctx context.Context, id string) error {
 func (m *queueManager) Enqueue(ctx context.Context, item *models.QueueItem) error {
 	log := util.Log(ctx)
 	start := time.Now()
-	attrs := tenantMetricAttributes(ctx)
 
 	// Validate queue exists and get its config.
 	queueDef, err := m.defRepo.GetByID(ctx, item.QueueID)
 	if err != nil {
-		enqueueErrorCounter.Add(ctx, 1, attrs)
+		enqueueErrorCounter.Add(ctx, 1)
 		return fmt.Errorf("%w: %w", ErrQueueNotFound, err)
 	}
 
@@ -210,16 +206,16 @@ func (m *queueManager) Enqueue(ctx context.Context, item *models.QueueItem) erro
 
 	if txErr != nil {
 		if errors.Is(txErr, ErrQueueFull) {
-			queueFullCounter.Add(ctx, 1, attrs)
+			queueFullCounter.Add(ctx, 1)
 		} else {
-			enqueueErrorCounter.Add(ctx, 1, attrs)
+			enqueueErrorCounter.Add(ctx, 1)
 		}
 
 		return txErr
 	}
 
-	enqueueCounter.Add(ctx, 1, attrs)
-	enqueueHistogram.Record(ctx, float64(time.Since(start).Milliseconds()), attrs)
+	enqueueCounter.Add(ctx, 1)
+	enqueueHistogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 	m.stats.InvalidateCache(ctx, item.QueueID)
 
 	log.Info("item enqueued",
@@ -765,20 +761,6 @@ func (m *queueManager) CompleteService(ctx context.Context, counterID string) er
 	)
 
 	return nil
-}
-
-func tenantMetricAttributes(ctx context.Context) metric.MeasurementOption {
-	claims := security.ClaimsFromContext(ctx)
-	if claims == nil {
-		return metric.WithAttributes()
-	}
-
-	tenantID := claims.GetTenantID()
-	if tenantID == "" {
-		return metric.WithAttributes()
-	}
-
-	return metric.WithAttributes(attribute.String("tenant_id", tenantID))
 }
 
 const ticketNoRandomLen = 8
