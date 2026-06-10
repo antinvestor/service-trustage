@@ -4,7 +4,7 @@ description: >
   Command deck, run explorer with execution graph, execution queue,
   workflow catalog, and operator action center for tracing and managing
   durable workflow executions.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/antinvestor/service-trustage
 homepage: https://github.com/antinvestor/service-trustage/tree/main/ui_trustage
 issue_tracker: https://github.com/antinvestor/service-trustage/issues
@@ -21,7 +21,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  antinvestor_ui_core: ^0.2.0
+  antinvestor_ui_core: ^0.5.0
   antinvestor_api_runtime: ^0.1.0
   antinvestor_api_event: ^0.1.0
   antinvestor_api_signal: ^0.1.0
