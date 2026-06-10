@@ -17,10 +17,10 @@ func parseDSLFile(path string) (*structpb.Struct, string, error) {
 		return nil, "", fmt.Errorf("read %s: %w", path, err)
 	}
 	s := &structpb.Struct{}
-	if err := protojson.Unmarshal(raw, s); err != nil {
-		return nil, "", fmt.Errorf("parse %s: %w", path, err)
+	if unmarshalErr := protojson.Unmarshal(raw, s); unmarshalErr != nil {
+		return nil, "", fmt.Errorf("parse %s: %w", path, unmarshalErr)
 	}
-	nameVal, ok := s.Fields["name"]
+	nameVal, ok := s.GetFields()["name"]
 	if !ok || nameVal.GetStringValue() == "" {
 		return nil, "", fmt.Errorf("%s: missing or empty 'name' field", path)
 	}

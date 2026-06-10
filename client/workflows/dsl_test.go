@@ -1,3 +1,4 @@
+//nolint:testpackage // white-box tests exercise unexported parseDSLFile/dslHash intentionally.
 package workflows
 
 import (
@@ -29,7 +30,7 @@ func TestParseDSLFile(t *testing.T) {
 	if dslStruct == nil {
 		t.Fatal("dslStruct is nil")
 	}
-	nameField := dslStruct.Fields["name"].GetStringValue()
+	nameField := dslStruct.GetFields()["name"].GetStringValue()
 	if nameField != "test.workflow" {
 		t.Errorf("struct name = %q, want %q", nameField, "test.workflow")
 	}
