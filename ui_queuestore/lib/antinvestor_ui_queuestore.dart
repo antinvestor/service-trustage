@@ -14,6 +14,11 @@ export 'src/models/queue_stats.dart';
 export 'src/api/queuestore_client.dart';
 export 'src/api/auth_http_client.dart';
 
+// Analytics
+export 'src/analytics/analytics_states.dart';
+export 'src/analytics/queue_activity_section.dart';
+export 'src/analytics/queue_analytics_spec.dart';
+
 // Providers
 export 'src/providers/queuestore_providers.dart';
 
