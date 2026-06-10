@@ -370,7 +370,10 @@ func (b *workflowBusiness) ActivateWorkflow(ctx context.Context, id string) erro
 func (b *workflowBusiness) activateWorkflow(ctx context.Context, id string) error {
 	log := util.Log(ctx)
 
-	def, err := b.defRepo.GetByID(ctx, id)
+	// Primary reads: this workflow + its schedules may have been created
+	// milliseconds ago on the primary; a replica read here can miss them under
+	// replication lag (read-your-writes), which leaves the workflow stuck DRAFT.
+	def, err := b.defRepo.GetByIDForUpdate(ctx, id)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
 	}
@@ -385,8 +388,8 @@ func (b *workflowBusiness) activateWorkflow(ctx context.Context, id string) erro
 		return fmt.Errorf("update workflow: %w", err)
 	}
 
-	// Build fire plans from ListByWorkflow (single-table read, tenancy-scoped).
-	myScheds, err := b.scheduleRepo.ListByWorkflow(ctx, def.Name, def.WorkflowVersion)
+	// Build fire plans from the PRIMARY (read-your-writes — see above).
+	myScheds, err := b.scheduleRepo.ListByWorkflowForUpdate(ctx, def.Name, def.WorkflowVersion)
 	if err != nil {
 		return fmt.Errorf("list schedules: %w", err)
 	}
@@ -438,7 +441,9 @@ func (b *workflowBusiness) ArchiveWorkflow(ctx context.Context, id string) error
 func (b *workflowBusiness) archiveWorkflow(ctx context.Context, id string) error {
 	log := util.Log(ctx)
 
-	def, err := b.defRepo.GetByID(ctx, id)
+	// Primary read: read-your-writes for the read-modify-write archive (a
+	// just-created/activated workflow may not have replicated yet).
+	def, err := b.defRepo.GetByIDForUpdate(ctx, id)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWorkflowNotFound, err)
 	}
