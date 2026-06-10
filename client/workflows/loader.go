@@ -14,9 +14,18 @@ import (
 )
 
 type WorkflowClient interface {
-	ListWorkflows(context.Context, *connect.Request[workflowv1.ListWorkflowsRequest]) (*connect.Response[workflowv1.ListWorkflowsResponse], error)
-	CreateWorkflow(context.Context, *connect.Request[workflowv1.CreateWorkflowRequest]) (*connect.Response[workflowv1.CreateWorkflowResponse], error)
-	ActivateWorkflow(context.Context, *connect.Request[workflowv1.ActivateWorkflowRequest]) (*connect.Response[workflowv1.ActivateWorkflowResponse], error)
+	ListWorkflows(
+		context.Context,
+		*connect.Request[workflowv1.ListWorkflowsRequest],
+	) (*connect.Response[workflowv1.ListWorkflowsResponse], error)
+	CreateWorkflow(
+		context.Context,
+		*connect.Request[workflowv1.CreateWorkflowRequest],
+	) (*connect.Response[workflowv1.CreateWorkflowResponse], error)
+	ActivateWorkflow(
+		context.Context,
+		*connect.Request[workflowv1.ActivateWorkflowRequest],
+	) (*connect.Response[workflowv1.ActivateWorkflowResponse], error)
 }
 
 func SyncFromDir(ctx context.Context, client WorkflowClient, dir string) error {
@@ -77,9 +86,9 @@ func syncOne(ctx context.Context, client WorkflowClient, path string) (string, e
 		return "", fmt.Errorf("list workflows: %w", err)
 	}
 
-	for _, existing := range listResp.Msg.Items {
-		if existing.InputSchemaHash == hash &&
-			existing.Status == workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE {
+	for _, existing := range listResp.Msg.GetItems() {
+		if existing.GetInputSchemaHash() == hash &&
+			existing.GetStatus() == workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE {
 			return "skipped", nil
 		}
 	}
@@ -94,7 +103,7 @@ func syncOne(ctx context.Context, client WorkflowClient, path string) (string, e
 		return "", fmt.Errorf("create workflow %s: %w", name, err)
 	}
 
-	wfID := createResp.Msg.Workflow.GetId()
+	wfID := createResp.Msg.GetWorkflow().GetId()
 
 	_, err = client.ActivateWorkflow(ctx, connect.NewRequest(&workflowv1.ActivateWorkflowRequest{
 		Id: wfID,

@@ -21,11 +21,15 @@ import (
 	"testing"
 
 	"github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/datastore/dialect"
+	dialectpg "github.com/pitabwire/frame/datastore/dialect/postgres"
 	"github.com/pitabwire/frame/datastore/pool"
 	"github.com/pitabwire/frame/frametests"
 	"github.com/pitabwire/frame/frametests/definition"
 	"github.com/pitabwire/frame/frametests/deps/testpostgres"
 	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/tenancy"
+	tenpg "github.com/pitabwire/frame/tenancy/postgres"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -55,8 +59,12 @@ var businessTruncateTables = []string{ //nolint:gochecknoglobals // shared test 
 type BusinessSuite struct {
 	frametests.FrameBaseTestSuite
 
-	dbPool pool.Pool
-	cache  cache.RawCache
+	// dbPool runs queries under an unprivileged role so Postgres RLS
+	// applies (mirrors production); adminPool is the container superuser
+	// used for migration, RLS installation, grants, and truncation.
+	dbPool    pool.Pool
+	adminPool pool.Pool
+	cache     cache.RawCache
 
 	metrics *telemetry.Metrics
 
@@ -124,7 +132,65 @@ func (s *BusinessSuite) SetupSuite() {
 		 WHERE trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL`,
 	).Error)
 
-	s.dbPool = p
+	// Production installs RLS policies via pool.Migrate's tenancy hook;
+	// this suite migrates with raw AutoMigrate, so install them explicitly.
+	enrolled, err := tenancy.EnrolledModels(db, []any{
+		&models.EventLog{},
+		&models.WorkflowAuditEvent{},
+		&models.WorkflowStateOutput{},
+		&models.WorkflowStateExecution{},
+		&models.WorkflowScopeRun{},
+		&models.WorkflowSignalWait{},
+		&models.WorkflowSignalMessage{},
+		&models.WorkflowTimer{},
+		&models.WorkflowStateSchema{},
+		&models.WorkflowInstance{},
+		&models.WorkflowDefinition{},
+		&models.WorkflowRetryPolicy{},
+		&models.TriggerBinding{},
+		&models.ScheduleDefinition{},
+		&models.ConnectorConfig{},
+		&models.ConnectorCredential{},
+	})
+	s.Require().NoError(err)
+	s.Require().NoError(tenpg.New().Install(ctx, db, enrolled))
+
+	// The testcontainer user is a superuser and bypasses RLS even with
+	// FORCE, so repositories run through a second pool whose connections
+	// drop to an unprivileged role (same pattern as frame's
+	// tenancy/postgres provider tests).
+	const rlsRole = "rls_test_user"
+	s.Require().NoError(db.Exec(`DO $$ BEGIN
+		IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '` + rlsRole + `') THEN
+			CREATE ROLE ` + rlsRole + ` NOLOGIN;
+		END IF;
+	END $$;`).Error)
+	s.Require().NoError(db.Exec("GRANT USAGE ON SCHEMA public TO " + rlsRole).Error)
+	s.Require().NoError(db.Exec(
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + rlsRole,
+	).Error)
+
+	// Hook order matters: NewPool wires the tenancy GUC-push hook into the
+	// adapter first; SET ROLE registers second so the policy check runs as
+	// the restricted role with app.* vars already bound.
+	scopedAdapter := dialectpg.New()
+	scoped := pool.NewPool(ctx, pool.WithDialectAdapter(scopedAdapter))
+	s.Require().NoError(scopedAdapter.RegisterAcquireHook(
+		func(hookCtx context.Context, conn dialect.DialectConn) error {
+			return conn.Exec(hookCtx, "SET ROLE "+rlsRole)
+		}))
+	s.Require().NoError(scopedAdapter.RegisterReleaseHook(
+		func(hookCtx context.Context, conn dialect.DialectConn) error {
+			return conn.Exec(hookCtx, "RESET ROLE")
+		}))
+	s.Require().NoError(scoped.AddConnection(ctx,
+		pool.WithConnection(string(dsn), false),
+		pool.WithPreparedStatements(false),
+	))
+
+	s.adminPool = p
+	s.dbPool = scoped
+	p = scoped
 	s.cache = cache.NewInMemoryCache()
 	s.metrics = telemetry.NewMetrics()
 
@@ -146,7 +212,8 @@ func (s *BusinessSuite) SetupSuite() {
 
 func (s *BusinessSuite) SetupTest() {
 	ctx := context.Background()
-	s.Require().NoError(s.dbPool.DB(ctx, false).Exec(
+	// TRUNCATE needs table ownership — run it on the superuser pool.
+	s.Require().NoError(s.adminPool.DB(ctx, false).Exec(
 		"TRUNCATE " + strings.Join(businessTruncateTables, ", ") + " CASCADE",
 	).Error)
 	s.Require().NoError(s.cache.Flush(ctx))
@@ -159,6 +226,9 @@ func (s *BusinessSuite) TearDownSuite() {
 	}
 	if s.dbPool != nil {
 		s.dbPool.Close(ctx)
+	}
+	if s.adminPool != nil {
+		s.adminPool.Close(ctx)
 	}
 	s.FrameBaseTestSuite.TearDownSuite()
 }

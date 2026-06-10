@@ -1,3 +1,4 @@
+//nolint:testpackage // white-box tests exercise the unexported workflow client seam intentionally.
 package workflows
 
 import (
@@ -7,6 +8,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+
 	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
 )
 
@@ -22,7 +24,7 @@ func (m *mockWorkflowClient) ListWorkflows(
 	req *connect.Request[workflowv1.ListWorkflowsRequest],
 ) (*connect.Response[workflowv1.ListWorkflowsResponse], error) {
 	m.listed++
-	name := req.Msg.Name
+	name := req.Msg.GetName()
 	if def, ok := m.existing[name]; ok {
 		return connect.NewResponse(&workflowv1.ListWorkflowsResponse{
 			Items: []*workflowv1.WorkflowDefinition{def},

@@ -280,13 +280,17 @@ func (s *SchedulerSuite) TestCronScheduler_RunOnceCreatesEventAndAdvancesSchedul
 	s.Contains(unpublished[0].Payload, `"country": "UG"`)
 	s.Contains(unpublished[0].Payload, `"schedule_name": "hourly"`)
 
-	// Verify next_fire_at was advanced: schedule should now be due again in the future
-	// (ClaimAndFireBatch updates next_fire_at; a subsequent sweep in the near future should
-	// NOT claim the same row since its next_fire_at now points ahead).
+	// Verify next_fire_at was advanced past the claimed fire time. It is NOT
+	// asserted to be in the wall-clock future: planOne deliberately computes
+	// the next fire from the missed NextFireAt when the miss is within
+	// cronMissedFireThreshold (catch-up semantics), so when this test runs
+	// within a minute after a */5 boundary the advanced time legitimately
+	// lands in the recent past and the next sweep fires again. Asserting
+	// wall-clock-future made this test fail for ~1 in 5 runs by time of day.
 	var reloaded models.ScheduleDefinition
 	s.Require().NoError(s.dbPool.DB(ctx, false).First(&reloaded, "id = ?", sched.ID).Error)
-	s.NotNil(reloaded.NextFireAt)
-	s.True(reloaded.NextFireAt.After(time.Now()), "next_fire_at must be in the future after firing")
+	s.Require().NotNil(reloaded.NextFireAt)
+	s.True(reloaded.NextFireAt.After(fireAt), "next_fire_at must advance past the claimed fire time")
 }
 
 func (s *SchedulerSuite) TestRetryScheduler_RunOnceCreatesNewAttempt() {
