@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/pitabwire/frame/security"
@@ -109,9 +110,31 @@ func (b *workflowBusiness) createWorkflow(
 		return nil, fmt.Errorf("%w: %w", ErrDSLValidationFailed, err)
 	}
 
+	// Version-bump on change. Trustage has no UpdateWorkflow, so callers change a
+	// workflow's cron/DSL by archiving the old one and creating a new one with the
+	// SAME name. Reusing version 1 then collides with the archived row on the
+	// partial unique indexes (idx_wd_name_version / idx_sd_workflow_unique /
+	// idx_wss_unique), which left every per-source crawl schedule stuck DRAFT.
+	// Instead create the NEXT version: max(existing)+1. Short-circuit to the
+	// existing row when an identical, non-archived version is already present so
+	// a re-submit stays idempotent (no version churn).
+	existing, err := b.defRepo.ListByNameForUpdate(ctx, spec.Name)
+	if err != nil {
+		return nil, fmt.Errorf("list existing versions: %w", err)
+	}
+	version := 1
+	for _, e := range existing {
+		if e.WorkflowVersion >= version {
+			version = e.WorkflowVersion + 1
+		}
+		if e.Status != models.WorkflowStatusArchived && sameDSL(e.DSLBlob, dslBlob) {
+			return e, nil // identical live version already exists — idempotent
+		}
+	}
+
 	def := &models.WorkflowDefinition{
 		Name:            spec.Name,
-		WorkflowVersion: 1,
+		WorkflowVersion: version,
 		Status:          models.WorkflowStatusDraft,
 		DSLBlob:         string(dslBlob),
 	}
@@ -119,7 +142,7 @@ func (b *workflowBusiness) createWorkflow(
 		def.TimeoutSeconds = int64(spec.Timeout.Duration.Seconds())
 	}
 
-	err = b.registerStepSchemas(ctx, spec)
+	err = b.registerStepSchemas(ctx, spec, version)
 	if err != nil {
 		return nil, fmt.Errorf("register schemas: %w", err)
 	}
@@ -152,6 +175,22 @@ func (b *workflowBusiness) createWorkflow(
 
 	log.Info("workflow created", "workflow_id", def.ID, "name", def.Name)
 	return def, nil
+}
+
+// sameDSL reports whether two DSL documents are semantically identical,
+// ignoring whitespace and object-key ordering. dsl_blob is stored as jsonb,
+// which normalises the text, so a byte compare against the raw input never
+// matches — this is what the version-bump idempotency check uses to recognise
+// an unchanged re-submit.
+func sameDSL(stored string, incoming json.RawMessage) bool {
+	var a, b any
+	if json.Unmarshal([]byte(stored), &a) != nil {
+		return false
+	}
+	if json.Unmarshal(incoming, &b) != nil {
+		return false
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // planScheduleRows builds []*ScheduleDefinition from spec.Schedules for
@@ -222,6 +261,7 @@ func validateExecutableWorkflow(spec *dsl.WorkflowSpec) error {
 func (b *workflowBusiness) registerStepSchemas(
 	ctx context.Context,
 	spec *dsl.WorkflowSpec,
+	version int,
 ) error {
 	for _, step := range dsl.CollectAllSteps(spec) {
 		inputSchema, outputSchema, errorSchema, ok := defaultSchemasForStep(step)
@@ -230,21 +270,21 @@ func (b *workflowBusiness) registerStepSchemas(
 		}
 
 		if _, err := b.schemaReg.RegisterSchema(
-			ctx, spec.Name, 1, step.ID,
+			ctx, spec.Name, version, step.ID,
 			models.SchemaTypeInput, inputSchema,
 		); err != nil {
 			return fmt.Errorf("register input schema for step %s: %w", step.ID, err)
 		}
 
 		if _, err := b.schemaReg.RegisterSchema(
-			ctx, spec.Name, 1, step.ID,
+			ctx, spec.Name, version, step.ID,
 			models.SchemaTypeOutput, outputSchema,
 		); err != nil {
 			return fmt.Errorf("register output schema for step %s: %w", step.ID, err)
 		}
 
 		if _, err := b.schemaReg.RegisterSchema(
-			ctx, spec.Name, 1, step.ID,
+			ctx, spec.Name, version, step.ID,
 			models.SchemaTypeError, errorSchema,
 		); err != nil {
 			return fmt.Errorf("register error schema for step %s: %w", step.ID, err)
