@@ -333,6 +333,69 @@ func (s *BusinessSuite) TestActivateWorkflow_ActivatesSchedulesAndDeactivatesPre
 	}
 }
 
+// TestCreateWorkflow_VersionBumpsOnArchiveRecreate verifies the version-bump:
+// since Trustage has no UpdateWorkflow, callers change a schedule's cron by
+// archiving the old workflow and recreating it under the same name. The create
+// must bump to the next version instead of colliding with the archived row on
+// the partial unique indexes (the bug that left per-source crawl schedules
+// stuck DRAFT).
+func (s *BusinessSuite) TestCreateWorkflow_VersionBumpsOnArchiveRecreate() {
+	ctx := s.tenantCtx()
+	biz := s.workflowBusiness()
+
+	v1DSL := []byte(`{
+		"version": "v1",
+		"name": "w-recreate",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [{"name": "only", "cron_expr": "*/5 * * * *"}]
+	}`)
+	v1, err := biz.CreateWorkflow(ctx, v1DSL)
+	s.Require().NoError(err)
+	s.Equal(1, v1.WorkflowVersion)
+	s.Require().NoError(biz.ActivateWorkflow(ctx, v1.ID))
+	s.Require().NoError(biz.ArchiveWorkflow(ctx, v1.ID))
+
+	v2DSL := []byte(`{
+		"version": "v1",
+		"name": "w-recreate",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [{"name": "only", "cron_expr": "0 */12 * * *"}]
+	}`)
+	v2, err := biz.CreateWorkflow(ctx, v2DSL)
+	s.Require().NoError(err)
+	s.Equal(2, v2.WorkflowVersion, "recreate after archive must bump the version")
+	s.Require().NoError(biz.ActivateWorkflow(ctx, v2.ID))
+
+	v2Scheds, err := s.scheduleRepo.ListByWorkflow(ctx, v2.Name, v2.WorkflowVersion)
+	s.Require().NoError(err)
+	s.Len(v2Scheds, 1)
+	s.True(v2Scheds[0].Active, "recreated schedule must activate")
+	s.NotNil(v2Scheds[0].NextFireAt)
+}
+
+// TestCreateWorkflow_IdenticalResubmitIsIdempotent verifies that re-submitting
+// the identical DSL of a live workflow returns the existing row (no new
+// version) — so re-syncs (SyncFromDir, reconcile) don't churn versions.
+func (s *BusinessSuite) TestCreateWorkflow_IdenticalResubmitIsIdempotent() {
+	ctx := s.tenantCtx()
+	biz := s.workflowBusiness()
+
+	dslBlob := []byte(`{
+		"version": "v1",
+		"name": "w-idem",
+		"steps": [{"id": "s", "type": "delay", "delay": {"duration": "1s"}}],
+		"schedules": [{"name": "only", "cron_expr": "*/5 * * * *"}]
+	}`)
+	v1, err := biz.CreateWorkflow(ctx, dslBlob)
+	s.Require().NoError(err)
+	s.Require().NoError(biz.ActivateWorkflow(ctx, v1.ID))
+
+	again, err := biz.CreateWorkflow(ctx, dslBlob)
+	s.Require().NoError(err)
+	s.Equal(v1.ID, again.ID, "identical resubmit must return the existing workflow")
+	s.Equal(1, again.WorkflowVersion, "identical resubmit must not bump the version")
+}
+
 func (s *BusinessSuite) TestSchemaRegistry_RegisterValidateAndCache() {
 	ctx := s.tenantCtx()
 

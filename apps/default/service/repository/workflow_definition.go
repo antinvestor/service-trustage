@@ -31,6 +31,9 @@ type WorkflowDefinitionRepository interface {
 	GetByID(ctx context.Context, id string) (*models.WorkflowDefinition, error)
 	// GetByIDForUpdate reads from the PRIMARY for read-modify-write flows.
 	GetByIDForUpdate(ctx context.Context, id string) (*models.WorkflowDefinition, error)
+	// ListByNameForUpdate returns all non-deleted versions of a name from the
+	// PRIMARY, for version-bump computation in create.
+	ListByNameForUpdate(ctx context.Context, name string) ([]*models.WorkflowDefinition, error)
 	GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error)
 	ListActiveByName(ctx context.Context, name string, limit int) ([]*models.WorkflowDefinition, error)
 	ListPage(ctx context.Context, filter WorkflowDefinitionListFilter) (*WorkflowDefinitionPage, error)
@@ -94,6 +97,23 @@ func (r *workflowDefinitionRepository) GetByIDForUpdate(
 		return nil, fmt.Errorf("get workflow by id (primary): %w", err)
 	}
 	return &def, nil
+}
+
+// ListByNameForUpdate returns all non-deleted versions of a name from the
+// PRIMARY (read-your-writes), newest version first. Used by create to compute
+// the next version (max+1) and detect an identical live re-submit.
+func (r *workflowDefinitionRepository) ListByNameForUpdate(
+	ctx context.Context,
+	name string,
+) ([]*models.WorkflowDefinition, error) {
+	var defs []*models.WorkflowDefinition
+	err := r.BaseRepository.Pool().DB(ctx, false).
+		Where("name = ? AND deleted_at IS NULL", name).
+		Order("workflow_version DESC").Find(&defs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list workflow versions (primary): %w", err)
+	}
+	return defs, nil
 }
 
 func (r *workflowDefinitionRepository) GetByNameAndVersion(
