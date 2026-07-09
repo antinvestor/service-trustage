@@ -14,7 +14,7 @@
 
 package authz
 
-import "github.com/pitabwire/frame/security"
+import "github.com/pitabwire/frame/v2/security"
 
 const (
 	NamespaceProfile       = "service_trustage"

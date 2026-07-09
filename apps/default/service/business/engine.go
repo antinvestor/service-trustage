@@ -23,8 +23,8 @@ import (
 	"math/rand/v2"
 	"time"
 
-	framecache "github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/frame/security"
+	framecache "github.com/pitabwire/frame/v2/cache"
+	"github.com/pitabwire/frame/v2/security"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 

@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pitabwire/frame/queue"
+	"github.com/pitabwire/frame/v2/queue"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"

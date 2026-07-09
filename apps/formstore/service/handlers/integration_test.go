@@ -21,7 +21,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/v2/cache"
 
 	"github.com/antinvestor/service-trustage/apps/formstore/service/models"
 )

@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pitabwire/frame/datastore"
-	"github.com/pitabwire/frame/datastore/pool"
+	"github.com/pitabwire/frame/v2/datastore"
+	"github.com/pitabwire/frame/v2/datastore/pool"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 

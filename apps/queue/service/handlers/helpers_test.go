@@ -24,9 +24,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/frame/security"
-	"github.com/pitabwire/frame/security/authorizer"
+	"github.com/pitabwire/frame/v2/cache"
+	"github.com/pitabwire/frame/v2/security"
+	"github.com/pitabwire/frame/v2/security/authorizer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/antinvestor/service-trustage/apps/queue/service/business"

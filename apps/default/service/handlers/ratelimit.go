@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"time"
 
-	framecache "github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/frame/ratelimiter"
-	"github.com/pitabwire/frame/security"
+	framecache "github.com/pitabwire/frame/v2/cache"
+	"github.com/pitabwire/frame/v2/ratelimiter"
+	"github.com/pitabwire/frame/v2/security"
 )
 
 // RateLimiter enforces per-tenant rate limits with chunked shared-cache reservations.

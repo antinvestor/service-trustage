@@ -17,7 +17,7 @@ package models
 import (
 	"time"
 
-	"github.com/antinvestor/common/timescale"
+	"github.com/antinvestor/common/v2/timescale"
 )
 
 const (

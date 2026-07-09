@@ -20,8 +20,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/pitabwire/frame/queue"
-	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/v2/queue"
+	"github.com/pitabwire/frame/v2/security"
 
 	"github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/business"

@@ -18,7 +18,7 @@ import (
 	"context"
 	"time"
 
-	frametelemetry "github.com/pitabwire/frame/telemetry"
+	frametelemetry "github.com/pitabwire/frame/v2/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"

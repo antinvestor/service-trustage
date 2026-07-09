@@ -14,7 +14,7 @@
 
 package models
 
-import "github.com/pitabwire/frame/data"
+import "github.com/pitabwire/frame/v2/data"
 
 // WorkflowAuditEvent records an append-only audit trail for workflow state transitions.
 type WorkflowAuditEvent struct {

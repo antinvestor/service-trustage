@@ -21,12 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/frame/datastore/pool"
-	"github.com/pitabwire/frame/frametests"
-	"github.com/pitabwire/frame/frametests/definition"
-	"github.com/pitabwire/frame/frametests/deps/testpostgres"
-	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/v2/cache"
+	"github.com/pitabwire/frame/v2/datastore/pool"
+	"github.com/pitabwire/frame/v2/frametests"
+	"github.com/pitabwire/frame/v2/frametests/definition"
+	"github.com/pitabwire/frame/v2/frametests/deps/testpostgres"
+	"github.com/pitabwire/frame/v2/security"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"

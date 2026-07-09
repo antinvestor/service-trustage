@@ -17,7 +17,7 @@ package models
 import (
 	"fmt"
 
-	"github.com/pitabwire/frame/data"
+	"github.com/pitabwire/frame/v2/data"
 )
 
 // WorkflowDefinitionStatus enumerates workflow definition statuses.
