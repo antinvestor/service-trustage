@@ -15,9 +15,9 @@
 package cache
 
 import (
-	"github.com/pitabwire/frame/cache"
-	"github.com/pitabwire/frame/cache/valkey"
-	"github.com/pitabwire/frame/data"
+	"github.com/pitabwire/frame/v2/cache"
+	"github.com/pitabwire/frame/v2/cache/valkey"
+	"github.com/pitabwire/frame/v2/data"
 )
 
 // SetupCache creates a RawCache backed by Valkey when the DSN is a Redis URI,

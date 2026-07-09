@@ -20,12 +20,12 @@ import (
 	"strings"
 
 	"buf.build/gen/go/antinvestor/files/connectrpc/go/files/v1/filesv1connect"
-	"github.com/pitabwire/frame"
-	frameclient "github.com/pitabwire/frame/client"
-	"github.com/pitabwire/frame/config"
-	"github.com/pitabwire/frame/datastore"
-	"github.com/pitabwire/frame/security/authorizer"
-	securityhttp "github.com/pitabwire/frame/security/interceptors/httptor"
+	"github.com/pitabwire/frame/v2"
+	frameclient "github.com/pitabwire/frame/v2/client"
+	"github.com/pitabwire/frame/v2/config"
+	"github.com/pitabwire/frame/v2/datastore"
+	"github.com/pitabwire/frame/v2/security/authorizer"
+	securityhttp "github.com/pitabwire/frame/v2/security/interceptors/httptor"
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/formstore/config"

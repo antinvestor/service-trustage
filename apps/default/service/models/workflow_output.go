@@ -14,7 +14,7 @@
 
 package models
 
-import "github.com/pitabwire/frame/data"
+import "github.com/pitabwire/frame/v2/data"
 
 // WorkflowStateOutput stores the validated output of each state execution.
 type WorkflowStateOutput struct {

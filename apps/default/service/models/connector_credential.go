@@ -14,7 +14,7 @@
 
 package models
 
-import "github.com/pitabwire/frame/data"
+import "github.com/pitabwire/frame/v2/data"
 
 // ConnectorCredential stores encrypted credentials for connector adapters.
 type ConnectorCredential struct {

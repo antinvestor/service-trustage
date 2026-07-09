@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/pitabwire/frame/config"
+	"github.com/pitabwire/frame/v2/config"
 )
 
 // Config holds all configuration for the Orchestrator service.

@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pitabwire/frame/cache"
+	"github.com/pitabwire/frame/v2/cache"
 
 	"github.com/antinvestor/service-trustage/apps/queue/service/models"
 	"github.com/antinvestor/service-trustage/apps/queue/service/repository"

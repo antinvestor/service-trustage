@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	framecache "github.com/pitabwire/frame/cache"
+	framecache "github.com/pitabwire/frame/v2/cache"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"

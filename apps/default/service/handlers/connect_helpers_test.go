@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/security"
+	"github.com/pitabwire/frame/v2/security"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 

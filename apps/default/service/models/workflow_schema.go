@@ -17,7 +17,7 @@ package models
 import (
 	"encoding/json"
 
-	"github.com/pitabwire/frame/data"
+	"github.com/pitabwire/frame/v2/data"
 )
 
 // SchemaType enumerates schema types.
