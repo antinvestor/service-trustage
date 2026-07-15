@@ -11,7 +11,7 @@ require (
 	buf.build/gen/go/gnostic/gnostic/protocolbuffers/go v1.36.11-20230414000709-087bc8072ce4.1
 	connectrpc.com/connect v1.20.0
 	github.com/antinvestor/common/v2 v2.0.0
-	github.com/google/cel-go v0.28.1
+	github.com/google/cel-go v0.29.2
 	github.com/lib/pq v1.12.3
 	github.com/openai/openai-go/v3 v3.39.0
 	github.com/pitabwire/frame/v2 v2.0.5
