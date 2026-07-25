@@ -28,11 +28,27 @@ type Config struct {
 	// Server.
 	ServerPort string `env:"SERVER_PORT" envDefault:"8080"`
 
+	// Process role and progress driver (see role.go).
+	ServiceRole                   string `env:"SERVICE_ROLE"                       envDefault:"all"`
+	ServiceRoleReconcileInWorker  bool   `env:"SERVICE_ROLE_RECONCILE_IN_WORKER"   envDefault:"true"`
+	WorkerExposeAPI               bool   `env:"WORKER_EXPOSE_API"                  envDefault:"false"`
+	ProgressDriver                string `env:"PROGRESS_DRIVER"                    envDefault:"multi_sweep"`
+	EnableLegacyTickers           bool   `env:"ENABLE_LEGACY_TICKERS"              envDefault:"false"`
+	EnableWorkNotifier            bool   `env:"ENABLE_WORK_NOTIFIER"               envDefault:"true"`
+	ReconcilerMultiSweepIntervalS int    `env:"RECONCILER_MULTI_SWEEP_INTERVAL_SECONDS" envDefault:"5"`
+	CloudRunMaxStepSeconds        int    `env:"CLOUD_RUN_MAX_STEP_SECONDS"         envDefault:"300"`
+
 	// Valkey.
-	ValkeyCacheURL string `env:"VALKEY_CACHE_URL" envDefault:"redis://localhost:6379"`
+	ValkeyCacheURL     string `env:"VALKEY_CACHE_URL"      envDefault:"redis://localhost:6379"`
+	CacheRequireValkey bool   `env:"CACHE_REQUIRE_VALKEY"  envDefault:"false"`
 
 	// Encryption.
 	MasterEncryptionKey string `env:"MASTER_ENCRYPTION_KEY"`
+
+	// Cloud Tasks delayed publisher (optional; empty = Noop delayed).
+	// Example: cloudtasks:///projects/p/locations/l/queues/q?url=https://worker/_frame/queue/sched-timer&oidc_sa=sa@p.iam
+	CloudTasksDelayedURLTemplate string `env:"CLOUD_TASKS_DELAYED_URL_TEMPLATE"`
+	CloudTasksMaxHorizonHours    int    `env:"CLOUD_TASKS_MAX_HORIZON_HOURS" envDefault:"720"` // 30d
 
 	// Cron scheduler.
 	CronSchedulerBatchSize    int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`
@@ -47,7 +63,7 @@ type Config struct {
 	SchedulerPoolMaxConns int `env:"SCHEDULER_POOL_MAX_CONNS" envDefault:"10"`
 	SchedulerPoolMinConns int `env:"SCHEDULER_POOL_MIN_CONNS" envDefault:"2"`
 
-	// Scheduler intervals (seconds).
+	// Scheduler intervals (seconds) — used by legacy tickers only.
 	DispatchIntervalSeconds int `env:"DISPATCH_INTERVAL_SECONDS" envDefault:"5"`
 	RetryIntervalSeconds    int `env:"RETRY_INTERVAL_SECONDS"    envDefault:"10"`
 	TimerIntervalSeconds    int `env:"TIMER_INTERVAL_SECONDS"    envDefault:"5"`
@@ -73,6 +89,7 @@ type Config struct {
 	DispatchMaxBatchesPerSweep int `env:"DISPATCH_MAX_BATCHES_PER_SWEEP" envDefault:"50"`
 	OutboxMaxBatchesPerSweep   int `env:"OUTBOX_MAX_BATCHES_PER_SWEEP"   envDefault:"50"`
 	OutboxPublishConcurrency   int `env:"OUTBOX_PUBLISH_CONCURRENCY"     envDefault:"16"`
+	ReconcileMaxBatchesPerJob  int `env:"RECONCILE_MAX_BATCHES_PER_JOB"  envDefault:"1"`
 
 	// Execution timeout (seconds) - default timeout for dispatched executions.
 	DefaultExecutionTimeoutSeconds int `env:"DEFAULT_EXECUTION_TIMEOUT_SECONDS" envDefault:"300"`
@@ -114,6 +131,25 @@ type Config struct {
 	// Queue: Event Router (subscriber).
 	QueueEventRouterName string `env:"QUEUE_EVENT_ROUTER_NAME" envDefault:"event-router"`
 	QueueEventRouterURL  string `env:"QUEUE_EVENT_ROUTER_URL"  envDefault:"nats://localhost:4222?jetstream=true&stream_name=wf-events&stream_subjects=wf.events.%3E&stream_retention=limits&stream_max_age=720h&stream_storage=file&stream_num_replicas=1&consumer_durable_name=event-router&consumer_ack_policy=explicit&consumer_max_deliver=3&consumer_ack_wait=10s&consumer_max_ack_pending=1000&consumer_deliver_policy=all&subject=wf.events.%3E"`
+
+	// Reconcile / wake push subscribers (Frame push:// or pull URLs).
+	// Defaults use mem:// for local safety; production sets push:// or nats/gcppubsub.
+	QueueSchedReconcileName string `env:"QUEUE_SCHED_RECONCILE_NAME" envDefault:"sched-reconcile"`
+	QueueSchedReconcileURL  string `env:"QUEUE_SCHED_RECONCILE_URL"  envDefault:"mem://sched-reconcile"`
+	QueueSchedCronName      string `env:"QUEUE_SCHED_CRON_NAME"      envDefault:"sched-cron"`
+	QueueSchedCronURL       string `env:"QUEUE_SCHED_CRON_URL"       envDefault:"mem://sched-cron"`
+	QueueSchedCleanupName   string `env:"QUEUE_SCHED_CLEANUP_NAME"   envDefault:"sched-cleanup"`
+	QueueSchedCleanupURL    string `env:"QUEUE_SCHED_CLEANUP_URL"    envDefault:"mem://sched-cleanup"`
+	QueueSchedDispatchName  string `env:"QUEUE_SCHED_DISPATCH_NAME"  envDefault:"sched-dispatch"`
+	QueueSchedDispatchURL   string `env:"QUEUE_SCHED_DISPATCH_URL"   envDefault:"mem://sched-dispatch"`
+	QueueSchedRetryName     string `env:"QUEUE_SCHED_RETRY_NAME"     envDefault:"sched-retry"`
+	QueueSchedRetryURL      string `env:"QUEUE_SCHED_RETRY_URL"      envDefault:"mem://sched-retry"`
+	QueueSchedTimerName     string `env:"QUEUE_SCHED_TIMER_NAME"     envDefault:"sched-timer"`
+	QueueSchedTimerURL      string `env:"QUEUE_SCHED_TIMER_URL"      envDefault:"mem://sched-timer"`
+	QueueSchedTimeoutName   string `env:"QUEUE_SCHED_TIMEOUT_NAME"   envDefault:"sched-timeout"`
+	QueueSchedTimeoutURL    string `env:"QUEUE_SCHED_TIMEOUT_URL"    envDefault:"mem://sched-timeout"`
+	QueueSchedSignalName    string `env:"QUEUE_SCHED_SIGNAL_NAME"    envDefault:"sched-signal"`
+	QueueSchedSignalURL     string `env:"QUEUE_SCHED_SIGNAL_URL"     envDefault:"mem://sched-signal"`
 }
 
 // injectQueryParam replaces or adds a single query parameter on a URL string.

@@ -24,7 +24,8 @@ type Config struct {
 	ServerPort string `env:"SERVER_PORT" envDefault:"8081"`
 
 	// Valkey.
-	ValkeyCacheURL string `env:"VALKEY_CACHE_URL" envDefault:"redis://localhost:6379"`
+	ValkeyCacheURL     string `env:"VALKEY_CACHE_URL"     envDefault:"redis://localhost:6379"`
+	CacheRequireValkey bool   `env:"CACHE_REQUIRE_VALKEY" envDefault:"false"`
 
 	// File service URL for uploading files.
 	FileServiceURL                   string `env:"FILE_SERVICE_URL"                      envDefault:"https://files.antinvestor.com"`

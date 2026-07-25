@@ -33,6 +33,7 @@ type EventHandler struct {
 	auditRepo   repository.AuditEventRepository
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
+	outbox      *OutboxPublisher
 }
 
 // NewEventHandler creates a new EventHandler.
@@ -41,13 +42,18 @@ func NewEventHandler(
 	auditRepo repository.AuditEventRepository,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
+	outbox ...*OutboxPublisher,
 ) *EventHandler {
-	return &EventHandler{
+	h := &EventHandler{
 		eventRepo:   eventRepo,
 		auditRepo:   auditRepo,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
+	if len(outbox) > 0 {
+		h.outbox = outbox[0]
+	}
+	return h
 }
 
 // IngestEventRequest is the request body for event ingestion.
@@ -116,11 +122,13 @@ func (h *EventHandler) IngestEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort Frame queue publish; outbox reconcile is the durable path.
+	if h.outbox != nil {
+		h.outbox.PublishAfterCreate(ctx, eventLog)
+	}
+
 	log.Debug("event ingested", "event_id", eventLog.ID, "event_type", req.EventType)
 
-	// Event is stored in the outbox table. The outbox scheduler will publish it
-	// to NATS, where the event router worker will process it. This avoids
-	// double-routing that would occur if we also routed synchronously here.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{

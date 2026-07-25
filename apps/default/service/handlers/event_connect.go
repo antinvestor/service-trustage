@@ -37,6 +37,7 @@ type EventConnectServer struct {
 	auditRepo   repository.AuditEventRepository
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
+	outbox      *OutboxPublisher
 
 	eventv1connect.UnimplementedEventServiceHandler
 }
@@ -47,13 +48,18 @@ func NewEventConnectServer(
 	auditRepo repository.AuditEventRepository,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
+	outbox ...*OutboxPublisher,
 ) *EventConnectServer {
-	return &EventConnectServer{
+	s := &EventConnectServer{
 		eventRepo:   eventRepo,
 		auditRepo:   auditRepo,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
+	if len(outbox) > 0 {
+		s.outbox = outbox[0]
+	}
+	return s
 }
 
 func (s *EventConnectServer) IngestEvent(
@@ -86,6 +92,10 @@ func (s *EventConnectServer) IngestEvent(
 	}
 	if duplicated {
 		return duplicateResponse, nil
+	}
+
+	if s.outbox != nil {
+		s.outbox.PublishAfterCreate(ctx, eventLog)
 	}
 
 	return connect.NewResponse(&eventv1.IngestEventResponse{

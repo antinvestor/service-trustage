@@ -15,15 +15,16 @@
 package cache
 
 import (
+	"fmt"
+
 	"github.com/pitabwire/frame/v2/cache"
 	"github.com/pitabwire/frame/v2/cache/valkey"
 	"github.com/pitabwire/frame/v2/data"
 )
 
-// SetupCache creates a RawCache backed by Valkey when the DSN is a Redis URI,
-// otherwise falls back to an in-memory cache. If Valkey connection fails,
-// it falls back to in-memory with a warning.
-func SetupCache(cacheURI string) (cache.RawCache, error) {
+// SetupCache creates a Valkey-backed cache when DSN is redis://.
+// When requireValkey is true, failures are fatal (no silent in-memory fallback).
+func SetupCache(cacheURI string, requireValkey bool) (cache.RawCache, error) {
 	cacheDSN := data.DSN(cacheURI)
 	opts := []cache.Option{cache.WithDSN(cacheDSN)}
 
@@ -32,8 +33,14 @@ func SetupCache(cacheURI string) (cache.RawCache, error) {
 		if err == nil {
 			return c, nil
 		}
-		// Valkey unavailable — fall back to in-memory cache.
+		if requireValkey {
+			return nil, fmt.Errorf("valkey required but connection failed: %w", err)
+		}
 		return cache.NewInMemoryCache(), nil
+	}
+
+	if requireValkey {
+		return nil, fmt.Errorf("valkey required but cache URL is not redis")
 	}
 
 	return cache.NewInMemoryCache(), nil

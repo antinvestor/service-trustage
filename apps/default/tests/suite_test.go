@@ -226,6 +226,7 @@ func (s *DefaultServiceSuite) eventRouter() business.EventRouter {
 		s.stateEngine(),
 		s.metrics,
 		business.DefaultEventRouterBindingLimit,
+		s.execRepo,
 	)
 }
 

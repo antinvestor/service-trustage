@@ -122,6 +122,18 @@ type StateEngine interface {
 	RevertDispatch(ctx context.Context, executionID string) error
 }
 
+// ExecutionTimeoutResolver resolves per-step/workflow/default execution deadlines.
+// Implemented by apps/default/service/scheduling; optional on the engine.
+type ExecutionTimeoutResolver interface {
+	ResolveTimeoutAt(ctx context.Context, workflowName string, workflowVersion int, state string, now time.Time) (time.Time, error)
+}
+
+// WorkNotifier hooks after durable write paths (optional; may be nil).
+type WorkNotifier interface {
+	NotifyPending(ctx context.Context, executionID string) error
+	NotifyExecutionTimeout(ctx context.Context, executionID string, at time.Time) error
+}
+
 type stateEngine struct {
 	instanceRepo    repository.WorkflowInstanceRepository
 	execRepo        repository.WorkflowExecutionRepository
@@ -137,6 +149,41 @@ type stateEngine struct {
 	schemaReg       SchemaRegistry
 	metrics         *telemetry.Metrics
 	cache           framecache.RawCache
+	timeoutResolver ExecutionTimeoutResolver
+	notifier        WorkNotifier
+	defaultTimeout  time.Duration
+	maxStepTimeout  time.Duration
+}
+
+// EngineOption configures optional state engine dependencies.
+type EngineOption func(*stateEngine)
+
+// WithTimeoutResolver sets per-step timeout resolution at Dispatch.
+func WithTimeoutResolver(r ExecutionTimeoutResolver) EngineOption {
+	return func(e *stateEngine) { e.timeoutResolver = r }
+}
+
+// WithWorkNotifier sets post-write work notification hooks.
+func WithWorkNotifier(n WorkNotifier) EngineOption {
+	return func(e *stateEngine) { e.notifier = n }
+}
+
+// WithDefaultExecutionTimeout sets the fallback execution deadline duration.
+func WithDefaultExecutionTimeout(d time.Duration) EngineOption {
+	return func(e *stateEngine) {
+		if d > 0 {
+			e.defaultTimeout = d
+		}
+	}
+}
+
+// WithMaxStepTimeout caps resolved step timeouts (e.g. Cloud Run 300s).
+func WithMaxStepTimeout(d time.Duration) EngineOption {
+	return func(e *stateEngine) {
+		if d > 0 {
+			e.maxStepTimeout = d
+		}
+	}
 }
 
 // NewStateEngine creates a new StateEngine.
@@ -155,8 +202,9 @@ func NewStateEngine(
 	schemaReg SchemaRegistry,
 	metrics *telemetry.Metrics,
 	cache framecache.RawCache,
+	opts ...EngineOption,
 ) StateEngine {
-	return &stateEngine{
+	e := &stateEngine{
 		instanceRepo:    instanceRepo,
 		execRepo:        execRepo,
 		runtimeRepo:     runtimeRepo,
@@ -171,7 +219,13 @@ func NewStateEngine(
 		schemaReg:       schemaReg,
 		metrics:         metrics,
 		cache:           cache,
+		defaultTimeout:  300 * time.Second,
+		maxStepTimeout:  300 * time.Second,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // CreateInitialExecution creates the first execution for a workflow instance.
@@ -250,6 +304,7 @@ func (e *stateEngine) CreateInitialExecution(
 }
 
 // Dispatch transitions a pending execution to dispatched and builds the command.
+// Dual-path safe: only wins when status is still pending (UpdateStatusExpected).
 func (e *stateEngine) Dispatch(
 	ctx context.Context,
 	execution *models.WorkflowStateExecution,
@@ -277,15 +332,36 @@ func (e *stateEngine) Dispatch(
 		return nil, fmt.Errorf("generate dispatch token: %w", tokenErr)
 	}
 
-	// Atomically mark as dispatched and store the hashed token in a single update.
 	now := time.Now()
 	tokenHash := cryptoutil.HashToken(rawToken)
 
-	err := e.execRepo.UpdateStatus(ctx, execution.ID, models.ExecStatusDispatched, map[string]any{
-		"started_at":      now,
-		"execution_token": tokenHash,
-	})
+	timeoutAt := now.Add(e.defaultTimeout)
+	if e.timeoutResolver != nil {
+		if at, resolveErr := e.timeoutResolver.ResolveTimeoutAt(
+			ctx, instance.WorkflowName, instance.WorkflowVersion, execution.State, now,
+		); resolveErr == nil && !at.IsZero() {
+			timeoutAt = at
+		}
+	}
+	if e.maxStepTimeout > 0 && timeoutAt.After(now.Add(e.maxStepTimeout)) {
+		timeoutAt = now.Add(e.maxStepTimeout)
+	}
+
+	err := e.execRepo.UpdateStatusExpected(
+		ctx,
+		execution.ID,
+		models.ExecStatusPending,
+		models.ExecStatusDispatched,
+		map[string]any{
+			"started_at":      now,
+			"execution_token": tokenHash,
+			"timeout_at":      timeoutAt,
+		},
+	)
 	if err != nil {
+		if errors.Is(err, repository.ErrStaleMutation) {
+			return nil, ErrAlreadyDispatched
+		}
 		return nil, fmt.Errorf("mark dispatched: %w", err)
 	}
 
@@ -294,7 +370,7 @@ func (e *stateEngine) Dispatch(
 		inputPayload = json.RawMessage(execution.InputPayload)
 	}
 
-	return &ExecutionCommand{
+	cmd := &ExecutionCommand{
 		ExecutionID:     execution.ID,
 		InstanceID:      execution.InstanceID,
 		Workflow:        instance.WorkflowName,
@@ -305,19 +381,40 @@ func (e *stateEngine) Dispatch(
 		InputSchemaHash: execution.InputSchemaHash,
 		ExecutionToken:  rawToken,
 		TraceID:         execution.TraceID,
-	}, nil
+	}
+
+	if e.notifier != nil {
+		if nErr := e.notifier.NotifyExecutionTimeout(ctx, execution.ID, timeoutAt); nErr != nil {
+			util.Log(ctx).WithError(nErr).Warn("dispatch: timeout wake notify failed",
+				"execution_id", execution.ID,
+			)
+		}
+	}
+
+	return cmd, nil
 }
 
 // RevertDispatch resets an execution from 'dispatched' back to 'pending'.
-// It clears started_at and execution_token so the dispatch scheduler treats the
-// execution as fresh on the next sweep. The operation is idempotent: if the
-// execution is already pending (e.g. concurrent revert), UpdateStatus will
-// still succeed because the WHERE clause matches on id only.
+// Dual-path safe: only reverts when still dispatched.
 func (e *stateEngine) RevertDispatch(ctx context.Context, executionID string) error {
-	return e.execRepo.UpdateStatus(ctx, executionID, models.ExecStatusPending, map[string]any{
-		"started_at":      nil,
-		"execution_token": "",
-	})
+	err := e.execRepo.UpdateStatusExpected(
+		ctx,
+		executionID,
+		models.ExecStatusDispatched,
+		models.ExecStatusPending,
+		map[string]any{
+			"started_at":      nil,
+			"execution_token": "",
+			"timeout_at":      nil,
+		},
+	)
+	if err != nil {
+		if errors.Is(err, repository.ErrStaleMutation) {
+			return nil // already not dispatched — idempotent
+		}
+		return err
+	}
+	return nil
 }
 
 // Commit processes a worker's result: validates output, stores it, advances state, and creates the next execution.

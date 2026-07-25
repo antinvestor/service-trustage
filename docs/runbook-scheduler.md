@@ -7,7 +7,15 @@ One section per alert; anchor links match `runbook_url` annotations in the Prome
 
 ## Operational overview
 
-**Deployment.** trustage runs as a Kubernetes Deployment with HPA (1–12 pods) in the `trustage` namespace. Every pod starts a `CronScheduler` goroutine on startup. `FOR UPDATE SKIP LOCKED` in `ClaimAndFireBatch` ensures that concurrent pods claim disjoint rows — no double-fire, no coordination required.
+**Deployment.** trustage runs as role-split processes (same binary: `SERVICE_ROLE=api|worker|reconciler|all`). Production progress is **not** nine always-on tickers on every pod.
+
+| Mode | Env | Behaviour |
+|------|-----|-----------|
+| **Cloud Run (primary)** | `PROGRESS_DRIVER=external_only` | Cloud Scheduler → Frame push `sched-cron` / `sched-reconcile`; Cloud Tasks delayed wakes |
+| **Multi-sweep** | `PROGRESS_DRIVER=multi_sweep` | One in-process loop (≤5–10s) for timer/retry/dispatch/outbox/cron |
+| **Legacy (migration only)** | `PROGRESS_DRIVER=legacy_tickers` | Nine `Start` tickers — never on `SERVICE_ROLE=api` |
+
+Cron lag SLO: **60s** max (Cloud Scheduler every minute). `FOR UPDATE SKIP LOCKED` in `ClaimAndFireBatch` keeps multi-pod cron safe.
 
 **One transaction per sweep.** Each `RunOnce` call is a single DB transaction: claim a batch of due `schedule_definitions` rows, write `event_log` entries, advance `next_fire_at`, commit. If the transaction rolls back, no events are emitted and the rows remain due for the next sweep.
 

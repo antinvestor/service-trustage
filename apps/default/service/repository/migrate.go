@@ -113,6 +113,7 @@ func migrationIndexes() []migrationIndex {
 				"idx_wse_retry",
 				"idx_wse_waiting",
 				"idx_wse_dispatched",
+				"idx_wse_timeout",
 			},
 		},
 		{
@@ -196,6 +197,7 @@ type workflowExecutionIndexModel struct {
 	Status      string    `gorm:"column:status;index:idx_wse_pending,where:status = 'pending',priority:1;index:idx_wse_waiting,where:status = 'waiting',priority:1;index:idx_wse_dispatched,where:status = 'dispatched',priority:1"`
 	CreatedAt   time.Time `gorm:"column:created_at;index:idx_wse_pending,where:status = 'pending',priority:2;index:idx_wse_waiting,where:status = 'waiting',priority:2;index:idx_wse_dispatched,where:status = 'dispatched',priority:2"`
 	NextRetryAt time.Time `gorm:"column:next_retry_at;index:idx_wse_retry,where:status = 'retry_scheduled'"`
+	TimeoutAt   time.Time `gorm:"column:timeout_at;index:idx_wse_timeout,where:status = 'dispatched' AND deleted_at IS NULL AND timeout_at IS NOT NULL"`
 }
 
 func (workflowExecutionIndexModel) TableName() string { return "workflow_state_executions" }

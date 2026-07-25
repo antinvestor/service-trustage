@@ -36,6 +36,9 @@ type EventLogRepository interface {
 	FindByIdempotencyKey(ctx context.Context, key string) (*models.EventLog, error)
 	FindUnpublished(ctx context.Context, limit int) ([]*models.EventLog, error)
 	MarkPublished(ctx context.Context, id string) error
+	// MarkPublishedIfUnpublished is dual-path safe: only wins when published=false.
+	// Returns ErrStaleMutation if already published (or missing).
+	MarkPublishedIfUnpublished(ctx context.Context, id string) error
 	ClaimUnpublished(ctx context.Context, limit int, owner string, leaseUntil time.Time) ([]*models.EventLog, error)
 	MarkPublishedByOwner(ctx context.Context, id string, owner string, publishedAt time.Time) error
 	ReleaseClaim(ctx context.Context, id string, owner string) error
@@ -122,6 +125,26 @@ func (r *eventLogRepository) MarkPublished(ctx context.Context, id string) error
 		return fmt.Errorf("mark published: %w", result.Error)
 	}
 
+	return nil
+}
+
+// MarkPublishedIfUnpublished marks an event published only if still unpublished.
+func (r *eventLogRepository) MarkPublishedIfUnpublished(ctx context.Context, id string) error {
+	db := r.pool.DB(ctx, false)
+	now := time.Now()
+
+	result := db.Model(&models.EventLog{}).
+		Where("id = ? AND published = ? AND deleted_at IS NULL", id, false).
+		Updates(map[string]any{
+			"published":    true,
+			"published_at": now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark published if unpublished: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrStaleMutation
+	}
 	return nil
 }
 

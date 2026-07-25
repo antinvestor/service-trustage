@@ -16,6 +16,7 @@ package schedulers
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/pitabwire/frame/v2/queue"
@@ -119,6 +120,12 @@ func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
 	for _, exec := range pending {
 		cmd, dispatchErr := s.engine.Dispatch(ctx, exec)
 		if dispatchErr != nil {
+			if errors.Is(dispatchErr, business.ErrAlreadyDispatched) {
+				log.Debug("dispatch scheduler: already claimed",
+					"execution_id", exec.ID,
+				)
+				continue
+			}
 			log.WithError(dispatchErr).Error("dispatch scheduler: dispatch failed",
 				"execution_id", exec.ID,
 			)

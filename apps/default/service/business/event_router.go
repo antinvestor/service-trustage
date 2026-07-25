@@ -57,6 +57,7 @@ type eventRouter struct {
 	defRepo      repository.WorkflowDefinitionRepository
 	scheduleRepo repository.ScheduleRepository
 	instanceRepo repository.WorkflowInstanceRepository
+	execRepo     repository.WorkflowExecutionRepository
 	auditRepo    repository.AuditEventRepository
 	engine       StateEngine
 	metrics      *telemetry.Metrics
@@ -64,6 +65,7 @@ type eventRouter struct {
 }
 
 // NewEventRouter creates a new EventRouter.
+// execRepo is optional (may be nil); when set, dedupe heal can detect missing initial executions.
 func NewEventRouter(
 	triggerRepo repository.TriggerBindingRepository,
 	defRepo repository.WorkflowDefinitionRepository,
@@ -73,12 +75,13 @@ func NewEventRouter(
 	engine StateEngine,
 	metrics *telemetry.Metrics,
 	bindingLimit int,
+	execRepo ...repository.WorkflowExecutionRepository,
 ) EventRouter {
 	if bindingLimit <= 0 {
 		bindingLimit = DefaultEventRouterBindingLimit
 	}
 
-	return &eventRouter{
+	r := &eventRouter{
 		triggerRepo:  triggerRepo,
 		defRepo:      defRepo,
 		scheduleRepo: scheduleRepo,
@@ -88,6 +91,10 @@ func NewEventRouter(
 		metrics:      metrics,
 		bindingLimit: bindingLimit,
 	}
+	if len(execRepo) > 0 {
+		r.execRepo = execRepo[0]
+	}
+	return r
 }
 
 // RouteEvent finds matching trigger bindings, evaluates CEL filters,
@@ -260,7 +267,10 @@ func (r *eventRouter) createInstance(
 					EventType:  events.EventTriggerDeduped,
 					State:      existing.CurrentState,
 				})
-
+				// Heal: instance exists but initial execution never created (crash window).
+				if healErr := r.healMissingInitialExecution(ctx, existing, event); healErr != nil {
+					return false, healErr
+				}
 				return false, nil
 			}
 		}
@@ -284,6 +294,41 @@ func (r *eventRouter) createInstance(
 	}
 
 	return true, nil
+}
+
+// healMissingInitialExecution creates the first pending execution when the
+// instance was committed but CreateInitialExecution never completed.
+// Requires execRepo; without it, heal is skipped (cannot safely detect missing execs).
+func (r *eventRouter) healMissingInitialExecution(
+	ctx context.Context,
+	instance *models.WorkflowInstance,
+	event *events.IngestedEventMessage,
+) error {
+	if instance.Status != models.InstanceStatusRunning {
+		return nil
+	}
+	if r.execRepo == nil {
+		return nil
+	}
+	n, err := r.execRepo.CountByInstance(ctx, instance.ID)
+	if err != nil {
+		return fmt.Errorf("heal count executions: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	inputPayload, _ := json.Marshal(event.Payload)
+	_, execErr := r.engine.CreateInitialExecution(ctx, instance, inputPayload)
+	if execErr != nil {
+		util.Log(ctx).WithError(execErr).Debug("event router: heal initial execution skipped",
+			"instance_id", instance.ID,
+		)
+		return nil
+	}
+	util.Log(ctx).Info("event router: healed missing initial execution",
+		"instance_id", instance.ID,
+	)
+	return nil
 }
 
 func evaluateTriggerFilter(filter string, payload map[string]any) (bool, error) {
