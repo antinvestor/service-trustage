@@ -60,30 +60,6 @@ func NewOutboxScheduler(
 	}
 }
 
-// Start begins the outbox publisher loop.
-func (s *OutboxScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.OutboxIntervalSeconds) * time.Second
-
-	log.Debug("outbox scheduler started", "interval_seconds", s.cfg.OutboxIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			published := s.RunUntilDrained(ctx)
-			if published > 0 {
-				log.Debug("outbox scheduler completed", "published", published)
-			}
-		case <-ctx.Done():
-			log.Debug("outbox scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunUntilDrained drains multiple outbox batches in one scheduler wakeup.
 func (s *OutboxScheduler) RunUntilDrained(ctx context.Context) int {
 	maxBatches := s.cfg.OutboxMaxBatchesPerSweep

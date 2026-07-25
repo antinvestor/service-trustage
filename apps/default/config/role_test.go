@@ -31,6 +31,17 @@ func TestParseServiceRole(t *testing.T) {
 	}
 }
 
+func TestParseProgressDriver_RejectsLegacy(t *testing.T) {
+	t.Parallel()
+	if _, err := config.ParseProgressDriver("legacy_tickers"); err == nil {
+		t.Fatal("legacy_tickers must be rejected")
+	}
+	d, err := config.ParseProgressDriver("external_only")
+	if err != nil || d != config.ProgressExternalOnly {
+		t.Fatalf("got %q %v", d, err)
+	}
+}
+
 func TestValidateRoleAndProgress_APIForcesExternalOnly(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{
@@ -45,8 +56,8 @@ func TestValidateRoleAndProgress_APIForcesExternalOnly(t *testing.T) {
 	if cfg.ParsedProgressDriver() != config.ProgressExternalOnly {
 		t.Fatalf("want external_only, got %s", cfg.ParsedProgressDriver())
 	}
-	if cfg.ShouldRunProgressLoops() {
-		t.Fatal("api must not run progress loops")
+	if cfg.ShouldRunMultiSweep() {
+		t.Fatal("api must not run multi-sweep")
 	}
 }
 
@@ -61,20 +72,6 @@ func TestValidateRoleAndProgress_WorkerMultiSweepNeedsReconcile(t *testing.T) {
 	}
 	if err := cfg.ValidateRoleAndProgress(); err == nil {
 		t.Fatal("expected error for worker multi_sweep without reconcile-in-worker")
-	}
-}
-
-func TestLegacyTickersAllowed(t *testing.T) {
-	t.Parallel()
-	cfg := &config.Config{ServiceRole: "worker", ServiceRoleReconcileInWorker: true}
-	_ = cfg.ValidateRoleAndProgress()
-	if !cfg.LegacyTickersAllowed() {
-		t.Fatal("worker+reconcile should allow legacy")
-	}
-	cfg2 := &config.Config{ServiceRole: "api"}
-	_ = cfg2.ValidateRoleAndProgress()
-	if cfg2.LegacyTickersAllowed() {
-		t.Fatal("api must not allow legacy")
 	}
 }
 

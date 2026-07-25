@@ -34,10 +34,8 @@ type Config struct {
 	ServiceRoleReconcileInWorker bool `env:"SERVICE_ROLE_RECONCILE_IN_WORKER" envDefault:"true"`
 	// Optional ConnectRPC on worker role (discouraged).
 	WorkerExposeAPI bool `env:"WORKER_EXPOSE_API" envDefault:"false"`
-	// legacy_tickers | multi_sweep | external_only.
+	// multi_sweep | external_only.
 	ProgressDriver string `env:"PROGRESS_DRIVER" envDefault:"multi_sweep"`
-	// Migration bridge only; never with multi_sweep.
-	EnableLegacyTickers bool `env:"ENABLE_LEGACY_TICKERS" envDefault:"false"`
 	// Primary-path notify after durable writes.
 	EnableWorkNotifier bool `env:"ENABLE_WORK_NOTIFIER" envDefault:"true"`
 	// Interval for multi_sweep progress driver.
@@ -59,8 +57,7 @@ type Config struct {
 	CloudTasksMaxHorizonHours int `env:"CLOUD_TASKS_MAX_HORIZON_HOURS" envDefault:"720"`
 
 	// Cron scheduler.
-	CronSchedulerBatchSize    int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`
-	CronSchedulerIntervalSecs int `env:"CRON_SCHEDULER_INTERVAL_SECONDS" envDefault:"1"`
+	CronSchedulerBatchSize int `env:"CRON_SCHEDULER_BATCH_SIZE" envDefault:"500"`
 
 	// Primary DB pool sizing (shared by all HTTP/RPC handlers and most repositories).
 	// Default 50 — sized to absorb NATS worker bursts (exec-worker 500 + event-router 200)
@@ -71,18 +68,14 @@ type Config struct {
 	SchedulerPoolMaxConns int `env:"SCHEDULER_POOL_MAX_CONNS" envDefault:"10"`
 	SchedulerPoolMinConns int `env:"SCHEDULER_POOL_MIN_CONNS" envDefault:"2"`
 
-	// Scheduler intervals (seconds) — used by legacy tickers only.
-	DispatchIntervalSeconds int `env:"DISPATCH_INTERVAL_SECONDS" envDefault:"5"`
-	RetryIntervalSeconds    int `env:"RETRY_INTERVAL_SECONDS"    envDefault:"10"`
-	TimerIntervalSeconds    int `env:"TIMER_INTERVAL_SECONDS"    envDefault:"5"`
-	SignalIntervalSeconds   int `env:"SIGNAL_INTERVAL_SECONDS"   envDefault:"5"`
-	ScopeIntervalSeconds    int `env:"SCOPE_INTERVAL_SECONDS"    envDefault:"5"`
-	TimeoutIntervalSeconds  int `env:"TIMEOUT_INTERVAL_SECONDS"  envDefault:"30"`
-	OutboxIntervalSeconds   int `env:"OUTBOX_INTERVAL_SECONDS"   envDefault:"5"`
-	OutboxClaimTTLSeconds   int `env:"OUTBOX_CLAIM_TTL_SECONDS"  envDefault:"30"`
-	TimerClaimTTLSeconds    int `env:"TIMER_CLAIM_TTL_SECONDS"   envDefault:"30"`
-	SignalClaimTTLSeconds   int `env:"SIGNAL_CLAIM_TTL_SECONDS"  envDefault:"30"`
-	ScopeClaimTTLSeconds    int `env:"SCOPE_CLAIM_TTL_SECONDS"   envDefault:"30"`
+	// Claim TTLs for SKIP LOCKED lease sweeps (RunOnce).
+	OutboxClaimTTLSeconds int `env:"OUTBOX_CLAIM_TTL_SECONDS" envDefault:"30"`
+	// Timer lease TTL.
+	TimerClaimTTLSeconds int `env:"TIMER_CLAIM_TTL_SECONDS" envDefault:"30"`
+	// Signal wait lease TTL.
+	SignalClaimTTLSeconds int `env:"SIGNAL_CLAIM_TTL_SECONDS" envDefault:"30"`
+	// Scope lease TTL.
+	ScopeClaimTTLSeconds int `env:"SCOPE_CLAIM_TTL_SECONDS" envDefault:"30"`
 
 	// Scheduler batch sizes.
 	// Outbox and dispatch defaults reduced (100→20/50) to prevent cluster-burst storms

@@ -45,30 +45,6 @@ func NewScopeScheduler(
 	}
 }
 
-// Start begins the scope reconciliation loop.
-func (s *ScopeScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.ScopeIntervalSeconds) * time.Second
-
-	log.Debug("scope scheduler started", "interval_seconds", s.cfg.ScopeIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			reconciled := s.RunOnce(ctx)
-			if reconciled > 0 {
-				log.Debug("scope scheduler completed", "reconciled", reconciled)
-			}
-		case <-ctx.Done():
-			log.Debug("scope scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single scope reconciliation sweep.
 func (s *ScopeScheduler) RunOnce(ctx context.Context) int {
 	log := util.Log(ctx)

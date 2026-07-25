@@ -250,7 +250,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	// Scheduler pool for cron fire path.
 	var cronSched *schedulers.CronScheduler
 	var cleanupSched *schedulers.CleanupScheduler
-	if cfg.SubscribesReconcile() || cfg.ShouldRunProgressLoops() {
+	if cfg.SubscribesReconcile() || cfg.ShouldRunMultiSweep() {
 		schedulerPool := pool.NewPool(ctx)
 		dbURLs := cfg.GetDatabasePrimaryHostURL()
 		if len(dbURLs) == 0 {
@@ -305,21 +305,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 		}()
 	}
 
-	if cfg.ShouldRunLegacyTickers() {
-		startBackground("dispatch", dispatchSched.Start)
-		startBackground("retry", retrySched.Start)
-		startBackground("timer", timerSched.Start)
-		startBackground("signal", signalSched.Start)
-		startBackground("scope", scopeSched.Start)
-		startBackground("timeout", timeoutSched.Start)
-		startBackground("outbox", outboxSched.Start)
-		if cleanupSched != nil {
-			startBackground("cleanup", cleanupSched.Start)
-		}
-		if cronSched != nil {
-			startBackground("cron", cronSched.Start)
-		}
-	} else if cfg.ShouldRunMultiSweep() {
+	if cfg.ShouldRunMultiSweep() {
 		startBackground("multi_sweep", multiSweep.Start)
 	}
 

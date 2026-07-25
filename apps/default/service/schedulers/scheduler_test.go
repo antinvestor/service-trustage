@@ -606,6 +606,7 @@ func (s *SchedulerSuite) TestTimeoutScheduler_RunOnceSchedulesRetry() {
 	s.Require().NoError(s.retryRepo.Store(tenantCtx, policy))
 
 	startedAt := time.Now().Add(-5 * time.Minute)
+	timeoutAt := time.Now().Add(-time.Minute)
 	exec := &models.WorkflowStateExecution{
 		InstanceID:      instance.ID,
 		State:           "step-a",
@@ -615,6 +616,7 @@ func (s *SchedulerSuite) TestTimeoutScheduler_RunOnceSchedulesRetry() {
 		InputSchemaHash: "hash",
 		InputPayload:    "{}",
 		StartedAt:       &startedAt,
+		TimeoutAt:       &timeoutAt,
 	}
 	s.Require().NoError(s.execRepo.Create(tenantCtx, exec))
 
@@ -820,7 +822,7 @@ func TestPlanOne_InvalidCronParks(t *testing.T) {
 	sched := &models.ScheduleDefinition{Name: "bad", CronExpr: "not-a-cron", Timezone: "UTC"}
 	sched.ID = "s-1"
 
-	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50, CronSchedulerIntervalSecs: 1}}
+	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50}}
 	ev, next, jit, err := s.planOne(context.Background(), sched)
 
 	require.NoError(t, err)
@@ -833,7 +835,7 @@ func TestPlanOne_InvalidTimezoneParks(t *testing.T) {
 	sched := &models.ScheduleDefinition{Name: "tz", CronExpr: "*/5 * * * *", Timezone: "Not/A/Zone"}
 	sched.ID = "s-2"
 
-	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50, CronSchedulerIntervalSecs: 1}}
+	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50}}
 	ev, next, _, _ := s.planOne(context.Background(), sched)
 
 	require.Nil(t, ev)
@@ -847,7 +849,7 @@ func TestPlanOne_MissedFireSkipsForward(t *testing.T) {
 	}
 	sched.ID = "s-3"
 
-	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50, CronSchedulerIntervalSecs: 1}}
+	s := &CronScheduler{cfg: &config.Config{CronSchedulerBatchSize: 50}}
 	ev, next, _, err := s.planOne(context.Background(), sched)
 
 	require.NoError(t, err)

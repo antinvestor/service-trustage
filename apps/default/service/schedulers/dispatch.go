@@ -17,7 +17,6 @@ package schedulers
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/pitabwire/frame/v2/queue"
 	"github.com/pitabwire/util"
@@ -52,30 +51,6 @@ func NewDispatchScheduler(
 		queueMgr: queueMgr,
 		cfg:      cfg,
 		metrics:  metrics,
-	}
-}
-
-// Start begins the dispatch scheduler loop. It blocks until context is cancelled.
-func (s *DispatchScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.DispatchIntervalSeconds) * time.Second
-
-	log.Debug("dispatch scheduler started", "interval_seconds", s.cfg.DispatchIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			dispatched := s.RunUntilDrained(ctx)
-			if dispatched > 0 {
-				log.Debug("dispatch scheduler completed", "dispatched", dispatched)
-			}
-		case <-ctx.Done():
-			log.Debug("dispatch scheduler stopped")
-			return
-		}
 	}
 }
 

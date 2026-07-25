@@ -5,7 +5,7 @@
 | **Document** | Cloud Run / horizontal-scale re-architecture |
 | **Author** | TBD |
 | **Date** | 2026-07-25 |
-| **Status** | Implemented (Rev 2.3 — code landed; Cloud Run-first) |
+| **Status** | Implemented (Rev 2.4 — greenfield; no legacy tickers) |
 | **Repo** | `/home/j/code/antinvestor/service-trustage` |
 | **Related** | `ARCHITECTURE.md`, ADR-001/004/013/016, `docs/runbook-scheduler.md`, Frame v2.0.12 `docs/queue.md` |
 

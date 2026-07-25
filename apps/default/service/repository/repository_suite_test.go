@@ -283,6 +283,7 @@ func (s *RepositorySuite) TestWorkflowRepositories_DefinitionsInstancesAndExecut
 	}
 	execTwo.CopyPartitionInfo(&inst.BaseModel)
 	s.Require().NoError(s.execRepo.Create(ctx, execTwo))
+	timeoutAt := startedAt.Add(-time.Minute)
 	timeoutExec := &models.WorkflowStateExecution{
 		InstanceID:      inst.ID,
 		State:           "review",
@@ -294,6 +295,7 @@ func (s *RepositorySuite) TestWorkflowRepositories_DefinitionsInstancesAndExecut
 		InputPayload:    `{"hello":"world"}`,
 		TraceID:         "trace-1",
 		StartedAt:       &startedAt,
+		TimeoutAt:       &timeoutAt,
 	}
 	timeoutExec.CopyPartitionInfo(&inst.BaseModel)
 	s.Require().NoError(s.execRepo.Create(ctx, timeoutExec))
@@ -306,7 +308,7 @@ func (s *RepositorySuite) TestWorkflowRepositories_DefinitionsInstancesAndExecut
 	s.Require().NoError(err)
 	s.Len(retryDue, 1)
 
-	timedOut, err := s.execRepo.FindTimedOut(ctx, 30, 10)
+	timedOut, err := s.execRepo.FindTimedOut(ctx, 10)
 	s.Require().NoError(err)
 	s.Len(timedOut, 1)
 

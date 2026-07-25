@@ -17,7 +17,6 @@ package schedulers
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
@@ -50,30 +49,6 @@ func NewRetryScheduler(
 		instanceRepo: instanceRepo,
 		cfg:          cfg,
 		metrics:      metrics,
-	}
-}
-
-// Start begins the retry scheduler loop.
-func (s *RetryScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.RetryIntervalSeconds) * time.Second
-
-	log.Debug("retry scheduler started", "interval_seconds", s.cfg.RetryIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			retried := s.RunOnce(ctx)
-			if retried > 0 {
-				log.Debug("retry scheduler completed", "retried", retried)
-			}
-		case <-ctx.Done():
-			log.Debug("retry scheduler stopped")
-			return
-		}
 	}
 }
 

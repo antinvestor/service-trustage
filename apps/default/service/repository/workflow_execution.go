@@ -40,7 +40,8 @@ type WorkflowExecutionRepository interface {
 	CountByInstance(ctx context.Context, instanceID string) (int64, error)
 	FindPending(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	FindRetryDue(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
-	FindTimedOut(ctx context.Context, timeoutSeconds int, limit int) ([]*models.WorkflowStateExecution, error)
+	// FindTimedOut returns dispatched rows with timeout_at <= now (greenfield: no age fallback).
+	FindTimedOut(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	VerifyAndConsumeToken(ctx context.Context, executionID, tokenHash string) (*models.WorkflowStateExecution, error)
 	VerifyAndConsumeTokenTx(tx *gorm.DB, executionID, tokenHash string) (*models.WorkflowStateExecution, error)
 	UpdateStatus(ctx context.Context, executionID string, status models.ExecutionStatus, fields map[string]any) error
@@ -261,35 +262,25 @@ func (r *workflowExecutionRepository) FindRetryDue(
 	return execs, nil
 }
 
-// FindTimedOut finds dispatched executions past timeout_at, or (legacy) started_at + timeoutSeconds.
+// FindTimedOut finds dispatched executions past absolute timeout_at.
 func (r *workflowExecutionRepository) FindTimedOut(
 	ctx context.Context,
-	timeoutSeconds int,
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
 	if limit <= 0 {
 		limit = 50
 	}
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 300
-	}
 
 	now := time.Now()
-	legacyDeadline := now.Add(-time.Duration(timeoutSeconds) * time.Second)
 	var execs []*models.WorkflowStateExecution
-	// Prefer absolute timeout_at; fall back to started_at age for rows predating timeout_at.
 	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where(
-			"status = ? AND deleted_at IS NULL AND ("+
-				"(timeout_at IS NOT NULL AND timeout_at <= ?) OR "+
-				"(timeout_at IS NULL AND started_at IS NOT NULL AND started_at < ?)"+
-				")",
+			"status = ? AND deleted_at IS NULL AND timeout_at IS NOT NULL AND timeout_at <= ?",
 			models.ExecStatusDispatched,
 			now,
-			legacyDeadline,
 		).
-		Order("COALESCE(timeout_at, started_at) ASC").
+		Order("timeout_at ASC").
 		Limit(limit).
 		Find(&execs)
 

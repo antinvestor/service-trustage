@@ -62,30 +62,6 @@ func NewTimeoutScheduler(
 	}
 }
 
-// Start begins the timeout scheduler loop.
-func (s *TimeoutScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.TimeoutIntervalSeconds) * time.Second
-
-	log.Debug("timeout scheduler started", "interval_seconds", s.cfg.TimeoutIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			timedOut := s.RunOnce(ctx)
-			if timedOut > 0 {
-				log.Debug("timeout scheduler completed", "timed_out", timedOut)
-			}
-		case <-ctx.Done():
-			log.Debug("timeout scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single timeout sweep.
 func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, telemetry.SpanSchedulerTimeout)
@@ -93,7 +69,7 @@ func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 
 	log := util.Log(ctx)
 
-	overdue, err := s.execRepo.FindTimedOut(ctx, s.cfg.DefaultExecutionTimeoutSeconds, s.cfg.TimeoutBatchSize)
+	overdue, err := s.execRepo.FindTimedOut(ctx, s.cfg.TimeoutBatchSize)
 	if err != nil {
 		log.WithError(err).Error("timeout scheduler: failed to find timed out")
 		return 0
