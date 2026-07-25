@@ -55,48 +55,71 @@ func (w *ReconcileWorker) Handle(ctx context.Context, _ map[string]string, messa
 	ctx = security.SkipTenancyChecksOnClaims(ctx)
 	log := util.Log(ctx)
 
-	var wake events.WakeMessage
-	if len(message) > 0 {
-		if err := json.Unmarshal(message, &wake); err != nil {
-			return fmt.Errorf("%w: unmarshal wake: %v", queue.ErrNotRetryable, err)
-		}
+	wake, err := parseWake(message)
+	if err != nil {
+		return err
 	}
 
 	switch {
-	case w.cronOnce != nil || wake.Kind == events.WakeKindCron:
-		fn := w.cronOnce
-		if fn == nil && w.runner != nil {
-			n := w.runner.RunJobsOnce(ctx, []string{"cron"})
-			log.Debug("cron reconcile", "processed", n)
-			return nil
-		}
-		if fn != nil {
-			n := fn(ctx)
-			log.Debug("cron reconcile", "processed", n)
-		}
-		return nil
-	case w.cleanup != nil || wake.Kind == events.WakeKindCleanup:
-		fn := w.cleanup
-		if fn == nil && w.runner != nil {
-			n := w.runner.RunJobsOnce(ctx, []string{"cleanup"})
-			log.Debug("cleanup reconcile", "processed", n)
-			return nil
-		}
-		if fn != nil {
-			n := fn(ctx)
-			log.Debug("cleanup reconcile", "processed", n)
-		}
-		return nil
+	case w.isCron(wake):
+		return w.runCron(ctx, log)
+	case w.isCleanup(wake):
+		return w.runCleanup(ctx, log)
 	default:
-		if w.runner == nil {
-			return fmt.Errorf("%w: reconcile runner not configured", queue.ErrNotRetryable)
-		}
-		jobs := wake.Jobs
-		if wake.Kind != "" && wake.Kind != events.WakeKindReconcile && len(jobs) == 0 {
-			jobs = []string{wake.Kind}
-		}
-		n := w.runner.RunJobsOnce(ctx, jobs)
-		log.Debug("reconcile sweep", "processed", n, "jobs", jobs)
+		return w.runReconcile(ctx, log, wake)
+	}
+}
+
+func parseWake(message []byte) (events.WakeMessage, error) {
+	var wake events.WakeMessage
+	if len(message) == 0 {
+		return wake, nil
+	}
+	if err := json.Unmarshal(message, &wake); err != nil {
+		return wake, fmt.Errorf("%w: unmarshal wake: %w", queue.ErrNotRetryable, err)
+	}
+	return wake, nil
+}
+
+func (w *ReconcileWorker) isCron(wake events.WakeMessage) bool {
+	return w.cronOnce != nil || wake.Kind == events.WakeKindCron
+}
+
+func (w *ReconcileWorker) isCleanup(wake events.WakeMessage) bool {
+	return w.cleanup != nil || wake.Kind == events.WakeKindCleanup
+}
+
+func (w *ReconcileWorker) runCron(ctx context.Context, log *util.LogEntry) error {
+	if w.cronOnce != nil {
+		log.Debug("cron reconcile", "processed", w.cronOnce(ctx))
 		return nil
 	}
+	if w.runner != nil {
+		log.Debug("cron reconcile", "processed", w.runner.RunJobsOnce(ctx, []string{"cron"}))
+	}
+	return nil
+}
+
+func (w *ReconcileWorker) runCleanup(ctx context.Context, log *util.LogEntry) error {
+	if w.cleanup != nil {
+		log.Debug("cleanup reconcile", "processed", w.cleanup(ctx))
+		return nil
+	}
+	if w.runner != nil {
+		log.Debug("cleanup reconcile", "processed", w.runner.RunJobsOnce(ctx, []string{"cleanup"}))
+	}
+	return nil
+}
+
+func (w *ReconcileWorker) runReconcile(ctx context.Context, log *util.LogEntry, wake events.WakeMessage) error {
+	if w.runner == nil {
+		return fmt.Errorf("%w: reconcile runner not configured", queue.ErrNotRetryable)
+	}
+	jobs := wake.Jobs
+	if wake.Kind != "" && wake.Kind != events.WakeKindReconcile && len(jobs) == 0 {
+		jobs = []string{wake.Kind}
+	}
+	n := w.runner.RunJobsOnce(ctx, jobs)
+	log.Debug("reconcile sweep", "processed", n, "jobs", jobs)
+	return nil
 }

@@ -254,28 +254,7 @@ func (r *eventRouter) createInstance(
 	)
 
 	if err = r.instanceRepo.Create(ctx, instance); err != nil {
-		if isDuplicateCreateError(err) {
-			existing, lookupErr := r.instanceRepo.FindByTriggerEvent(
-				ctx,
-				binding.WorkflowName,
-				binding.WorkflowVersion,
-				event.EventID,
-			)
-			if lookupErr == nil && existing != nil {
-				_ = r.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-					InstanceID: existing.ID,
-					EventType:  events.EventTriggerDeduped,
-					State:      existing.CurrentState,
-				})
-				// Heal: instance exists but initial execution never created (crash window).
-				if healErr := r.healMissingInitialExecution(ctx, existing, event); healErr != nil {
-					return false, healErr
-				}
-				return false, nil
-			}
-		}
-
-		return false, fmt.Errorf("create instance: %w", err)
+		return r.handleCreateInstanceError(ctx, err, binding, event)
 	}
 
 	// Audit event.
@@ -294,6 +273,35 @@ func (r *eventRouter) createInstance(
 	}
 
 	return true, nil
+}
+
+func (r *eventRouter) handleCreateInstanceError(
+	ctx context.Context,
+	err error,
+	binding *models.TriggerBinding,
+	event *events.IngestedEventMessage,
+) (bool, error) {
+	if !isDuplicateCreateError(err) {
+		return false, fmt.Errorf("create instance: %w", err)
+	}
+	existing, lookupErr := r.instanceRepo.FindByTriggerEvent(
+		ctx,
+		binding.WorkflowName,
+		binding.WorkflowVersion,
+		event.EventID,
+	)
+	if lookupErr != nil || existing == nil {
+		return false, fmt.Errorf("create instance: %w", err)
+	}
+	_ = r.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
+		InstanceID: existing.ID,
+		EventType:  events.EventTriggerDeduped,
+		State:      existing.CurrentState,
+	})
+	if healErr := r.healMissingInitialExecution(ctx, existing, event); healErr != nil {
+		return false, healErr
+	}
+	return false, nil
 }
 
 // healMissingInitialExecution creates the first pending execution when the

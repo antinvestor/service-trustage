@@ -15,6 +15,7 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pitabwire/frame/v2/cache"
@@ -40,7 +41,7 @@ func SetupCache(cacheURI string, requireValkey bool) (cache.RawCache, error) {
 	}
 
 	if requireValkey {
-		return nil, fmt.Errorf("valkey required but cache URL is not redis")
+		return nil, errors.New("valkey required but cache URL is not redis")
 	}
 
 	return cache.NewInMemoryCache(), nil

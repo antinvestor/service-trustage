@@ -31,13 +31,6 @@ type WorkNotifier struct {
 	queueMgr queue.Manager
 	cfg      *config.Config
 	delayed  DelayedPublisher
-	engine   business.StateEngine // optional: for dispatch-on-notify
-	execLoad PendingLoader
-}
-
-// PendingLoader loads a pending execution for notify-dispatch.
-type PendingLoader interface {
-	GetByID(ctx context.Context, executionID string) (*business.ExecutionCommand, error)
 }
 
 // Ensure interface compliance.

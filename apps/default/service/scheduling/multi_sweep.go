@@ -70,10 +70,12 @@ func NewMultiSweepRunner(cfg *config.Config, sweeps map[string]SweepFunc) *Multi
 
 // Start blocks until ctx is cancelled.
 func (r *MultiSweepRunner) Start(ctx context.Context) {
+	const defaultMultiSweepSeconds = 5
+
 	log := util.Log(ctx)
 	interval := time.Duration(r.cfg.ReconcilerMultiSweepIntervalS) * time.Second
 	if interval <= 0 {
-		interval = 5 * time.Second
+		interval = defaultMultiSweepSeconds * time.Second
 	}
 
 	log.Info("multi-sweep reconciler started",

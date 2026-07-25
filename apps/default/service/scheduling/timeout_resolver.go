@@ -25,6 +25,11 @@ import (
 	"github.com/antinvestor/service-trustage/dsl"
 )
 
+const (
+	defaultExecutionTimeout = 300 * time.Second
+	defaultMaxStepTimeout   = 300 * time.Second
+)
+
 // DefinitionLoader loads workflow DSL by name/version (subset of definition repository).
 type DefinitionLoader interface {
 	GetByNameAndVersion(ctx context.Context, name string, version int) (*models.WorkflowDefinition, error)
@@ -44,10 +49,10 @@ func NewTimeoutResolver(
 	defaultTimeout, maxTimeout time.Duration,
 ) *TimeoutResolver {
 	if defaultTimeout <= 0 {
-		defaultTimeout = 300 * time.Second
+		defaultTimeout = defaultExecutionTimeout
 	}
 	if maxTimeout <= 0 {
-		maxTimeout = 300 * time.Second
+		maxTimeout = defaultMaxStepTimeout
 	}
 	return &TimeoutResolver{
 		defRepo:        defRepo,
@@ -74,13 +79,14 @@ func (r *TimeoutResolver) ResolveTimeoutAt(
 
 	def, err := r.defRepo.GetByNameAndVersion(ctx, workflowName, workflowVersion)
 	if err != nil {
-		// Fall back to default when definition missing.
-		return now.Add(minDuration(dur, r.maxTimeout)), nil
+		// Intentionally fall back to default when definition is missing.
+		return now.Add(minDuration(dur, r.maxTimeout)), nil //nolint:nilerr // soft-fail to default timeout
 	}
 
 	spec, parseErr := dsl.Parse([]byte(def.DSLBlob))
 	if parseErr != nil {
-		return now.Add(minDuration(dur, r.maxTimeout)), nil
+		// Intentionally fall back to default when DSL is invalid at dispatch time.
+		return now.Add(minDuration(dur, r.maxTimeout)), nil //nolint:nilerr // soft-fail to default timeout
 	}
 
 	if step := dsl.FindStep(spec, state); step != nil && step.Timeout.Duration > 0 {
@@ -91,7 +97,10 @@ func (r *TimeoutResolver) ResolveTimeoutAt(
 
 	dur = minDuration(dur, r.maxTimeout)
 	if dur <= 0 {
-		return time.Time{}, fmt.Errorf("resolved timeout non-positive for %s/%d/%s", workflowName, workflowVersion, state)
+		return time.Time{}, fmt.Errorf(
+			"resolved timeout non-positive for %s/%d/%s",
+			workflowName, workflowVersion, state,
+		)
 	}
 	return now.Add(dur), nil
 }

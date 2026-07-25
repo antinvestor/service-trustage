@@ -125,7 +125,13 @@ type StateEngine interface {
 // ExecutionTimeoutResolver resolves per-step/workflow/default execution deadlines.
 // Implemented by apps/default/service/scheduling; optional on the engine.
 type ExecutionTimeoutResolver interface {
-	ResolveTimeoutAt(ctx context.Context, workflowName string, workflowVersion int, state string, now time.Time) (time.Time, error)
+	ResolveTimeoutAt(
+		ctx context.Context,
+		workflowName string,
+		workflowVersion int,
+		state string,
+		now time.Time,
+	) (time.Time, error)
 }
 
 // WorkNotifier hooks after durable write paths (optional; may be nil).
@@ -204,6 +210,7 @@ func NewStateEngine(
 	cache framecache.RawCache,
 	opts ...EngineOption,
 ) StateEngine {
+	const defaultEngineTimeout = 300 * time.Second
 	e := &stateEngine{
 		instanceRepo:    instanceRepo,
 		execRepo:        execRepo,
@@ -219,8 +226,8 @@ func NewStateEngine(
 		schemaReg:       schemaReg,
 		metrics:         metrics,
 		cache:           cache,
-		defaultTimeout:  300 * time.Second,
-		maxStepTimeout:  300 * time.Second,
+		defaultTimeout:  defaultEngineTimeout,
+		maxStepTimeout:  defaultEngineTimeout,
 	}
 	for _, opt := range opts {
 		opt(e)

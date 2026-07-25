@@ -89,40 +89,14 @@ func (w *WakeWorker) Handle(ctx context.Context, _ map[string]string, message []
 	ctx = security.SkipTenancyChecksOnClaims(ctx)
 	log := util.Log(ctx)
 
-	var wake events.WakeMessage
-	if len(message) > 0 {
-		if err := json.Unmarshal(message, &wake); err != nil {
-			return fmt.Errorf("%w: unmarshal wake: %v", queue.ErrNotRetryable, err)
-		}
-	}
-	if wake.Kind == "" {
-		wake.Kind = w.kind
+	wake, err := parseWakeMessage(message, w.kind)
+	if err != nil {
+		return err
 	}
 
 	switch wake.Kind {
 	case events.WakeKindDispatch:
-		if wake.ExecutionID != "" && w.engine != nil && w.execRepo != nil && w.queueMgr != nil && w.cfg != nil {
-			exec, err := w.execRepo.GetByID(ctx, wake.ExecutionID)
-			if err != nil {
-				log.WithError(err).Debug("dispatch wake: load failed", "execution_id", wake.ExecutionID)
-				return nil
-			}
-			cmd, dErr := w.engine.Dispatch(ctx, exec)
-			if dErr != nil {
-				if errors.Is(dErr, business.ErrAlreadyDispatched) {
-					return nil
-				}
-				return fmt.Errorf("dispatch wake: %w", dErr)
-			}
-			if pErr := w.queueMgr.Publish(ctx, w.cfg.QueueExecDispatchName, cmd); pErr != nil {
-				_ = w.engine.RevertDispatch(ctx, exec.ID)
-				return fmt.Errorf("dispatch wake publish: %w", pErr)
-			}
-			return nil
-		}
-		if w.dispatch != nil {
-			w.dispatch.RunOnce(ctx)
-		}
+		return w.handleDispatch(ctx, log, wake.ExecutionID)
 	case events.WakeKindRetry:
 		if w.retry != nil {
 			w.retry.RunOnce(ctx)
@@ -141,6 +115,53 @@ func (w *WakeWorker) Handle(ctx context.Context, _ map[string]string, message []
 		}
 	default:
 		return fmt.Errorf("%w: unknown wake kind %q", queue.ErrNotRetryable, wake.Kind)
+	}
+	return nil
+}
+
+func parseWakeMessage(message []byte, defaultKind string) (events.WakeMessage, error) {
+	var wake events.WakeMessage
+	if len(message) > 0 {
+		if err := json.Unmarshal(message, &wake); err != nil {
+			return wake, fmt.Errorf("%w: unmarshal wake: %w", queue.ErrNotRetryable, err)
+		}
+	}
+	if wake.Kind == "" {
+		wake.Kind = defaultKind
+	}
+	return wake, nil
+}
+
+func (w *WakeWorker) handleDispatch(ctx context.Context, log *util.LogEntry, executionID string) error {
+	if executionID != "" && w.canTargetDispatch() {
+		return w.dispatchOne(ctx, log, executionID)
+	}
+	if w.dispatch != nil {
+		w.dispatch.RunOnce(ctx)
+	}
+	return nil
+}
+
+func (w *WakeWorker) canTargetDispatch() bool {
+	return w.engine != nil && w.execRepo != nil && w.queueMgr != nil && w.cfg != nil
+}
+
+func (w *WakeWorker) dispatchOne(ctx context.Context, log *util.LogEntry, executionID string) error {
+	exec, err := w.execRepo.GetByID(ctx, executionID)
+	if err != nil {
+		log.WithError(err).Debug("dispatch wake: load failed", "execution_id", executionID)
+		return nil
+	}
+	cmd, dErr := w.engine.Dispatch(ctx, exec)
+	if dErr != nil {
+		if errors.Is(dErr, business.ErrAlreadyDispatched) {
+			return nil
+		}
+		return fmt.Errorf("dispatch wake: %w", dErr)
+	}
+	if pErr := w.queueMgr.Publish(ctx, w.cfg.QueueExecDispatchName, cmd); pErr != nil {
+		_ = w.engine.RevertDispatch(ctx, exec.ID)
+		return fmt.Errorf("dispatch wake publish: %w", pErr)
 	}
 	return nil
 }

@@ -15,6 +15,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -36,6 +37,8 @@ const (
 	ProgressLegacyTickers ProgressDriver = "legacy_tickers"
 	ProgressMultiSweep    ProgressDriver = "multi_sweep"
 	ProgressExternalOnly  ProgressDriver = "external_only"
+
+	defaultTimeoutSeconds = 300
 )
 
 // ParseServiceRole normalizes and validates SERVICE_ROLE.
@@ -62,7 +65,10 @@ func ParseProgressDriver(raw string) (ProgressDriver, error) {
 	case ProgressLegacyTickers, ProgressMultiSweep, ProgressExternalOnly:
 		return d, nil
 	default:
-		return "", fmt.Errorf("invalid PROGRESS_DRIVER %q (want legacy_tickers|multi_sweep|external_only)", raw)
+		return "", fmt.Errorf(
+			"invalid PROGRESS_DRIVER %q (want legacy_tickers|multi_sweep|external_only)",
+			raw,
+		)
 	}
 }
 
@@ -137,52 +143,64 @@ func (c *Config) ValidateRoleAndProgress() error {
 	}
 	c.ServiceRole = string(role)
 
-	driver, err := ParseProgressDriver(c.ProgressDriver)
+	driver, err := c.resolveProgressDriver()
 	if err != nil {
 		return err
 	}
-
-	// Resolve effective driver with legacy flag.
-	if c.EnableLegacyTickers {
-		if driver == ProgressMultiSweep && strings.EqualFold(strings.TrimSpace(c.ProgressDriver), string(ProgressMultiSweep)) {
-			// Explicit multi_sweep wins over legacy flag.
-			driver = ProgressMultiSweep
-			c.EnableLegacyTickers = false
-		} else {
-			driver = ProgressLegacyTickers
-		}
-	}
 	c.ProgressDriver = string(driver)
 
-	if driver == ProgressLegacyTickers || driver == ProgressMultiSweep {
-		if !c.LegacyTickersAllowed() && driver == ProgressLegacyTickers {
-			return fmt.Errorf("PROGRESS_DRIVER=legacy_tickers not allowed for SERVICE_ROLE=%s", role)
-		}
-		if driver == ProgressMultiSweep && !c.SubscribesReconcile() && role != RoleAPI {
-			// Bare worker without reconcile-in-worker cannot run multi-sweep.
-			if role == RoleWorker && !c.ReconcileInWorker() {
-				return fmt.Errorf("PROGRESS_DRIVER=multi_sweep requires SERVICE_ROLE_RECONCILE_IN_WORKER=true for role worker")
-			}
-		}
-		if role == RoleAPI && (driver == ProgressLegacyTickers || driver == ProgressMultiSweep) {
-			// API never runs progress loops — force external_only.
-			c.ProgressDriver = string(ProgressExternalOnly)
-			c.EnableLegacyTickers = false
-		}
+	if roleErr := c.validateDriverForRole(role, driver); roleErr != nil {
+		return roleErr
 	}
 
-	// Double-invoke guard: if both multi_sweep and legacy would run.
 	if c.EnableLegacyTickers && c.ParsedProgressDriver() == ProgressMultiSweep {
-		return fmt.Errorf("cannot enable both legacy tickers and multi_sweep progress driver")
+		return errors.New("cannot enable both legacy tickers and multi_sweep progress driver")
 	}
 
 	if c.CloudRunMaxStepSeconds <= 0 {
-		c.CloudRunMaxStepSeconds = 300
+		c.CloudRunMaxStepSeconds = defaultTimeoutSeconds
 	}
 	if c.DefaultExecutionTimeoutSeconds <= 0 {
-		c.DefaultExecutionTimeoutSeconds = 300
+		c.DefaultExecutionTimeoutSeconds = defaultTimeoutSeconds
 	}
+	return nil
+}
 
+func (c *Config) resolveProgressDriver() (ProgressDriver, error) {
+	driver, err := ParseProgressDriver(c.ProgressDriver)
+	if err != nil {
+		return "", err
+	}
+	if !c.EnableLegacyTickers {
+		return driver, nil
+	}
+	// Explicit multi_sweep wins over legacy flag.
+	if driver == ProgressMultiSweep &&
+		strings.EqualFold(strings.TrimSpace(c.ProgressDriver), string(ProgressMultiSweep)) {
+		c.EnableLegacyTickers = false
+		return ProgressMultiSweep, nil
+	}
+	return ProgressLegacyTickers, nil
+}
+
+func (c *Config) validateDriverForRole(role ServiceRole, driver ProgressDriver) error {
+	if driver != ProgressLegacyTickers && driver != ProgressMultiSweep {
+		return nil
+	}
+	if role == RoleAPI {
+		// API never runs progress loops — force external_only.
+		c.ProgressDriver = string(ProgressExternalOnly)
+		c.EnableLegacyTickers = false
+		return nil
+	}
+	if driver == ProgressLegacyTickers && !c.LegacyTickersAllowed() {
+		return fmt.Errorf("PROGRESS_DRIVER=legacy_tickers not allowed for SERVICE_ROLE=%s", role)
+	}
+	if driver == ProgressMultiSweep && role == RoleWorker && !c.ReconcileInWorker() {
+		return errors.New(
+			"PROGRESS_DRIVER=multi_sweep requires SERVICE_ROLE_RECONCILE_IN_WORKER=true for role worker",
+		)
+	}
 	return nil
 }
 

@@ -29,26 +29,34 @@ type Config struct {
 	ServerPort string `env:"SERVER_PORT" envDefault:"8080"`
 
 	// Process role and progress driver (see role.go).
-	ServiceRole                   string `env:"SERVICE_ROLE"                       envDefault:"all"`
-	ServiceRoleReconcileInWorker  bool   `env:"SERVICE_ROLE_RECONCILE_IN_WORKER"   envDefault:"true"`
-	WorkerExposeAPI               bool   `env:"WORKER_EXPOSE_API"                  envDefault:"false"`
-	ProgressDriver                string `env:"PROGRESS_DRIVER"                    envDefault:"multi_sweep"`
-	EnableLegacyTickers           bool   `env:"ENABLE_LEGACY_TICKERS"              envDefault:"false"`
-	EnableWorkNotifier            bool   `env:"ENABLE_WORK_NOTIFIER"               envDefault:"true"`
-	ReconcilerMultiSweepIntervalS int    `env:"RECONCILER_MULTI_SWEEP_INTERVAL_SECONDS" envDefault:"5"`
-	CloudRunMaxStepSeconds        int    `env:"CLOUD_RUN_MAX_STEP_SECONDS"         envDefault:"300"`
+	ServiceRole string `env:"SERVICE_ROLE" envDefault:"all"`
+	// When true, worker also hosts reconcile/cron/cleanup handlers.
+	ServiceRoleReconcileInWorker bool `env:"SERVICE_ROLE_RECONCILE_IN_WORKER" envDefault:"true"`
+	// Optional ConnectRPC on worker role (discouraged).
+	WorkerExposeAPI bool `env:"WORKER_EXPOSE_API" envDefault:"false"`
+	// legacy_tickers | multi_sweep | external_only.
+	ProgressDriver string `env:"PROGRESS_DRIVER" envDefault:"multi_sweep"`
+	// Migration bridge only; never with multi_sweep.
+	EnableLegacyTickers bool `env:"ENABLE_LEGACY_TICKERS" envDefault:"false"`
+	// Primary-path notify after durable writes.
+	EnableWorkNotifier bool `env:"ENABLE_WORK_NOTIFIER" envDefault:"true"`
+	// Interval for multi_sweep progress driver.
+	ReconcilerMultiSweepIntervalS int `env:"RECONCILER_MULTI_SWEEP_INTERVAL_SECONDS" envDefault:"5"`
+	// Cap for per-step execution timeout (Cloud Run budget).
+	CloudRunMaxStepSeconds int `env:"CLOUD_RUN_MAX_STEP_SECONDS" envDefault:"300"`
 
 	// Valkey.
-	ValkeyCacheURL     string `env:"VALKEY_CACHE_URL"      envDefault:"redis://localhost:6379"`
-	CacheRequireValkey bool   `env:"CACHE_REQUIRE_VALKEY"  envDefault:"false"`
+	ValkeyCacheURL string `env:"VALKEY_CACHE_URL" envDefault:"redis://localhost:6379"`
+	// Fail closed when true (required for multi-instance prod).
+	CacheRequireValkey bool `env:"CACHE_REQUIRE_VALKEY" envDefault:"false"`
 
 	// Encryption.
 	MasterEncryptionKey string `env:"MASTER_ENCRYPTION_KEY"`
 
 	// Cloud Tasks delayed publisher (optional; empty = Noop delayed).
-	// Example: cloudtasks:///projects/p/locations/l/queues/q?url=https://worker/_frame/queue/sched-timer&oidc_sa=sa@p.iam
 	CloudTasksDelayedURLTemplate string `env:"CLOUD_TASKS_DELAYED_URL_TEMPLATE"`
-	CloudTasksMaxHorizonHours    int    `env:"CLOUD_TASKS_MAX_HORIZON_HOURS" envDefault:"720"` // 30d
+	// Max schedule horizon for delayed wakes (hours). Default 720 = 30 days.
+	CloudTasksMaxHorizonHours int `env:"CLOUD_TASKS_MAX_HORIZON_HOURS" envDefault:"720"`
 
 	// Cron scheduler.
 	CronSchedulerBatchSize    int `env:"CRON_SCHEDULER_BATCH_SIZE"       envDefault:"500"`

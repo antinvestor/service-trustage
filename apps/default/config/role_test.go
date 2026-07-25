@@ -26,7 +26,7 @@ func TestParseServiceRole(t *testing.T) {
 	if err != nil || r != config.RoleAPI {
 		t.Fatalf("got %q %v", r, err)
 	}
-	if _, err := config.ParseServiceRole("nope"); err == nil {
+	if _, parseErr := config.ParseServiceRole("nope"); parseErr == nil {
 		t.Fatal("expected error")
 	}
 }

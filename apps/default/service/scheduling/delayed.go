@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,6 +30,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
+
+const defaultCloudTasksHorizonDays = 30
 
 // DelayedPublisher schedules work to fire at a future time.
 // Cloud Tasks path reuses Frame's cloudtasks URL shape; Noop relies on reconcile.
@@ -97,16 +100,16 @@ func NewCloudTasksDelayedPublisherFromTemplate(
 		}
 	}
 	if project == "" || location == "" || queueName == "" {
-		return nil, fmt.Errorf("cloudtasks template: need projects/locations/queues in path")
+		return nil, errors.New("cloudtasks template: need projects/locations/queues in path")
 	}
 
 	target := u.Query().Get("url")
 	if target == "" {
-		return nil, fmt.Errorf("cloudtasks template: missing url query param")
+		return nil, errors.New("cloudtasks template: missing url query param")
 	}
 
 	if httpClient == nil {
-		return nil, fmt.Errorf("cloudtasks delayed publisher: http client is required")
+		return nil, errors.New("cloudtasks delayed publisher: http client is required")
 	}
 
 	ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
@@ -114,9 +117,10 @@ func NewCloudTasksDelayedPublisherFromTemplate(
 		return nil, fmt.Errorf("cloudtasks token source: %w", err)
 	}
 
+	const hoursPerDay = 24
 	horizon := time.Duration(maxHorizonHours) * time.Hour
 	if horizon <= 0 {
-		horizon = 30 * 24 * time.Hour
+		horizon = defaultCloudTasksHorizonDays * hoursPerDay * time.Hour
 	}
 
 	apiURL := fmt.Sprintf(
@@ -174,11 +178,15 @@ func (p *CloudTasksDelayedPublisher) PublishAt(ctx context.Context, ref string, 
 		},
 	}
 	if p.oidcSA != "" {
+		httpReq, ok := task["httpRequest"].(map[string]any)
+		if !ok {
+			return errors.New("delayed publish: httpRequest missing")
+		}
 		oidc := map[string]string{"serviceAccountEmail": p.oidcSA}
 		if p.oidcAud != "" {
 			oidc["audience"] = p.oidcAud
 		}
-		task["httpRequest"].(map[string]any)["oidcToken"] = oidc
+		httpReq["oidcToken"] = oidc
 	}
 
 	reqBody, err := json.Marshal(map[string]any{"task": task})

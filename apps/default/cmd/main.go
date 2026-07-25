@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main wires the trustage orchestrator (roles, queues, HTTP).
+//
+//nolint:cyclop // single-binary wiring entrypoint; complexity is structural not algorithmic
 package main
 
 import (
@@ -60,7 +63,8 @@ import (
 	workflowv1spec "github.com/antinvestor/service-trustage/proto/workflow/v1"
 )
 
-func main() { //nolint:funlen,gocyclo // main wires roles, queues, and progress drivers
+//nolint:cyclop // main package is intentionally a single wiring entrypoint.
+func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queues, and progress drivers
 	ctx := context.Background()
 
 	cfg, err := config.LoadWithOIDC[appconfig.Config](ctx)
@@ -340,9 +344,21 @@ func main() { //nolint:funlen,gocyclo // main wires roles, queues, and progress 
 	})
 
 	if role.ExposesAPI(cfg.WorkerExposeAPI) {
-		eventRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:event_ingest", cfg.EventIngestRateLimit)
-		formRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:form_ingress", cfg.EventIngestRateLimit)
-		webhookRateLimiter := handlers.NewNamedRateLimiter(rawCache, "trustage:webhook_ingress", cfg.EventIngestRateLimit)
+		eventRateLimiter := handlers.NewNamedRateLimiter(
+			rawCache,
+			"trustage:event_ingest",
+			cfg.EventIngestRateLimit,
+		)
+		formRateLimiter := handlers.NewNamedRateLimiter(
+			rawCache,
+			"trustage:form_ingress",
+			cfg.EventIngestRateLimit,
+		)
+		webhookRateLimiter := handlers.NewNamedRateLimiter(
+			rawCache,
+			"trustage:webhook_ingress",
+			cfg.EventIngestRateLimit,
+		)
 
 		var outboxPub *handlers.OutboxPublisher
 		if role.PublishesEventIngest() {
