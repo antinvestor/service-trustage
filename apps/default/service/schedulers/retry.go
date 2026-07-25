@@ -16,7 +16,7 @@ package schedulers
 
 import (
 	"context"
-	"time"
+	"errors"
 
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
@@ -52,30 +52,6 @@ func NewRetryScheduler(
 	}
 }
 
-// Start begins the retry scheduler loop.
-func (s *RetryScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.RetryIntervalSeconds) * time.Second
-
-	log.Debug("retry scheduler started", "interval_seconds", s.cfg.RetryIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			retried := s.RunOnce(ctx)
-			if retried > 0 {
-				log.Debug("retry scheduler completed", "retried", retried)
-			}
-		case <-ctx.Done():
-			log.Debug("retry scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single retry sweep.
 func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, telemetry.SpanSchedulerRetry)
@@ -89,21 +65,17 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 		return 0
 	}
 
-	// Record scheduler lag gauge.
 	s.metrics.SchedulerRetryDueGauge.Record(ctx, int64(len(due)))
 
 	retried := 0
 
 	for _, exec := range due {
-		// Verify instance is still running before scheduling retry.
 		instance, instanceErr := s.instanceRepo.GetByID(ctx, exec.InstanceID)
 		if instanceErr != nil {
 			log.WithError(instanceErr).Error("retry scheduler: load instance failed",
 				"execution_id", exec.ID,
 			)
-			// Mark stale so we don't retry this execution again.
-			_ = s.execRepo.MarkStale(ctx, exec.ID)
-
+			_ = s.execRepo.MarkStaleExpected(ctx, exec.ID, models.ExecStatusRetryScheduled)
 			continue
 		}
 
@@ -112,21 +84,10 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 				"execution_id", exec.ID,
 				"instance_status", instance.Status,
 			)
-			_ = s.execRepo.MarkStale(ctx, exec.ID)
-
+			_ = s.execRepo.MarkStaleExpected(ctx, exec.ID, models.ExecStatusRetryScheduled)
 			continue
 		}
 
-		// Mark old execution as stale.
-		if staleErr := s.execRepo.MarkStale(ctx, exec.ID); staleErr != nil {
-			log.WithError(staleErr).Error("retry scheduler: mark stale failed",
-				"execution_id", exec.ID,
-			)
-
-			continue
-		}
-
-		// Create new execution with incremented attempt.
 		rawToken, tokenErr := cryptoutil.GenerateToken()
 		if tokenErr != nil {
 			log.WithError(tokenErr).Error("retry scheduler: generate token failed")
@@ -145,12 +106,17 @@ func (s *RetryScheduler) RunOnce(ctx context.Context) int {
 			TraceID:         exec.TraceID,
 		}
 
-		if createErr := s.execRepo.Create(ctx, newExec); createErr != nil {
-			log.WithError(createErr).Error("retry scheduler: create new execution failed")
+		if createErr := s.execRepo.MaterializeRetry(ctx, exec.ID, newExec); createErr != nil {
+			if errors.Is(createErr, repository.ErrStaleMutation) {
+				log.Debug("retry scheduler: already materialized", "execution_id", exec.ID)
+				continue
+			}
+			log.WithError(createErr).Error("retry scheduler: materialize retry failed",
+				"execution_id", exec.ID,
+			)
 			continue
 		}
 
-		// The new execution has status=pending, so the dispatch scheduler will pick it up.
 		retried++
 	}
 

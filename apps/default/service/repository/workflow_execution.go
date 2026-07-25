@@ -36,17 +36,36 @@ type WorkflowExecutionRepository interface {
 	List(ctx context.Context, status, instanceID string, limit int) ([]*models.WorkflowStateExecution, error)
 	ListPage(ctx context.Context, filter WorkflowExecutionListFilter) (*WorkflowExecutionPage, error)
 	GetLatestByInstance(ctx context.Context, instanceID string) (*models.WorkflowStateExecution, error)
+	// CountByInstance returns the number of non-deleted executions for an instance.
+	CountByInstance(ctx context.Context, instanceID string) (int64, error)
 	FindPending(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	FindRetryDue(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
-	FindTimedOut(ctx context.Context, timeoutSeconds int, limit int) ([]*models.WorkflowStateExecution, error)
+	// FindTimedOut returns dispatched rows with timeout_at <= now (greenfield: no age fallback).
+	FindTimedOut(ctx context.Context, limit int) ([]*models.WorkflowStateExecution, error)
 	VerifyAndConsumeToken(ctx context.Context, executionID, tokenHash string) (*models.WorkflowStateExecution, error)
 	VerifyAndConsumeTokenTx(tx *gorm.DB, executionID, tokenHash string) (*models.WorkflowStateExecution, error)
 	UpdateStatus(ctx context.Context, executionID string, status models.ExecutionStatus, fields map[string]any) error
-	// MarkTimedOutAndCreateRetry atomically marks oldID as timed_out and inserts
-	// the replacement retry execution in a single transaction. This prevents a
-	// pod crash between the two steps from leaving a stuck dispatched execution.
+	// UpdateStatusExpected updates status only when current status matches expectedFrom.
+	// Returns ErrStaleMutation when no rows match (dual-path safe no-op signal).
+	UpdateStatusExpected(
+		ctx context.Context,
+		executionID string,
+		expectedFrom, to models.ExecutionStatus,
+		fields map[string]any,
+	) error
+	// MarkTimedOutAndCreateRetry atomically marks oldID as timed_out only if still
+	// dispatched and inserts the replacement retry execution in one transaction.
+	// Returns ErrStaleMutation if the row was not dispatched (dual-path loser).
 	MarkTimedOutAndCreateRetry(ctx context.Context, oldID string, retry *models.WorkflowStateExecution) error
+	// MarkTerminalTimeout marks a dispatched execution timed_out then fatal in one
+	// transaction. Returns ErrStaleMutation if not dispatched.
+	MarkTerminalTimeout(ctx context.Context, executionID string, errorMessage string) error
+	// MaterializeRetry marks a retry_scheduled row stale and inserts a new pending
+	// attempt in one transaction. Returns the new execution or ErrStaleMutation.
+	MaterializeRetry(ctx context.Context, oldID string, retry *models.WorkflowStateExecution) error
 	MarkStale(ctx context.Context, executionID string) error
+	// MarkStaleExpected marks stale only from expectedFrom (e.g. retry_scheduled).
+	MarkStaleExpected(ctx context.Context, executionID string, expectedFrom models.ExecutionStatus) error
 	Pool() pool.Pool
 	// DeleteCompletedBefore batch-deletes terminal-state executions whose
 	// finished_at is older than cutoff. Returns the number of rows deleted.
@@ -243,10 +262,9 @@ func (r *workflowExecutionRepository) FindRetryDue(
 	return execs, nil
 }
 
-// FindTimedOut finds dispatched executions that have exceeded their timeout.
+// FindTimedOut finds dispatched executions past absolute timeout_at.
 func (r *workflowExecutionRepository) FindTimedOut(
 	ctx context.Context,
-	timeoutSeconds int,
 	limit int,
 ) ([]*models.WorkflowStateExecution, error) {
 	db := r.BaseRepository.Pool().DB(ctx, false)
@@ -254,15 +272,15 @@ func (r *workflowExecutionRepository) FindTimedOut(
 		limit = 50
 	}
 
-	deadline := time.Now().Add(-time.Duration(timeoutSeconds) * time.Second)
+	now := time.Now()
 	var execs []*models.WorkflowStateExecution
 	result := db.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where(
-			"status = ? AND started_at IS NOT NULL AND started_at < ? AND deleted_at IS NULL",
+			"status = ? AND deleted_at IS NULL AND timeout_at IS NOT NULL AND timeout_at <= ?",
 			models.ExecStatusDispatched,
-			deadline,
+			now,
 		).
-		Order("started_at ASC").
+		Order("timeout_at ASC").
 		Limit(limit).
 		Find(&execs)
 
@@ -271,6 +289,18 @@ func (r *workflowExecutionRepository) FindTimedOut(
 	}
 
 	return execs, nil
+}
+
+func (r *workflowExecutionRepository) CountByInstance(ctx context.Context, instanceID string) (int64, error) {
+	db := r.BaseRepository.Pool().DB(ctx, true)
+	var count int64
+	result := db.Model(&models.WorkflowStateExecution{}).
+		Where("instance_id = ? AND deleted_at IS NULL", instanceID).
+		Count(&count)
+	if result.Error != nil {
+		return 0, fmt.Errorf("count executions by instance: %w", result.Error)
+	}
+	return count, nil
 }
 
 // VerifyAndConsumeToken verifies the execution token and atomically clears it to prevent replay.
@@ -363,13 +393,53 @@ func (r *workflowExecutionRepository) UpdateStatus(
 	return nil
 }
 
+func (r *workflowExecutionRepository) UpdateStatusExpected(
+	ctx context.Context,
+	executionID string,
+	expectedFrom, to models.ExecutionStatus,
+	fields map[string]any,
+) error {
+	db := r.BaseRepository.Pool().DB(ctx, false)
+
+	updates := map[string]any{
+		"status": string(to),
+	}
+	for k, v := range fields {
+		updates[k] = v
+	}
+	if to == models.ExecStatusCompleted || to == models.ExecStatusFailed ||
+		to == models.ExecStatusFatal || to == models.ExecStatusTimedOut {
+		if _, ok := updates["finished_at"]; !ok {
+			updates["finished_at"] = time.Now()
+		}
+	}
+
+	result := db.Model(&models.WorkflowStateExecution{}).
+		Where("id = ? AND status = ? AND deleted_at IS NULL", executionID, string(expectedFrom)).
+		UpdateColumns(updates)
+	if result.Error != nil {
+		return fmt.Errorf("update execution status expected: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrStaleMutation
+	}
+	return nil
+}
+
 func (r *workflowExecutionRepository) MarkStale(ctx context.Context, executionID string) error {
 	return r.UpdateStatus(ctx, executionID, models.ExecStatusStale, nil)
 }
 
-// MarkTimedOutAndCreateRetry atomically marks oldID as timed_out and inserts
-// the new retry execution. Using a single transaction prevents a pod crash
-// between the two statements from leaving a stuck dispatched execution.
+func (r *workflowExecutionRepository) MarkStaleExpected(
+	ctx context.Context,
+	executionID string,
+	expectedFrom models.ExecutionStatus,
+) error {
+	return r.UpdateStatusExpected(ctx, executionID, expectedFrom, models.ExecStatusStale, nil)
+}
+
+// MarkTimedOutAndCreateRetry atomically marks oldID as timed_out (only if dispatched)
+// and inserts the new retry execution.
 func (r *workflowExecutionRepository) MarkTimedOutAndCreateRetry(
 	ctx context.Context,
 	oldID string,
@@ -378,21 +448,87 @@ func (r *workflowExecutionRepository) MarkTimedOutAndCreateRetry(
 	db := r.BaseRepository.Pool().DB(ctx, false)
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.WorkflowStateExecution{}).
-			Where("id = ? AND deleted_at IS NULL", oldID).
+		result := tx.Model(&models.WorkflowStateExecution{}).
+			Where("id = ? AND status = ? AND deleted_at IS NULL", oldID, models.ExecStatusDispatched).
 			UpdateColumns(map[string]any{
 				"status":        string(models.ExecStatusTimedOut),
 				"error_class":   "retryable",
 				"error_message": "execution timed out",
 				"finished_at":   time.Now().UTC(),
-			}).Error; err != nil {
-			return fmt.Errorf("mark timed out: %w", err)
+			})
+		if result.Error != nil {
+			return fmt.Errorf("mark timed out: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrStaleMutation
 		}
 
 		if err := tx.Create(retry).Error; err != nil {
 			return fmt.Errorf("create retry execution: %w", err)
 		}
 
+		return nil
+	})
+}
+
+// MarkTerminalTimeout marks dispatched → timed_out → fatal in one transaction.
+func (r *workflowExecutionRepository) MarkTerminalTimeout(
+	ctx context.Context,
+	executionID string,
+	errorMessage string,
+) error {
+	db := r.BaseRepository.Pool().DB(ctx, false)
+	now := time.Now().UTC()
+	if errorMessage == "" {
+		errorMessage = "execution timed out, retries exhausted"
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.WorkflowStateExecution{}).
+			Where("id = ? AND status = ? AND deleted_at IS NULL", executionID, models.ExecStatusDispatched).
+			UpdateColumns(map[string]any{
+				"status":        string(models.ExecStatusFatal),
+				"error_class":   "retryable",
+				"error_message": errorMessage,
+				"finished_at":   now,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("mark terminal timeout: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrStaleMutation
+		}
+		return nil
+	})
+}
+
+// MaterializeRetry marks retry_scheduled → stale and inserts a new pending attempt.
+func (r *workflowExecutionRepository) MaterializeRetry(
+	ctx context.Context,
+	oldID string,
+	retry *models.WorkflowStateExecution,
+) error {
+	db := r.BaseRepository.Pool().DB(ctx, false)
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.WorkflowStateExecution{}).
+			Where(
+				"id = ? AND status = ? AND deleted_at IS NULL",
+				oldID,
+				models.ExecStatusRetryScheduled,
+			).
+			UpdateColumns(map[string]any{
+				"status": string(models.ExecStatusStale),
+			})
+		if result.Error != nil {
+			return fmt.Errorf("materialize retry mark stale: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrStaleMutation
+		}
+		if err := tx.Create(retry).Error; err != nil {
+			return fmt.Errorf("materialize retry create: %w", err)
+		}
 		return nil
 	})
 }

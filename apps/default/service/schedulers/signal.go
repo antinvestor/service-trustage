@@ -47,30 +47,6 @@ func NewSignalScheduler(
 	}
 }
 
-// Start begins the signal timeout sweep loop.
-func (s *SignalScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.SignalIntervalSeconds) * time.Second
-
-	log.Debug("signal scheduler started", "interval_seconds", s.cfg.SignalIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			timedOut := s.RunOnce(ctx)
-			if timedOut > 0 {
-				log.Debug("signal scheduler completed", "timed_out", timedOut)
-			}
-		case <-ctx.Done():
-			log.Debug("signal scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single signal timeout sweep.
 func (s *SignalScheduler) RunOnce(ctx context.Context) int {
 	log := util.Log(ctx)

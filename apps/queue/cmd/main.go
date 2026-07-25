@@ -63,13 +63,11 @@ func main() {
 		if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
 			log.WithError(migrateErr).Fatal("database migration failed")
 		}
-		log.Debug("database migration completed")
+		log.Info("database migration completed (migrate-only mode)")
 		return
 	}
 
-	if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
-		log.WithError(migrateErr).Fatal("database migration failed")
-	}
+	// Serving pods do not migrate (out-of-band Job only).
 
 	dbPool := dbManager.GetPool(ctx, datastore.DefaultPoolName)
 
@@ -78,11 +76,9 @@ func main() {
 	itemRepo := repository.NewQueueItemRepository(dbPool)
 	counterRepo := repository.NewQueueCounterRepository(dbPool)
 
-	// Cache setup (Valkey with in-memory fallback).
-	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL)
+	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL, cfg.CacheRequireValkey)
 	if cacheErr != nil {
-		log.WithError(cacheErr).Warn("cache setup failed, using in-memory fallback")
-		rawCache, _ = appcache.SetupCache("")
+		log.WithError(cacheErr).Fatal("cache setup failed")
 	}
 
 	// Business layer.

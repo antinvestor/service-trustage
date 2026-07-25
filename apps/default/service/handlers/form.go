@@ -32,6 +32,7 @@ type FormHandler struct {
 	eventRepo   repository.EventLogRepository
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
+	outbox      *OutboxPublisher
 }
 
 // NewFormHandler creates a new FormHandler.
@@ -39,12 +40,17 @@ func NewFormHandler(
 	eventRepo repository.EventLogRepository,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
+	outbox ...*OutboxPublisher,
 ) *FormHandler {
-	return &FormHandler{
+	h := &FormHandler{
 		eventRepo:   eventRepo,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
+	if len(outbox) > 0 {
+		h.outbox = outbox[0]
+	}
+	return h
 }
 
 // FormSubmitRequest is the request body for form submission.
@@ -127,6 +133,10 @@ func (h *FormHandler) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to store form submission", http.StatusInternalServerError)
 
 		return
+	}
+
+	if h.outbox != nil {
+		h.outbox.PublishAfterCreate(ctx, eventLog)
 	}
 
 	log.Debug("form submitted",

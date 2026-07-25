@@ -16,6 +16,7 @@ package schedulers
 
 import (
 	"context"
+	"errors"
 	"math"
 	"math/rand/v2"
 	"time"
@@ -61,30 +62,6 @@ func NewTimeoutScheduler(
 	}
 }
 
-// Start begins the timeout scheduler loop.
-func (s *TimeoutScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.TimeoutIntervalSeconds) * time.Second
-
-	log.Debug("timeout scheduler started", "interval_seconds", s.cfg.TimeoutIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			timedOut := s.RunOnce(ctx)
-			if timedOut > 0 {
-				log.Debug("timeout scheduler completed", "timed_out", timedOut)
-			}
-		case <-ctx.Done():
-			log.Debug("timeout scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single timeout sweep.
 func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, telemetry.SpanSchedulerTimeout)
@@ -92,52 +69,46 @@ func (s *TimeoutScheduler) RunOnce(ctx context.Context) int {
 
 	log := util.Log(ctx)
 
-	overdue, err := s.execRepo.FindTimedOut(ctx, s.cfg.DefaultExecutionTimeoutSeconds, s.cfg.TimeoutBatchSize)
+	overdue, err := s.execRepo.FindTimedOut(ctx, s.cfg.TimeoutBatchSize)
 	if err != nil {
 		log.WithError(err).Error("timeout scheduler: failed to find timed out")
 		return 0
 	}
 
-	// Record scheduler lag gauge.
 	s.metrics.SchedulerDispatchedGauge.Record(ctx, int64(len(overdue)))
 
 	timedOut := 0
 
 	for _, exec := range overdue {
-		// Attempt to schedule a retry — builds the new execution if allowed.
-		// The mark-timed-out + create-retry steps are committed atomically to
-		// prevent a pod crash between them from leaving a stuck dispatched row.
 		if retried := s.scheduleRetryIfAllowed(ctx, exec); retried {
 			log.Debug("timeout scheduler: retry scheduled",
 				"execution_id", exec.ID,
 				"attempt", exec.Attempt,
 			)
-		} else {
-			// No retry possible — mark as timed_out then fatal and fail the instance.
-			updateErr := s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusTimedOut, map[string]any{
-				"error_class":   "retryable",
-				"error_message": "execution timed out",
-			})
-			if updateErr != nil {
-				log.WithError(updateErr).Error("timeout scheduler: mark timed out failed",
-					"execution_id", exec.ID,
-				)
+			timedOut++
+			continue
+		}
+
+		// Terminal path: single CAS-guarded update.
+		termErr := s.execRepo.MarkTerminalTimeout(ctx, exec.ID, "execution timed out, retries exhausted")
+		if termErr != nil {
+			if errors.Is(termErr, repository.ErrStaleMutation) {
+				log.Debug("timeout scheduler: already terminal", "execution_id", exec.ID)
 				continue
 			}
-			// No retry possible — mark as fatal and fail the instance.
-			_ = s.execRepo.UpdateStatus(ctx, exec.ID, models.ExecStatusFatal, map[string]any{
-				"error_class":   "retryable",
-				"error_message": "execution timed out, retries exhausted",
-			})
-			_ = s.instanceRepo.UpdateStatus(ctx, exec.InstanceID, models.InstanceStatusFailed)
-
-			_ = s.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
-				InstanceID:  exec.InstanceID,
-				ExecutionID: exec.ID,
-				EventType:   events.EventStateFailed,
-				State:       exec.State,
-			})
+			log.WithError(termErr).Error("timeout scheduler: mark terminal timeout failed",
+				"execution_id", exec.ID,
+			)
+			continue
 		}
+
+		_ = s.instanceRepo.UpdateStatus(ctx, exec.InstanceID, models.InstanceStatusFailed)
+		_ = s.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
+			InstanceID:  exec.InstanceID,
+			ExecutionID: exec.ID,
+			EventType:   events.EventStateFailed,
+			State:       exec.State,
+		})
 
 		timedOut++
 	}
@@ -156,7 +127,6 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 ) bool {
 	log := util.Log(ctx)
 
-	// Load instance to get workflow info for retry policy lookup.
 	instance, err := s.instanceRepo.GetByID(ctx, exec.InstanceID)
 	if err != nil {
 		log.WithError(err).Error("timeout scheduler: load instance failed",
@@ -169,14 +139,13 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 		ctx, instance.WorkflowName, instance.WorkflowVersion, exec.State,
 	)
 	if policyErr != nil {
-		return false // no retry policy
+		return false
 	}
 
 	if exec.Attempt >= policy.MaxAttempts {
-		return false // retries exhausted
+		return false
 	}
 
-	// Compute next retry time with exponential backoff and full jitter.
 	delayMs := policy.InitialDelayMs
 	if policy.BackoffStrategy == "exponential" {
 		delayMs = min(
@@ -185,11 +154,9 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 		)
 	}
 
-	// Apply full jitter to prevent thundering herd.
 	jitteredMs := rand.Int64N(delayMs + 1) //nolint:gosec // jitter doesn't need crypto random
 	nextRetry := time.Now().Add(time.Duration(jitteredMs) * time.Millisecond)
 
-	// Create new pending execution (dispatch scheduler will pick it up).
 	rawToken, tokenErr := cryptoutil.GenerateToken()
 	if tokenErr != nil {
 		log.WithError(tokenErr).Error("timeout scheduler: generate token failed")
@@ -209,9 +176,13 @@ func (s *TimeoutScheduler) scheduleRetryIfAllowed(
 		NextRetryAt:     &nextRetry,
 	}
 
-	// Atomic: mark old execution timed_out AND insert the retry row in one tx.
-	// A pod crash between the two would otherwise leave a stuck dispatched row.
 	if createErr := s.execRepo.MarkTimedOutAndCreateRetry(ctx, exec.ID, newExec); createErr != nil {
+		if errors.Is(createErr, repository.ErrStaleMutation) {
+			log.Debug("timeout scheduler: dual-path loser on timeout+retry",
+				"execution_id", exec.ID,
+			)
+			return false
+		}
 		log.WithError(createErr).Error("timeout scheduler: mark-timed-out+create-retry failed",
 			"execution_id", exec.ID,
 		)

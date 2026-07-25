@@ -16,7 +16,7 @@ package schedulers
 
 import (
 	"context"
-	"time"
+	"errors"
 
 	"github.com/pitabwire/frame/v2/queue"
 	"github.com/pitabwire/util"
@@ -51,30 +51,6 @@ func NewDispatchScheduler(
 		queueMgr: queueMgr,
 		cfg:      cfg,
 		metrics:  metrics,
-	}
-}
-
-// Start begins the dispatch scheduler loop. It blocks until context is cancelled.
-func (s *DispatchScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.DispatchIntervalSeconds) * time.Second
-
-	log.Debug("dispatch scheduler started", "interval_seconds", s.cfg.DispatchIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			dispatched := s.RunUntilDrained(ctx)
-			if dispatched > 0 {
-				log.Debug("dispatch scheduler completed", "dispatched", dispatched)
-			}
-		case <-ctx.Done():
-			log.Debug("dispatch scheduler stopped")
-			return
-		}
 	}
 }
 
@@ -119,6 +95,12 @@ func (s *DispatchScheduler) RunOnce(ctx context.Context) int {
 	for _, exec := range pending {
 		cmd, dispatchErr := s.engine.Dispatch(ctx, exec)
 		if dispatchErr != nil {
+			if errors.Is(dispatchErr, business.ErrAlreadyDispatched) {
+				log.Debug("dispatch scheduler: already claimed",
+					"execution_id", exec.ID,
+				)
+				continue
+			}
 			log.WithError(dispatchErr).Error("dispatch scheduler: dispatch failed",
 				"execution_id", exec.ID,
 			)

@@ -79,33 +79,6 @@ func WithWorkflowRowRepos(
 	}
 }
 
-// Start begins the cleanup scheduler loop.
-func (s *CleanupScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.CleanupIntervalHours) * time.Hour
-
-	log.Debug("cleanup scheduler started",
-		"interval_hours", s.cfg.CleanupIntervalHours,
-		"retention_days", s.cfg.RetentionDays,
-	)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			deleted := s.RunOnce(ctx)
-			if deleted > 0 {
-				log.Debug("cleanup scheduler completed", "deleted", deleted)
-			}
-		case <-ctx.Done():
-			log.Debug("cleanup scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single cleanup sweep.
 func (s *CleanupScheduler) RunOnce(ctx context.Context) int64 {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, cleanupSpanName)

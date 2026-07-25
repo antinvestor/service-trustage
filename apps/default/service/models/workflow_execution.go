@@ -54,9 +54,12 @@ type WorkflowStateExecution struct {
 	ErrorClass       string          `gorm:"column:error_class"`
 	ErrorMessage     string          `gorm:"column:error_message"`
 	NextRetryAt      *time.Time      `gorm:"column:next_retry_at"`
-	TraceID          string          `gorm:"column:trace_id"`
-	StartedAt        *time.Time      `gorm:"column:started_at"`
-	FinishedAt       *time.Time      `gorm:"column:finished_at"`
+	// TimeoutAt is the absolute deadline for a dispatched execution (per-step/workflow/default).
+	// Set at successful Dispatch; used by FindTimedOut and delayed timeout wakes.
+	TimeoutAt  *time.Time `gorm:"column:timeout_at;index:idx_wse_timeout,where:status = 'dispatched' AND deleted_at IS NULL AND timeout_at IS NOT NULL"`
+	TraceID    string     `gorm:"column:trace_id"`
+	StartedAt  *time.Time `gorm:"column:started_at"`
+	FinishedAt *time.Time `gorm:"column:finished_at"`
 }
 
 // TableName returns the database table name.

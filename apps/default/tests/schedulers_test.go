@@ -320,6 +320,7 @@ func (s *DefaultServiceSuite) TestTimeoutScheduler_RunOnce() {
 	s.Require().NoError(s.retryRepo.Store(tenantCtx, policy))
 
 	startedAt := time.Now().Add(-5 * time.Minute)
+	timeoutAt := time.Now().Add(-time.Minute)
 	exec := &models.WorkflowStateExecution{
 		InstanceID:      instance.ID,
 		State:           "step-a",
@@ -329,6 +330,7 @@ func (s *DefaultServiceSuite) TestTimeoutScheduler_RunOnce() {
 		InputSchemaHash: "hash",
 		InputPayload:    "{}",
 		StartedAt:       &startedAt,
+		TimeoutAt:       &timeoutAt,
 	}
 	s.Require().NoError(s.execRepo.Create(tenantCtx, exec))
 
@@ -586,43 +588,34 @@ func (s *DefaultServiceSuite) TestCleanupScheduler_RunOnce() {
 	s.Equal(int64(2), deleted)
 }
 
-func (s *DefaultServiceSuite) TestSchedulers_Start_CancelledContext() {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
+func (s *DefaultServiceSuite) TestSchedulers_RunOnce_Empty() {
+	ctx := context.Background()
 	cfg := &config.Config{
-		DispatchIntervalSeconds: 1,
-		RetryIntervalSeconds:    1,
-		TimerIntervalSeconds:    1,
-		TimeoutIntervalSeconds:  1,
-		OutboxIntervalSeconds:   1,
-		TimerClaimTTLSeconds:    1,
-		CleanupIntervalHours:    1,
+		TimerClaimTTLSeconds: 1,
+		CleanupIntervalHours: 1,
+		DispatchBatchSize:    10,
+		RetryBatchSize:       10,
+		TimeoutBatchSize:     10,
+		OutboxBatchSize:      10,
+		TimerBatchSize:       10,
 	}
-
 	queueMgr := &fakeQueueManager{}
 
 	dispatch := schedulers.NewDispatchScheduler(s.execRepo, s.stateEngine(), queueMgr, cfg, s.metrics)
 	retry := schedulers.NewRetryScheduler(s.execRepo, s.instanceRepo, cfg, s.metrics)
 	timer := schedulers.NewTimerScheduler(s.timerRepo, s.stateEngine(), cfg, s.metrics)
-	timeout := schedulers.NewTimeoutScheduler(s.execRepo, s.instanceRepo, s.retryRepo, s.auditRepo, cfg, s.metrics)
+	timeout := schedulers.NewTimeoutScheduler(
+		s.execRepo, s.instanceRepo, s.retryRepo, s.auditRepo, cfg, s.metrics,
+	)
 	outbox := schedulers.NewOutboxScheduler(s.eventRepo, queueMgr, cfg, s.metrics)
 	cron := schedulers.NewCronScheduler(s.scheduleRepo, cfg, nil)
 	cleanup := schedulers.NewCleanupScheduler(s.eventRepo, s.auditRepo, cfg)
 
-	done := make(chan struct{})
-	go func() { dispatch.Start(ctx); done <- struct{}{} }()
-	<-done
-	go func() { retry.Start(ctx); done <- struct{}{} }()
-	<-done
-	go func() { timer.Start(ctx); done <- struct{}{} }()
-	<-done
-	go func() { timeout.Start(ctx); done <- struct{}{} }()
-	<-done
-	go func() { outbox.Start(ctx); done <- struct{}{} }()
-	<-done
-	go func() { cron.Start(ctx); done <- struct{}{} }()
-	<-done
-	go func() { cleanup.Start(ctx); done <- struct{}{} }()
-	<-done
+	s.Equal(0, dispatch.RunOnce(ctx))
+	s.Equal(0, retry.RunOnce(ctx))
+	s.Equal(0, timer.RunOnce(ctx))
+	s.Equal(0, timeout.RunOnce(ctx))
+	s.Equal(0, outbox.RunOnce(ctx))
+	s.Equal(0, cron.RunOnce(ctx))
+	s.Equal(int64(0), cleanup.RunOnce(ctx))
 }

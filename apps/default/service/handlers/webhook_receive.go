@@ -32,6 +32,7 @@ type WebhookReceiveHandler struct {
 	eventRepo   repository.EventLogRepository
 	metrics     *telemetry.Metrics
 	rateLimiter *RateLimiter
+	outbox      *OutboxPublisher
 }
 
 // NewWebhookReceiveHandler creates a new WebhookReceiveHandler.
@@ -39,12 +40,17 @@ func NewWebhookReceiveHandler(
 	eventRepo repository.EventLogRepository,
 	metrics *telemetry.Metrics,
 	rateLimiter *RateLimiter,
+	outbox ...*OutboxPublisher,
 ) *WebhookReceiveHandler {
-	return &WebhookReceiveHandler{
+	h := &WebhookReceiveHandler{
 		eventRepo:   eventRepo,
 		metrics:     metrics,
 		rateLimiter: rateLimiter,
 	}
+	if len(outbox) > 0 {
+		h.outbox = outbox[0]
+	}
+	return h
 }
 
 // ReceiveWebhook handles POST /api/v1/webhooks/{webhook_id}.
@@ -99,6 +105,10 @@ func (h *WebhookReceiveHandler) ReceiveWebhook(w http.ResponseWriter, r *http.Re
 		http.Error(w, "failed to process webhook", http.StatusInternalServerError)
 
 		return
+	}
+
+	if h.outbox != nil {
+		h.outbox.PublishAfterCreate(ctx, eventLog)
 	}
 
 	log.Debug("webhook received",

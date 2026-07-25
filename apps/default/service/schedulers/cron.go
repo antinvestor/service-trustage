@@ -33,7 +33,6 @@ import (
 const (
 	cronMissedFireThreshold = 5 * time.Minute
 	cronDefaultBatchSize    = 500
-	cronDefaultIntervalSecs = 1
 )
 
 // CronScheduler runs the fire loop. It implements the plan side of
@@ -53,30 +52,6 @@ func NewCronScheduler(
 	metrics *telemetry.Metrics,
 ) *CronScheduler {
 	return &CronScheduler{scheduleRepo: scheduleRepo, cfg: cfg, metrics: metrics}
-}
-
-// Start runs the sweep loop until ctx is cancelled.
-func (s *CronScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-
-	interval := s.interval()
-	log.Debug("cron scheduler started",
-		"interval_seconds", int(interval.Seconds()),
-		"batch_size", s.batchSize(),
-	)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			s.RunOnce(ctx)
-		case <-ctx.Done():
-			log.Debug("cron scheduler stopped")
-			return
-		}
-	}
 }
 
 // RunOnce drives one transactional sweep.
@@ -205,11 +180,4 @@ func (s *CronScheduler) batchSize() int {
 		return s.cfg.CronSchedulerBatchSize
 	}
 	return cronDefaultBatchSize
-}
-
-func (s *CronScheduler) interval() time.Duration {
-	if s.cfg != nil && s.cfg.CronSchedulerIntervalSecs > 0 {
-		return time.Duration(s.cfg.CronSchedulerIntervalSecs) * time.Second
-	}
-	return cronDefaultIntervalSecs * time.Second
 }

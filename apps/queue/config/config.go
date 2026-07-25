@@ -24,7 +24,8 @@ type Config struct {
 	ServerPort string `env:"SERVER_PORT" envDefault:"8082"`
 
 	// Valkey.
-	ValkeyCacheURL string `env:"VALKEY_CACHE_URL" envDefault:"redis://localhost:6379"`
+	ValkeyCacheURL     string `env:"VALKEY_CACHE_URL"     envDefault:"redis://localhost:6379"`
+	CacheRequireValkey bool   `env:"CACHE_REQUIRE_VALKEY" envDefault:"false"`
 
 	// Stats cache TTL in seconds.
 	StatsCacheTTLSeconds int `env:"STATS_CACHE_TTL_SECONDS" envDefault:"30"`

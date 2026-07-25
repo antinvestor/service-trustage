@@ -126,6 +126,7 @@ func (s *DefaultServiceSuite) TestWorkflowExecutionRepository_FindPendingRetryTi
 		Status:       models.ExecStatusDispatched,
 		InputPayload: "{}",
 		StartedAt:    func() *time.Time { t := time.Now().Add(-2 * time.Minute); return &t }(),
+		TimeoutAt:    func() *time.Time { t := time.Now().Add(-time.Minute); return &t }(),
 	}
 
 	s.Require().NoError(s.execRepo.Create(ctx, pending))
@@ -140,7 +141,7 @@ func (s *DefaultServiceSuite) TestWorkflowExecutionRepository_FindPendingRetryTi
 	s.Require().NoError(err)
 	s.Len(retryList, 1)
 
-	timeoutList, err := s.execRepo.FindTimedOut(ctx, 30, 10)
+	timeoutList, err := s.execRepo.FindTimedOut(ctx, 10)
 	s.Require().NoError(err)
 	s.Len(timeoutList, 1)
 }

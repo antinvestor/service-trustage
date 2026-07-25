@@ -22,6 +22,7 @@ var (
 	ErrInstanceNotFound        = errors.New("instance not found")
 	ErrExecutionNotFound       = errors.New("execution not found")
 	ErrStaleExecution          = errors.New("stale execution: CAS transition failed")
+	ErrAlreadyDispatched       = errors.New("execution already dispatched or not pending")
 	ErrInvalidToken            = errors.New("invalid execution token")
 	ErrInputContractViolation  = errors.New("input contract violation")
 	ErrOutputContractViolation = errors.New("output contract violation")

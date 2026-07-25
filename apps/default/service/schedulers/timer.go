@@ -51,30 +51,6 @@ func NewTimerScheduler(
 	}
 }
 
-// Start begins the timer scheduler loop.
-func (s *TimerScheduler) Start(ctx context.Context) {
-	log := util.Log(ctx)
-	interval := time.Duration(s.cfg.TimerIntervalSeconds) * time.Second
-
-	log.Debug("timer scheduler started", "interval_seconds", s.cfg.TimerIntervalSeconds)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			fired := s.RunOnce(ctx)
-			if fired > 0 {
-				log.Debug("timer scheduler completed", "fired", fired)
-			}
-		case <-ctx.Done():
-			log.Debug("timer scheduler stopped")
-			return
-		}
-	}
-}
-
 // RunOnce performs a single timer sweep.
 func (s *TimerScheduler) RunOnce(ctx context.Context) int {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerScheduler, "scheduler.timer")
