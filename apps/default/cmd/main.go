@@ -27,7 +27,6 @@ import (
 	"github.com/antinvestor/common/v2/permissions"
 	"github.com/antinvestor/common/v2/timescale"
 	"github.com/pitabwire/frame/v2"
-	"github.com/pitabwire/frame/v2/setup"
 	"github.com/pitabwire/frame/v2/config"
 	"github.com/pitabwire/frame/v2/datastore"
 	"github.com/pitabwire/frame/v2/datastore/pool"
@@ -35,6 +34,7 @@ import (
 	"github.com/pitabwire/frame/v2/security/authorizer"
 	connectInterceptors "github.com/pitabwire/frame/v2/security/interceptors/connect"
 	securityhttp "github.com/pitabwire/frame/v2/security/interceptors/httptor"
+	"github.com/pitabwire/frame/v2/setup"
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/default/config"
