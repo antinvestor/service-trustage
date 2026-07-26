@@ -27,6 +27,7 @@ import (
 	"github.com/antinvestor/common/v2/permissions"
 	"github.com/antinvestor/common/v2/timescale"
 	"github.com/pitabwire/frame/v2"
+	"github.com/pitabwire/frame/v2/setup"
 	"github.com/pitabwire/frame/v2/config"
 	"github.com/pitabwire/frame/v2/datastore"
 	"github.com/pitabwire/frame/v2/datastore/pool"
@@ -104,14 +105,9 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 
 	dbManager := svc.DatastoreManager()
 
-	// Migrate-only Job: exit before queues / HTTP.
-	if cfg.DoDatabaseMigrate() {
-		if migrateErr := repository.Migrate(ctx, dbManager); migrateErr != nil {
-			log.WithError(migrateErr).Fatal("database migration failed")
-		}
-		log.Info("database migration completed (migrate-only mode)")
-		return
-	}
+	svc.Setup().RegisterFunc(setup.NameMigrate, func(ctx context.Context) error {
+		return repository.Migrate(ctx, dbManager)
+	})
 
 	// Serving path never migrates (out-of-band Job only).
 	// Belt-and-braces: still run AutoMigrate for local/dev when role=all unless explicitly disabled.
@@ -487,6 +483,14 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	}
 
 	svc.Init(ctx, queueOpts...)
+
+	if frame.ShouldRunSetup(&cfg) {
+		if setupErr := svc.RunSetupForProcess(ctx, &cfg); setupErr != nil {
+			log.WithError(setupErr).Fatal("setup plan failed")
+		}
+		log.Info("setup plan complete — exiting")
+		return
+	}
 
 	log.Info("starting trustage orchestrator",
 		"port", cfg.ServerPort,
