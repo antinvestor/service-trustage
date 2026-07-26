@@ -13,7 +13,7 @@ require (
 	github.com/antinvestor/common/v2 v2.0.0
 	github.com/google/cel-go v0.29.2
 	github.com/lib/pq v1.12.3
-	github.com/openai/openai-go/v3 v3.39.0
+	github.com/openai/openai-go/v3 v3.46.0
 	github.com/pitabwire/frame/v2 v2.1.0
 	github.com/pitabwire/util v0.9.1
 	github.com/robfig/cron/v3 v3.0.1
@@ -115,7 +115,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.43.0 // indirect
-	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
