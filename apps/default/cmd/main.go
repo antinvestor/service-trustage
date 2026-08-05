@@ -36,6 +36,7 @@ import (
 	securityhttp "github.com/pitabwire/frame/v2/security/interceptors/httptor"
 	"github.com/pitabwire/frame/v2/setup"
 	"github.com/pitabwire/util"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/default/config"
 	"github.com/antinvestor/service-trustage/apps/default/service/authz"
@@ -108,6 +109,50 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	svc.Setup().RegisterFunc(setup.NameMigrate, func(ctx context.Context) error {
 		return repository.Migrate(ctx, dbManager)
 	})
+
+	// Setup Job: migrate + publish all owned permission manifests, then exit.
+	// Frame v2.1.x registers a single "permissions" step; we install a multi-
+	// publisher that runs one manifest POST per descriptor (setup-only).
+	// Runtime never re-registers.
+	workflowSD := workflowv1.File_v1_workflow_proto.Services().ByName("WorkflowService")
+	eventSD := eventv1.File_v1_event_proto.Services().ByName("EventService")
+	runtimeSD := runtimev1.File_v1_runtime_proto.Services().ByName("RuntimeService")
+	signalSD := signalv1.File_v1_signal_proto.Services().ByName("SignalService")
+	if frame.ShouldRunSetup(&cfg) {
+		owned := []protoreflect.ServiceDescriptor{workflowSD, eventSD, runtimeSD, signalSD}
+		svc.Setup().RegisterFunc(setup.NamePermissions, func(ctx context.Context) error {
+			var firstErr error
+			published := 0
+			for _, sd := range owned {
+				// Install the standard single-descriptor publisher for this SD,
+				// then run it immediately (overwrites the multi step name only
+				// for the duration of this iteration — we are already inside it).
+				frame.WithPermissionRegistration(sd)(ctx, svc)
+				step, ok := svc.Setup().Get(setup.NamePermissions)
+				if !ok {
+					// PERMISSIONS_REGISTRATION_URL unset — nothing to publish.
+					continue
+				}
+				if err := step.Run(ctx); err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					continue
+				}
+				published++
+			}
+			if published == 0 && firstErr == nil {
+				log.Warn("setup permissions: no manifests published (URL unset or empty descriptors)")
+			}
+			return firstErr
+		})
+		svc.Init(ctx)
+		if setupErr := svc.RunSetupForProcess(ctx, &cfg); setupErr != nil {
+			log.WithError(setupErr).Fatal("setup plan failed")
+		}
+		log.Info("setup plan complete — exiting")
+		return
+	}
 
 	// Serving path never migrates (out-of-band Job only).
 	// Belt-and-braces: still run AutoMigrate for local/dev when role=all unless explicitly disabled.
@@ -201,10 +246,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	tenancyAccessChecker := authorizer.NewTenancyAccessChecker(auth, authz.NamespaceTenancyAccess)
 	tenancyAccessInterceptor := connectInterceptors.NewTenancyAccessInterceptor(tenancyAccessChecker)
 
-	workflowSD := workflowv1.File_v1_workflow_proto.Services().ByName("WorkflowService")
-	eventSD := eventv1.File_v1_event_proto.Services().ByName("EventService")
-	runtimeSD := runtimev1.File_v1_runtime_proto.Services().ByName("RuntimeService")
-	signalSD := signalv1.File_v1_signal_proto.Services().ByName("SignalService")
+	// Descriptors already resolved for setup path; reuse for interceptor maps.
 	procMap := permissions.BuildProcedureMap(workflowSD)
 	for k, v := range permissions.BuildProcedureMap(eventSD) {
 		procMap[k] = v
@@ -387,15 +429,9 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 		))
 	}
 
-	// Queue registration options.
+	// Runtime queue/HTTP options only — permission manifests publish on setup Job.
 	var queueOpts []frame.Option
-	queueOpts = append(queueOpts,
-		frame.WithPermissionRegistration(workflowSD),
-		frame.WithPermissionRegistration(eventSD),
-		frame.WithPermissionRegistration(runtimeSD),
-		frame.WithPermissionRegistration(signalSD),
-		frame.WithHTTPHandler(publicMux),
-	)
+	queueOpts = append(queueOpts, frame.WithHTTPHandler(publicMux))
 
 	if role.PublishesEventIngest() {
 		queueOpts = append(queueOpts, frame.WithRegisterPublisher(cfg.QueueEventIngestName, cfg.QueueEventIngestURL))
@@ -483,14 +519,6 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	}
 
 	svc.Init(ctx, queueOpts...)
-
-	if frame.ShouldRunSetup(&cfg) {
-		if setupErr := svc.RunSetupForProcess(ctx, &cfg); setupErr != nil {
-			log.WithError(setupErr).Fatal("setup plan failed")
-		}
-		log.Info("setup plan complete — exiting")
-		return
-	}
 
 	log.Info("starting trustage orchestrator",
 		"port", cfg.ServerPort,
