@@ -25,7 +25,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/antinvestor/common/v2/permissions"
-	"github.com/antinvestor/common/v2/timescale"
 	"github.com/pitabwire/frame/v2"
 	"github.com/pitabwire/frame/v2/config"
 	"github.com/pitabwire/frame/v2/datastore"
@@ -43,7 +42,6 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	appcache "github.com/antinvestor/service-trustage/apps/default/service/cache"
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
-	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/queues"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/apps/default/service/schedulers"
@@ -161,7 +159,6 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	// no migrate on serve.
 
 	dbPool := dbManager.GetPool(ctx, datastore.DefaultPoolName)
-	ensureHypertables(ctx, log, dbPool)
 
 	// Repositories.
 	defRepo := repository.NewWorkflowDefinitionRepository(dbPool)
@@ -533,12 +530,6 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	schedulerCancel()
 	schedulerWg.Wait()
 	log.Debug("all background workers stopped")
-}
-
-func ensureHypertables(ctx context.Context, log *util.LogEntry, dbPool pool.Pool) {
-	if tsErr := timescale.Ensure(ctx, dbPool.DB(ctx, false), models.Hypertables()); tsErr != nil {
-		log.WithError(tsErr).Warn("timescale hypertable setup skipped — will retry after cluster migration")
-	}
 }
 
 func setupConnectorRegistry(httpClient *http.Client) *connector.Registry {
