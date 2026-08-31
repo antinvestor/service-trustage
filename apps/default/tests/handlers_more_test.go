@@ -695,7 +695,7 @@ func (s *DefaultServiceSuite) TestEventHandler_PayloadMetadata() {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader(payload))
 	req = req.WithContext(ctx)
-	req.Header.Set("X-Request-Id", "req1")
+	req.Header.Set("X-Request-ID", "req1")
 	w := httptest.NewRecorder()
 	h.IngestEvent(w, req)
 	s.Equal(http.StatusAccepted, w.Code)

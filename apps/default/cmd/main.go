@@ -25,7 +25,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/antinvestor/common/v2/permissions"
-	"github.com/antinvestor/common/v2/timescale"
 	"github.com/pitabwire/frame/v2"
 	"github.com/pitabwire/frame/v2/config"
 	"github.com/pitabwire/frame/v2/datastore"
@@ -43,7 +42,6 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	appcache "github.com/antinvestor/service-trustage/apps/default/service/cache"
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
-	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	"github.com/antinvestor/service-trustage/apps/default/service/queues"
 	"github.com/antinvestor/service-trustage/apps/default/service/repository"
 	"github.com/antinvestor/service-trustage/apps/default/service/schedulers"
@@ -120,32 +118,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	signalSD := signalv1.File_v1_signal_proto.Services().ByName("SignalService")
 	if frame.ShouldRunSetup(&cfg) {
 		owned := []protoreflect.ServiceDescriptor{workflowSD, eventSD, runtimeSD, signalSD}
-		svc.Setup().RegisterFunc(setup.NamePermissions, func(ctx context.Context) error {
-			var firstErr error
-			published := 0
-			for _, sd := range owned {
-				// Install the standard single-descriptor publisher for this SD,
-				// then run it immediately (overwrites the multi step name only
-				// for the duration of this iteration — we are already inside it).
-				frame.WithPermissionRegistration(sd)(ctx, svc)
-				step, ok := svc.Setup().Get(setup.NamePermissions)
-				if !ok {
-					// PERMISSIONS_REGISTRATION_URL unset — nothing to publish.
-					continue
-				}
-				if err := step.Run(ctx); err != nil {
-					if firstErr == nil {
-						firstErr = err
-					}
-					continue
-				}
-				published++
-			}
-			if published == 0 && firstErr == nil {
-				log.Warn("setup permissions: no manifests published (URL unset or empty descriptors)")
-			}
-			return firstErr
-		})
+		svc.Setup().RegisterFunc(setup.NamePermissions, multiPermissionPublisher(svc, owned))
 		svc.Init(ctx)
 		if setupErr := svc.RunSetupForProcess(ctx, &cfg); setupErr != nil {
 			log.WithError(setupErr).Fatal("setup plan failed")
@@ -161,7 +134,6 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	// no migrate on serve.
 
 	dbPool := dbManager.GetPool(ctx, datastore.DefaultPoolName)
-	ensureHypertables(ctx, log, dbPool)
 
 	// Repositories.
 	defRepo := repository.NewWorkflowDefinitionRepository(dbPool)
@@ -535,9 +507,37 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	log.Debug("all background workers stopped")
 }
 
-func ensureHypertables(ctx context.Context, log *util.LogEntry, dbPool pool.Pool) {
-	if tsErr := timescale.Ensure(ctx, dbPool.DB(ctx, false), models.Hypertables()); tsErr != nil {
-		log.WithError(tsErr).Warn("timescale hypertable setup skipped — will retry after cluster migration")
+// multiPermissionPublisher returns a setup step that publishes one permission
+// manifest per owned service descriptor. Frame v2.1.x registers a single
+// "permissions" step; we install the standard single-descriptor publisher for
+// each descriptor in turn and run it immediately (overwriting the multi step
+// name only while we are already inside it). Runtime never re-registers.
+func multiPermissionPublisher(
+	svc *frame.Service,
+	owned []protoreflect.ServiceDescriptor,
+) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		var firstErr error
+		published := 0
+		for _, sd := range owned {
+			frame.WithPermissionRegistration(sd)(ctx, svc)
+			step, ok := svc.Setup().Get(setup.NamePermissions)
+			if !ok {
+				// PERMISSIONS_REGISTRATION_URL unset — nothing to publish.
+				continue
+			}
+			if runErr := step.Run(ctx); runErr != nil {
+				if firstErr == nil {
+					firstErr = runErr
+				}
+				continue
+			}
+			published++
+		}
+		if published == 0 && firstErr == nil {
+			util.Log(ctx).Warn("setup permissions: no manifests published (URL unset or empty descriptors)")
+		}
+		return firstErr
 	}
 }
 
