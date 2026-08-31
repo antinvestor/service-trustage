@@ -118,32 +118,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	signalSD := signalv1.File_v1_signal_proto.Services().ByName("SignalService")
 	if frame.ShouldRunSetup(&cfg) {
 		owned := []protoreflect.ServiceDescriptor{workflowSD, eventSD, runtimeSD, signalSD}
-		svc.Setup().RegisterFunc(setup.NamePermissions, func(ctx context.Context) error {
-			var firstErr error
-			published := 0
-			for _, sd := range owned {
-				// Install the standard single-descriptor publisher for this SD,
-				// then run it immediately (overwrites the multi step name only
-				// for the duration of this iteration — we are already inside it).
-				frame.WithPermissionRegistration(sd)(ctx, svc)
-				step, ok := svc.Setup().Get(setup.NamePermissions)
-				if !ok {
-					// PERMISSIONS_REGISTRATION_URL unset — nothing to publish.
-					continue
-				}
-				if err := step.Run(ctx); err != nil {
-					if firstErr == nil {
-						firstErr = err
-					}
-					continue
-				}
-				published++
-			}
-			if published == 0 && firstErr == nil {
-				log.Warn("setup permissions: no manifests published (URL unset or empty descriptors)")
-			}
-			return firstErr
-		})
+		svc.Setup().RegisterFunc(setup.NamePermissions, multiPermissionPublisher(svc, owned))
 		svc.Init(ctx)
 		if setupErr := svc.RunSetupForProcess(ctx, &cfg); setupErr != nil {
 			log.WithError(setupErr).Fatal("setup plan failed")
@@ -530,6 +505,40 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	schedulerCancel()
 	schedulerWg.Wait()
 	log.Debug("all background workers stopped")
+}
+
+// multiPermissionPublisher returns a setup step that publishes one permission
+// manifest per owned service descriptor. Frame v2.1.x registers a single
+// "permissions" step; we install the standard single-descriptor publisher for
+// each descriptor in turn and run it immediately (overwriting the multi step
+// name only while we are already inside it). Runtime never re-registers.
+func multiPermissionPublisher(
+	svc *frame.Service,
+	owned []protoreflect.ServiceDescriptor,
+) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		var firstErr error
+		published := 0
+		for _, sd := range owned {
+			frame.WithPermissionRegistration(sd)(ctx, svc)
+			step, ok := svc.Setup().Get(setup.NamePermissions)
+			if !ok {
+				// PERMISSIONS_REGISTRATION_URL unset — nothing to publish.
+				continue
+			}
+			if runErr := step.Run(ctx); runErr != nil {
+				if firstErr == nil {
+					firstErr = runErr
+				}
+				continue
+			}
+			published++
+		}
+		if published == 0 && firstErr == nil {
+			util.Log(ctx).Warn("setup permissions: no manifests published (URL unset or empty descriptors)")
+		}
+		return firstErr
+	}
 }
 
 func setupConnectorRegistry(httpClient *http.Client) *connector.Registry {
