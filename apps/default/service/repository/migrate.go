@@ -59,8 +59,12 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 	// v1.1 housekeeping: drop the v1 idx_sd_due so the tightened predicate
 	// (WHERE active = true AND deleted_at IS NULL AND next_fire_at IS NOT NULL)
 	// is picked up on the next CreateIndex. One-time.
+	// Plain SQL rather than Migrator().DropIndex: under Frame's tenancy
+	// dialect the migrator schema-qualifies the index name as
+	// CURRENT_SCHEMA()."idx_sd_due", which Postgres rejects for DROP INDEX.
+	// An unqualified name resolves through search_path to the same schema.
 	if db.Migrator().HasIndex(&models.ScheduleDefinition{}, "idx_sd_due") {
-		if dropErr := db.Migrator().DropIndex(&models.ScheduleDefinition{}, "idx_sd_due"); dropErr != nil {
+		if dropErr := db.Exec("DROP INDEX IF EXISTS idx_sd_due").Error; dropErr != nil {
 			return fmt.Errorf("drop v1 idx_sd_due: %w", dropErr)
 		}
 	}
