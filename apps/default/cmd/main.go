@@ -154,7 +154,11 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	scheduleRepo := repository.NewScheduleRepository(dbPool)
 
 	httpClient := svc.HTTPClientManager().Client(ctx)
-	registry := setupConnectorRegistry(httpClient)
+	connectRoutes, routesErr := adapters.ParseConnectRoutes(cfg.ConnectRoutes)
+	if routesErr != nil {
+		log.WithError(routesErr).Fatal("invalid TRUSTAGE_CONNECT_ROUTES")
+	}
+	registry := setupConnectorRegistry(httpClient, connectRoutes)
 
 	rawCache, cacheErr := appcache.SetupCache(cfg.ValkeyCacheURL, cfg.CacheRequireValkey)
 	if cacheErr != nil {
@@ -545,12 +549,13 @@ func multiPermissionPublisher(
 	}
 }
 
-func setupConnectorRegistry(httpClient *http.Client) *connector.Registry {
+func setupConnectorRegistry(httpClient *http.Client, connectRoutes adapters.ConnectRoutes) *connector.Registry {
 	registry := connector.NewRegistry()
 
 	allAdapters := []connector.Adapter{
 		adapters.NewWebhookAdapter(httpClient),
 		adapters.NewHTTPAdapter(httpClient),
+		adapters.NewConnectCallAdapter(httpClient, connectRoutes),
 		adapters.NewNotificationSendAdapter(httpClient),
 		adapters.NewNotificationStatusAdapter(httpClient),
 		adapters.NewPaymentInitiateAdapter(httpClient),

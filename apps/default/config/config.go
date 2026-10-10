@@ -51,6 +51,11 @@ type Config struct {
 	// Encryption.
 	MasterEncryptionKey string `env:"MASTER_ENCRYPTION_KEY"`
 
+	// connect.call routes: "<service-or-package-prefix>=<base URL>,...".
+	// The longest prefix of the fully-qualified service name wins; a service
+	// with no route fails without retry. Only these bases are ever called.
+	ConnectRoutes string `env:"TRUSTAGE_CONNECT_ROUTES"`
+
 	// Cloud Tasks delayed publisher (optional; empty = Noop delayed).
 	CloudTasksDelayedURLTemplate string `env:"CLOUD_TASKS_DELAYED_URL_TEMPLATE"`
 	// Max schedule horizon for delayed wakes (hours). Default 720 = 30 days.

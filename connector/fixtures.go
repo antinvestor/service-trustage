@@ -51,6 +51,14 @@ var AdapterFixtures = map[string]AdapterFixture{
 		},
 		Config: map[string]any{},
 	},
+	"connect.call": {
+		Input: map[string]any{
+			"service": "finance.v1.FinanceService",
+			"rpc":     "GetProposal",
+			"request": map[string]any{"proposal_id": "p-1"},
+		},
+		Config: map[string]any{},
+	},
 	"http.request": {
 		Input: map[string]any{
 			"url":    "https://example.com/api",

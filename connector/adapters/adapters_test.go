@@ -29,6 +29,7 @@ func TestAdapterFixtures_ValidateAll(t *testing.T) {
 	adapters := []connector.Adapter{
 		adapters.NewWebhookAdapter(client),
 		adapters.NewHTTPAdapter(client),
+		adapters.NewConnectCallAdapter(client, nil),
 		adapters.NewNotificationSendAdapter(client),
 		adapters.NewNotificationStatusAdapter(client),
 		adapters.NewPaymentInitiateAdapter(client),
