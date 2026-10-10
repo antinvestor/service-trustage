@@ -1,0 +1,295 @@
+{
+  "version": "1.2",
+  "name": "room_dissolution",
+  "description": "Stawi §10.3 room_dissolution. After a DISSOLUTION proposal executes (§11, §11.2 auto_dissolve via governance_liveness, or §12.3 principal exit), AdvanceDissolution builds the DISSOLUTION_DISTRIBUTION intents (pro-rata of settled entitlements; caretaker-permitted kind, §11.2), holds unclaimed entitlements for Dissolution.unclaimed_holding (pinned), then closes the room (2400 unclaimed beneficiary payable, §14.2). finance validates every transition; timers are pinned (P10).",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "proposal_id": "id",
+    "unclaimed_holding_seconds": "uint64 (Dissolution.unclaimed_holding, pinned)"
+  },
+  "config": {
+    "spec": "§10.3, §11.2, §12.3, §14.2, §15 rooms",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "unclaimed_holding_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.RoomService/AdvanceDissolution"
+    ],
+    "terminal_states": [
+      "dissolved",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "proposal.executed",
+      "filter": "payload.category == 'PROPOSAL_CATEGORY_DISSOLUTION' || payload.category == 'PROPOSAL_CATEGORY_PRINCIPAL_EXIT'",
+      "key": "payload.room_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "room.dissolved",
+      "key": "payload.room_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "distributing",
+      "type": "sequence",
+      "name": "DISTRIBUTING — §12.3 DistributionModule: AdvanceDissolution builds one DISSOLUTION_DISTRIBUTION intent per member entitlement (destination must be a member account, §11.2)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "distributing_advance",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.RoomService",
+                "rpc": "AdvanceDissolution",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "room_dissolution",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "room_id": "{{ payload.room_id }}"
+                }
+              },
+              "output_var": "distribution"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.room_state == 'ROOM_STATE_DISSOLVED'",
+                "target": "dissolved"
+              },
+              {
+                "condition": "output.room_state == 'ROOM_STATE_INACTIVE' || output.room_state == 'ROOM_STATE_CARETAKER' || output.room_state == 'ROOM_STATE_ACTIVE'",
+                "target": "holding"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "holding",
+      "type": "sequence",
+      "name": "UNCLAIMED_HOLDING — Dissolution.unclaimed_holding (pinned): entitlements whose intents cannot settle (frozen or missing member accounts) are held; a reconciled ledger fact or room.dissolved ends the wait early",
+      "sequence": {
+        "steps": [
+          {
+            "id": "holding_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "holding_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.unclaimed_holding_seconds))"
+                  }
+                },
+                {
+                  "id": "holding_sig_dissolved",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "room.dissolved",
+                    "output_var": "sig_dissolved"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "holding_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "holding window ended",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_dissolved)",
+                "target": "dissolved"
+              },
+              {
+                "condition": "",
+                "target": "closing"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "closing",
+      "type": "sequence",
+      "name": "CLOSING — AdvanceDissolution moves remaining entitlements to 2400 unclaimed beneficiary payable and closes the room (§14.2, §15)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "closing_advance",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.RoomService",
+                "rpc": "AdvanceDissolution",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "room_dissolution",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "room_id": "{{ payload.room_id }}"
+                }
+              },
+              "output_var": "closed"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.room_state == 'ROOM_STATE_DISSOLVED'",
+                "target": "dissolved"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dissolved",
+      "type": "sequence",
+      "name": "DISSOLVED (terminal) — §10.1 room.dissolved",
+      "sequence": {
+        "steps": [
+          {
+            "id": "dissolved_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "room dissolved",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: finance did not close the room (e.g. unsettled intents or a cancellation at threshold); record and stop, governance decides",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: room not dissolved by finance; no transition forced",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

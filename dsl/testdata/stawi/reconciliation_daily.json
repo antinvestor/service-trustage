@@ -1,0 +1,418 @@
+{
+  "version": "1.2",
+  "name": "reconciliation_daily",
+  "description": "Stawi §10.3 reconciliation_daily. Once per UTC day: RunReconciliation checks P7 over every (asset, value_location) and records PLATFORM_OUTAGE / RAIL_OUTAGE causes from executor heartbeat gaps (§6.4); an unresolved difference blocks limit raises (P7, enforced by finance's LimitService, not here). Then AnchorDay computes the roots and builds the AUDIT_ANCHOR intent (§10.7); the anchor is overdue after anchor_overdue_seconds (D-Q9, pinned). This process never approves a difference and never re-anchors on its own.",
+  "input": {
+    "constitution_hash": "bytes32-hex (protocol scope: the protocol policy's hash; room_id empty)",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id (optional: empty runs protocol-wide)",
+    "day_close_lag_seconds": "uint64 (pinned: distance from the schedule fire time back into the closed UTC day)",
+    "anchor_overdue_seconds": "uint64 (D-Q9 36 h, pinned from the protocol policy)"
+  },
+  "config": {
+    "spec": "§10.3, §10.7, P7, P12, §6.4, D-Q9",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "day_close_lag_seconds",
+      "anchor_overdue_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.TreasuryService/RunReconciliation",
+      "finance.v1.TreasuryService/AnchorDay"
+    ],
+    "terminal_states": [
+      "anchored",
+      "anchor_failed",
+      "anchor_overdue",
+      "halted",
+      "stalled"
+    ],
+    "schedule_note": "schedule.fired payload = {schedule_id, schedule_name, fired_at, input}; pinned parameters therefore live under payload.input.* and are set by finance's setup step when it registers the schedule (re-registered on each protocol policy activation).",
+    "owner": "stawi"
+  },
+  "signals": [
+    {
+      "event_type": "intent.finalized",
+      "instance": "payload.meta.instance_id"
+    },
+    {
+      "event_type": "intent.failed",
+      "instance": "payload.meta.instance_id"
+    }
+  ],
+  "schedules": [
+    {
+      "name": "reconciliation_daily_utc",
+      "cron_expr": "5 0 * * *",
+      "timezone": "UTC",
+      "input_payload": {
+        "constitution_hash": "<set by finance setup>",
+        "finance_policy_hash": "<set by finance setup>",
+        "security_policy_hash": "<set by finance setup>",
+        "policy_epoch": "<set by finance setup>",
+        "room_id": "",
+        "day_close_lag_seconds": "<set by finance setup>",
+        "anchor_overdue_seconds": "<set by finance setup>"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "running",
+      "type": "sequence",
+      "name": "RUNNING — P7: derive the closed UTC day from fired_at and run reconciliation over every (asset, value_location)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "running_day",
+            "type": "call",
+            "name": "closed day = fired_at − day_close_lag (pinned) as zero-padded year/month/dom (trustage CEL has no format_time and rejects string concatenation over dyn values, so the parts are composed by template)",
+            "call": {
+              "action": "data.transform",
+              "input": {
+                "source": {
+                  "fired_at": "{{ payload.fired_at }}",
+                  "lag": "{{ payload.input.day_close_lag_seconds }}"
+                },
+                "mappings": {
+                  "year": "string(timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getFullYear('UTC'))",
+                  "month": "timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 0 ? '01' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 1 ? '02' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 2 ? '03' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 3 ? '04' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 4 ? '05' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 5 ? '06' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 6 ? '07' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 7 ? '08' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 8 ? '09' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 9 ? '10' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 10 ? '11' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getMonth('UTC') == 11 ? '12' : '00'",
+                  "dom": "timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 0 ? '01' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 1 ? '02' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 2 ? '03' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 3 ? '04' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 4 ? '05' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 5 ? '06' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 6 ? '07' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 7 ? '08' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 8 ? '09' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 9 ? '10' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 10 ? '11' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 11 ? '12' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 12 ? '13' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 13 ? '14' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 14 ? '15' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 15 ? '16' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 16 ? '17' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 17 ? '18' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 18 ? '19' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 19 ? '20' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 20 ? '21' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 21 ? '22' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 22 ? '23' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 23 ? '24' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 24 ? '25' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 25 ? '26' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 26 ? '27' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 27 ? '28' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 28 ? '29' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 29 ? '30' : timestamp(int(timestamp(payload.fired_at)) - int(payload.lag)).getDayOfMonth('UTC') == 30 ? '31' : '00'"
+                }
+              },
+              "output_var": "day"
+            }
+          },
+          {
+            "id": "running_reconcile",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.TreasuryService",
+                "rpc": "RunReconciliation",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "reconciliation_daily",
+                    "constitution_hash": "{{ payload.input.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.input.security_policy_hash }}"
+                  },
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}",
+                  "room_id": "{{ payload.input.room_id }}"
+                }
+              },
+              "output_var": "recon"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.clean == true",
+                "target": "anchoring"
+              },
+              {
+                "condition": "",
+                "target": "exceptions"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "exceptions",
+      "type": "sequence",
+      "name": "EXCEPTIONS — P7: differences are open ReconciliationDifference records (reason_code, owner, evidence) awaiting human approval; limit raises are blocked by finance. Record the fact; still anchor the day (§10.7 anchors facts, not cleanliness).",
+      "sequence": {
+        "steps": [
+          {
+            "id": "exceptions_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "reconciliation differences open; limit raises blocked by finance (P7)",
+                "data": {
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}",
+                  "differences_open": "{{ vars.recon.differences_open }}",
+                  "reconciliation_run_id": "{{ vars.recon.reconciliation_run_id }}"
+                }
+              }
+            },
+            "on_success": "anchoring"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anchoring",
+      "type": "sequence",
+      "name": "ANCHORING — §10.7: AnchorDay computes the day's roots and builds the AUDIT_ANCHOR intent (anchor key held by settlement, §5.5)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "anchoring_anchor",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.TreasuryService",
+                "rpc": "AnchorDay",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "reconciliation_daily",
+                    "constitution_hash": "{{ payload.input.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.input.security_policy_hash }}"
+                  },
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}"
+                }
+              },
+              "output_var": "anchor"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.anchor.state == 'ANCHOR_STATE_ANCHORED'",
+                "target": "anchored"
+              },
+              {
+                "condition": "output.anchor.state == 'ANCHOR_STATE_UNANCHORED'",
+                "target": "anchor_pending"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anchor_pending",
+      "type": "sequence",
+      "name": "ANCHOR_PENDING — §10.7 / D-Q9: wait for the anchor intent's finality; overdue after anchor_overdue_seconds (pinned). finance emits ledger.anchor_overdue; this process only records.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "anchor_pending_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "anchor_pending_sig_final",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.finalized",
+                    "output_var": "sig_anchor_final"
+                  }
+                },
+                {
+                  "id": "anchor_pending_sig_failed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.failed",
+                    "output_var": "sig_anchor_failed"
+                  }
+                },
+                {
+                  "id": "anchor_pending_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.input.anchor_overdue_seconds))"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "anchor_pending_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "anchor wait ended",
+                "data": {
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_anchor_final)",
+                "target": "anchored"
+              },
+              {
+                "condition": "has(vars.sig_anchor_failed)",
+                "target": "anchor_failed"
+              },
+              {
+                "condition": "",
+                "target": "anchor_overdue"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "anchored",
+      "type": "sequence",
+      "name": "ANCHORED (terminal) — §10.1 ledger.anchored; offline verification possible from the anchored roots",
+      "sequence": {
+        "steps": [
+          {
+            "id": "anchored_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "day anchored",
+                "data": {
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anchor_failed",
+      "type": "sequence",
+      "name": "ANCHOR_FAILED (terminal) — the anchor intent FAILED; re-anchoring is a new intent built by the next run or an operator; nothing forced",
+      "sequence": {
+        "steps": [
+          {
+            "id": "anchor_failed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "anchor intent failed; no retry forced",
+                "data": {
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anchor_overdue",
+      "type": "sequence",
+      "name": "ANCHOR_OVERDUE (terminal) — D-Q9: no finality within 36 h; ledger.anchor_overdue is finance's fact; limit raises stay blocked (§5.3)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "anchor_overdue_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "anchor overdue; no transition forced",
+                "data": {
+                  "day": "{{ vars.day.year }}-{{ vars.day.month }}-{{ vars.day.dom }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop; the next scheduled run covers the day again idempotently",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

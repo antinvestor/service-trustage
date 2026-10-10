@@ -1,0 +1,674 @@
+{
+  "version": "1.2",
+  "name": "proposal_lifecycle",
+  "description": "Stawi §10.3 proposal_lifecycle. Drives a governance proposal through §11 (frozen snapshot at creation, voting window, secret-ballot reveal, timelock over large_amount, execution). finance owns every transition (AdvanceProposal validates it); this contract only owns process time. Policy hashes and timers are pinned at instance start (P10).",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "proposal_id": "id",
+    "category": "ProposalCategory",
+    "ballot": "OPEN|SECRET",
+    "voting_period_seconds": "uint64 (Threshold.voting_period_seconds of the proposal tier, pinned)",
+    "reveal_period_seconds": "uint64 (secret-ballot reveal window, pinned; see README gaps)",
+    "timelock_seconds": "uint64 (Threshold.timelock_seconds of the proposal tier, pinned)"
+  },
+  "config": {
+    "spec": "§10.3, §11.2, §11.3, §12.3, §13.3",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "voting_period_seconds",
+      "reveal_period_seconds",
+      "timelock_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.GovernanceService/AdvanceProposal",
+      "finance.v1.ComplianceService/RefreshBinding"
+    ],
+    "terminal_states": [
+      "rejected_precheck",
+      "rejected",
+      "expired",
+      "cancelled",
+      "executed",
+      "execution_failed",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "proposal.created",
+      "key": "payload.proposal_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "proposal.cancelled",
+      "key": "payload.proposal_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "created",
+      "type": "sequence",
+      "name": "CREATED — §11.3: VotingSnapshot frozen at proposal.created; finance runs the precheck and opens voting",
+      "sequence": {
+        "steps": [
+          {
+            "id": "created_open",
+            "type": "call",
+            "name": "AdvanceProposal: CREATED → OPEN | REJECTED_PRECHECK",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.GovernanceService",
+                "rpc": "AdvanceProposal",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "proposal_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              },
+              "output_var": "opened"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_OPEN'",
+                "target": "open"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_REJECTED_PRECHECK'",
+                "target": "rejected_precheck"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_CANCELLED'",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "open",
+      "type": "sequence",
+      "name": "OPEN — §11.3: voting window (pinned Threshold.voting_period_seconds); a cancellation signal ends the wait early",
+      "sequence": {
+        "steps": [
+          {
+            "id": "open_wait",
+            "type": "parallel",
+            "name": "race: voting window elapses | proposal.cancelled",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "open_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.voting_period_seconds))"
+                  }
+                },
+                {
+                  "id": "open_cancel_signal",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "proposal.cancelled",
+                    "output_var": "sig_cancelled"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "open_close",
+            "type": "call",
+            "name": "AdvanceProposal: tally/close → REVEALING | PASSED | REJECTED | EXPIRED | CANCELLED",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.GovernanceService",
+                "rpc": "AdvanceProposal",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "proposal_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              },
+              "output_var": "closed"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_REVEALING'",
+                "target": "revealing"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_PASSED'",
+                "target": "passed"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_REJECTED'",
+                "target": "rejected"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXPIRED'",
+                "target": "expired"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_CANCELLED'",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "revealing",
+      "type": "sequence",
+      "name": "REVEALING — §11.3 secret ballot: reveal window after voting closes; unrevealed commits count as abstain",
+      "sequence": {
+        "steps": [
+          {
+            "id": "revealing_timer",
+            "type": "delay",
+            "delay": {
+              "until": "timestamp(int(now) + int(payload.reveal_period_seconds))"
+            }
+          },
+          {
+            "id": "revealing_close",
+            "type": "call",
+            "name": "AdvanceProposal: tally revealed votes → PASSED | REJECTED | EXPIRED | CANCELLED",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.GovernanceService",
+                "rpc": "AdvanceProposal",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "proposal_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              },
+              "output_var": "closed"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_PASSED'",
+                "target": "passed"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_REJECTED'",
+                "target": "rejected"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXPIRED'",
+                "target": "expired"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_CANCELLED'",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "passed",
+      "type": "sequence",
+      "name": "PASSED — §13.3: at queue time refresh an expired compliance binding under the country policy version voted on; then queue (§12.3 timelock over large_amount)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "passed_binding",
+            "type": "if",
+            "name": "financial proposal carries an intent → RefreshBinding",
+            "if": {
+              "expr": "has(vars.closed) && has(vars.closed.intent) && has(vars.closed.intent.intent) && vars.closed.intent.intent.intent_id != ''",
+              "then": [
+                {
+                  "id": "passed_refresh_binding",
+                  "type": "call",
+                  "call": {
+                    "action": "connect.call",
+                    "input": {
+                      "service": "finance.v1.ComplianceService",
+                      "rpc": "RefreshBinding",
+                      "request": {
+                        "process": {
+                          "instance_id": "{{ metadata.instance_id }}",
+                          "execution_id": "{{ metadata.execution_id }}",
+                          "workflow": "proposal_lifecycle",
+                          "constitution_hash": "{{ payload.constitution_hash }}",
+                          "security_policy_hash": "{{ payload.security_policy_hash }}"
+                        },
+                        "intent_id": "{{ vars.closed.intent.intent.intent_id }}"
+                      }
+                    },
+                    "output_var": "binding"
+                  },
+                  "retry": {
+                    "max_attempts": 3,
+                    "initial_interval": "5s",
+                    "backoff_coefficient": 2.0,
+                    "max_interval": "1m"
+                  },
+                  "on_failure": "stalled"
+                }
+              ]
+            }
+          },
+          {
+            "id": "passed_queue",
+            "type": "call",
+            "name": "AdvanceProposal: PASSED → QUEUED (timelock) | EXECUTED (no timelock)",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.GovernanceService",
+                "rpc": "AdvanceProposal",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "proposal_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              },
+              "output_var": "queued"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_QUEUED'",
+                "target": "queued"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXECUTED'",
+                "target": "executed"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXECUTION_FAILED'",
+                "target": "execution_failed"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXPIRED'",
+                "target": "expired"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_CANCELLED'",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "queued",
+      "type": "sequence",
+      "name": "QUEUED — §12.3: timelock (pinned Threshold.timelock_seconds); cancellable at the same threshold until execution_after",
+      "sequence": {
+        "steps": [
+          {
+            "id": "queued_wait",
+            "type": "parallel",
+            "name": "race: timelock elapses | proposal.cancelled",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "queued_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.timelock_seconds))"
+                  }
+                },
+                {
+                  "id": "queued_cancel_signal",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "proposal.cancelled",
+                    "output_var": "sig_cancelled"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "queued_execute",
+            "type": "call",
+            "name": "AdvanceProposal: QUEUED → EXECUTED | EXECUTION_FAILED | CANCELLED (execution proof issued by GovernanceModule, §11.1)",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.GovernanceService",
+                "rpc": "AdvanceProposal",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "proposal_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              },
+              "output_var": "executed"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXECUTED'",
+                "target": "executed"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXECUTION_FAILED'",
+                "target": "execution_failed"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_CANCELLED'",
+                "target": "cancelled"
+              },
+              {
+                "condition": "output.proposal.state == 'PROPOSAL_STATE_EXPIRED'",
+                "target": "expired"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rejected_precheck",
+      "type": "sequence",
+      "name": "REJECTED_PRECHECK (terminal) — §10.1 proposal.rejected_precheck",
+      "sequence": {
+        "steps": [
+          {
+            "id": "rejected_precheck_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "proposal rejected at precheck",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "sequence",
+      "name": "REJECTED (terminal) — §11.3 tally below pass_bps or quorum",
+      "sequence": {
+        "steps": [
+          {
+            "id": "rejected_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "proposal rejected",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expired",
+      "type": "sequence",
+      "name": "EXPIRED (terminal) — §11.2 proposal_max_open",
+      "sequence": {
+        "steps": [
+          {
+            "id": "expired_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "proposal expired",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cancelled",
+      "type": "sequence",
+      "name": "CANCELLED (terminal) — §12.3 cancelled at the same threshold before execution_after",
+      "sequence": {
+        "steps": [
+          {
+            "id": "cancelled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "proposal cancelled",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "executed",
+      "type": "sequence",
+      "name": "EXECUTED (terminal) — §11.1 execution proof consumed; any value movement is a GOVERNANCE_EXECUTION intent tracked by its own aggregate",
+      "sequence": {
+        "steps": [
+          {
+            "id": "executed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "proposal executed",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "execution_failed",
+      "type": "sequence",
+      "name": "EXECUTION_FAILED (terminal) — §10.1 proposal.execution_failed; finance records the FailureCause, nothing is retried by this process",
+      "sequence": {
+        "steps": [
+          {
+            "id": "execution_failed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "proposal execution failed; no retry forced",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: finance reported a state this contract does not drive; record the fact and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: a trustage or RPC fault may delay or stall; it never coerces finance. Record and stop; operators resume with RetryExecution",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "proposal_id": "{{ payload.proposal_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal; finance archives the timeline before trustage retention expires (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

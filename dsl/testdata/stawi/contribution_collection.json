@@ -1,0 +1,359 @@
+{
+  "version": "1.2",
+  "name": "contribution_collection",
+  "description": "Stawi §10.3 contribution_collection. One instance per Obligation: builds the STANDING_AUTHORIZATION pull intent (§12.3 receiveContribution: executed by the member's own account, never by custody) and waits for its terminal settlement fact (§6.4 FINAL | FAILED with FailureCause). No retry is forced on failure: member-caused failures are penalised by savings_period under P25; outage-caused failures shift the due date (§5.4, §6.4).",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "period_id": "id",
+    "obligation_id": "id",
+    "member_id": "id",
+    "collection_max_pending_seconds": "uint64 (pinned: the period's grace window, Savings.grace_days in seconds; bounds the finality wait)"
+  },
+  "config": {
+    "spec": "§10.3, §12.3, §6.4, §5.4, P25",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "collection_max_pending_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.SavingsService/CollectContribution"
+    ],
+    "terminal_states": [
+      "settled",
+      "failed",
+      "cancelled",
+      "pending_expired",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "contribution.requested",
+      "key": "payload.contribution_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "intent.finalized",
+      "instance": "payload.meta.instance_id"
+    },
+    {
+      "event_type": "intent.failed",
+      "instance": "payload.meta.instance_id"
+    },
+    {
+      "event_type": "contribution.cancelled",
+      "key": "payload.contribution_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "requested",
+      "type": "sequence",
+      "name": "REQUESTED → COLLECTING — §12.3: CollectContribution builds the pull intent against the member's standing authorization (nonce, epochs, caps checked on-chain, §6.5)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "requested_collect",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.SavingsService",
+                "rpc": "CollectContribution",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "contribution_collection",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "obligation_id": "{{ payload.obligation_id }}"
+                }
+              },
+              "output_var": "collection"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "!has(output.intent)",
+                "target": "halted"
+              },
+              {
+                "condition": "output.intent.state == 'INTENT_STATE_FAILED'",
+                "target": "failed"
+              },
+              {
+                "condition": "output.intent.state == 'INTENT_STATE_FINAL'",
+                "target": "settled"
+              },
+              {
+                "condition": "",
+                "target": "pending"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pending",
+      "type": "sequence",
+      "name": "PENDING_FINALITY — §6.4: AUTHORIZED → SUBMITTED → OBSERVED → CONFIRMING → FINAL lives in settlement; finance signals the terminal fact to this instance. Bounded by the pinned grace window.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "pending_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "pending_sig_final",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.finalized",
+                    "output_var": "sig_final"
+                  }
+                },
+                {
+                  "id": "pending_sig_failed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.failed",
+                    "output_var": "sig_failed"
+                  }
+                },
+                {
+                  "id": "pending_sig_cancelled",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "contribution.cancelled",
+                    "output_var": "sig_cancelled"
+                  }
+                },
+                {
+                  "id": "pending_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.collection_max_pending_seconds))"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "pending_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "collection wait ended",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_final)",
+                "target": "settled"
+              },
+              {
+                "condition": "has(vars.sig_failed)",
+                "target": "failed"
+              },
+              {
+                "condition": "has(vars.sig_cancelled)",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "pending_expired"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "settled",
+      "type": "sequence",
+      "name": "SETTLED (terminal) — §10.1 contribution.settled; the SETTLED journal entry is posted by finance's intent.finalized consumer (P12)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "settled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "contribution settled",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "failed",
+      "type": "sequence",
+      "name": "FAILED (terminal) — §6.4 FailureCause recorded by finance/custody; P25 decides penalty vs suspension in savings_period. No re-pull is forced (a new pull is a new intent under the same standing authorization, scheduled by finance).",
+      "sequence": {
+        "steps": [
+          {
+            "id": "failed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "contribution pull failed; cause recorded by finance; no retry forced",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cancelled",
+      "type": "sequence",
+      "name": "CANCELLED (terminal) — §10.1 contribution.cancelled (plan paused/cancelled or authorization revoked, §6.5)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "cancelled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "contribution cancelled",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pending_expired",
+      "type": "sequence",
+      "name": "PENDING_EXPIRED (terminal) — no terminal settlement fact within the pinned window; settlement still owns the intent (P16). Record and stop; reconciliation_daily surfaces the lag (P12 alarm).",
+      "sequence": {
+        "steps": [
+          {
+            "id": "pending_expired_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "no finality fact within window; no transition forced",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "obligation_id": "{{ payload.obligation_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

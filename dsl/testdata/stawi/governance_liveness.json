@@ -1,0 +1,369 @@
+{
+  "version": "1.2",
+  "name": "governance_liveness",
+  "description": "Stawi §10.3 governance_liveness. Per room, on a pinned cadence: ApplyLiveness marks inactive members (objectively from last_signed_action_at), applies quorum decay to the listed categories only (never below min_quorum_bps_of_total), expires delegates and proposals, and enters CARETAKER only after caretaker_notice has elapsed for every notified inactive member (§11.2). This process supplies time; finance decides. Exiting CARETAKER needs a REACTIVATE proposal (§11.2), never this process. Pinned at start (P10): a policy activation ends the instance and a new one starts under the new hashes.",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "liveness_interval_seconds": "uint64 (pinned evaluation cadence; QuorumDecay.step_every or a GovernanceLiveness field, see README gaps)"
+  },
+  "config": {
+    "spec": "§10.3, §11.2, §11.3, §11.4",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "liveness_interval_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.GovernanceService/ApplyLiveness"
+    ],
+    "terminal_states": [
+      "dissolved",
+      "frozen",
+      "repin",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "room.activated",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "room.reactivated",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "policy.activated",
+      "key": "payload.room_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "policy.activated",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "room.dissolved",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "room.frozen",
+      "key": "payload.room_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "evaluating",
+      "type": "sequence",
+      "name": "EVALUATING — §11.2: ApplyLiveness (mark inactive, decay quorum, expire delegates/proposals, caretaker after notice)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "evaluating_apply",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.GovernanceService",
+                "rpc": "ApplyLiveness",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "governance_liveness",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "room_id": "{{ payload.room_id }}"
+                }
+              },
+              "output_var": "liveness"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.room_state == 'ROOM_STATE_DISSOLVED'",
+                "target": "dissolved"
+              },
+              {
+                "condition": "output.room_state == 'ROOM_STATE_FROZEN'",
+                "target": "frozen"
+              },
+              {
+                "condition": "output.room_state == 'ROOM_STATE_CARETAKER'",
+                "target": "caretaker"
+              },
+              {
+                "condition": "output.room_state == 'ROOM_STATE_ACTIVE' || output.room_state == 'ROOM_STATE_INACTIVE'",
+                "target": "waiting"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "caretaker",
+      "type": "sequence",
+      "name": "CARETAKER — §11.2: only POLICY_EXECUTION intents of kinds OBLIGATION_PAYMENT, MEMBER_REFUND, DISSOLUTION_DISTRIBUTION may execute; liveness keeps being evaluated (auto_dissolve.caretaker_after is finance's rule); REACTIVATE proposal exits the mode",
+      "sequence": {
+        "steps": [
+          {
+            "id": "caretaker_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "room in caretaker mode",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "effective_quorum_bps": "{{ vars.liveness.effective_quorum_bps }}"
+                }
+              }
+            },
+            "on_success": "waiting"
+          }
+        ]
+      }
+    },
+    {
+      "id": "waiting",
+      "type": "sequence",
+      "name": "WAITING — pinned liveness_interval_seconds between evaluations; policy activation, freeze or dissolution ends the loop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "waiting_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "waiting_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.liveness_interval_seconds))"
+                  }
+                },
+                {
+                  "id": "waiting_sig_policy",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "policy.activated",
+                    "output_var": "sig_policy_activated"
+                  }
+                },
+                {
+                  "id": "waiting_sig_dissolved",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "room.dissolved",
+                    "output_var": "sig_dissolved"
+                  }
+                },
+                {
+                  "id": "waiting_sig_frozen",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "room.frozen",
+                    "output_var": "sig_frozen"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "waiting_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "debug",
+                "message": "liveness interval ended",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_policy_activated)",
+                "target": "repin"
+              },
+              {
+                "condition": "has(vars.sig_dissolved)",
+                "target": "dissolved"
+              },
+              {
+                "condition": "has(vars.sig_frozen)",
+                "target": "frozen"
+              },
+              {
+                "condition": "",
+                "target": "evaluating"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dissolved",
+      "type": "sequence",
+      "name": "DISSOLVED (terminal) — §10.1 room.dissolved (room_dissolution owns the distribution)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "dissolved_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "room dissolved; liveness process stops",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "frozen",
+      "type": "sequence",
+      "name": "FROZEN (terminal) — §10.1 room.frozen; room.reactivated starts a new instance",
+      "sequence": {
+        "steps": [
+          {
+            "id": "frozen_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "room frozen; liveness process stops",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "repin",
+      "type": "sequence",
+      "name": "REPIN (terminal) — P10: policy activated; pinned hashes are stale. Record and stop; the policy.activated trigger starts a fresh instance.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "repin_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "policy activated; instance ends so a new instance pins the new hashes",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "policy_epoch": "{{ payload.policy_epoch }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop (members retain authority regardless, INV-5)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

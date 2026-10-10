@@ -1,0 +1,106 @@
+{
+  "version": "1.2",
+  "name": "gas_price",
+  "description": "Rules-engine spec §10, scale spec §9 gas_price. Once an hour, protocol-wide (one instance, never one per room): SettlementService.RefreshGasPrices steps each asset's GasTank price toward settlement's configured target within the tank's own limits and registers settlement's relayer pool with the tank, signed by the registry's PAYMASTER key. Without it rooms stop reimbursing gas a week after the last price and the platform sponsors their transactions; no room's call is ever refused for want of a price.",
+  "input": {
+    "schedule_name": "gas_price_hourly"
+  },
+  "config": {
+    "spec": "rules-engine spec §10, scale spec §9",
+    "scope": "protocol",
+    "pinned_parameters": [],
+    "process_commands": [
+      "settlement.v1.SettlementService/RefreshGasPrices"
+    ],
+    "terminal_states": [
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "schedules": [
+    {
+      "name": "gas_price_hourly",
+      "cron_expr": "7 * * * *",
+      "timezone": "UTC",
+      "input_payload": {}
+    }
+  ],
+  "steps": [
+    {
+      "id": "refreshing",
+      "type": "sequence",
+      "name": "REFRESHING — this hour's price steps and missing relayer registrations, handed to settlement's relayer",
+      "sequence": {
+        "steps": [
+          {
+            "id": "refreshing_call",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "settlement.v1.SettlementService",
+                "rpc": "RefreshGasPrices",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "gas_price"
+                  }
+                }
+              },
+              "output_var": "refreshed"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "10s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "2m"
+            },
+            "on_success": "end",
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — RefreshGasPrices failed after retries; the next hour tries again",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "gas price refresh stalled after retries",
+                "data": {
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "gas prices refreshed",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

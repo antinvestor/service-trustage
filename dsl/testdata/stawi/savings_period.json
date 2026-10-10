@@ -1,0 +1,560 @@
+{
+  "version": "1.2",
+  "name": "savings_period",
+  "description": "Stawi §10.3 savings_period. Runs a room's savings periods (§9.6 period model, §15 savings: Period OPEN → GRACE → PENALIZED → CLOSED, then the next period). Contribution pulls themselves are separate contribution_collection instances (one per obligation). Penalties are POLICY_EXECUTION intents built by finance only for member-caused failures (P25); pause and outages shift due dates (§5.4). The instance is pinned to the policy hashes at start (P10): a policy activation ends this instance, and finance starts a new one under the new hashes.",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "period_seconds": "uint64 (Savings.custom_period_seconds or PeriodModel.period_seconds, pinned)",
+    "grace_seconds": "uint64 (Savings.grace_days in seconds, pinned)"
+  },
+  "config": {
+    "spec": "§10.3, §9.6, §15 savings, §5.4, P25",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "period_seconds",
+      "grace_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.SavingsService/OpenPeriod",
+      "finance.v1.SavingsService/ApplyPeriodPenalties",
+      "finance.v1.SavingsService/AdvancePeriod"
+    ],
+    "terminal_states": [
+      "completed",
+      "repin",
+      "frozen",
+      "dissolved",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "room.activated",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "policy.activated",
+      "filter": "payload.savings_enabled == true",
+      "key": "payload.room_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "policy.activated",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "room.frozen",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "room.dissolved",
+      "key": "payload.room_id"
+    },
+    {
+      "event_type": "intent.finalized",
+      "instance": "payload.meta.instance_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "opening",
+      "type": "sequence",
+      "name": "OPENING — §15: OpenPeriod creates the Period and its Obligations in one aggregate transaction (§10.2); emits period.opened which triggers contribution_collection per obligation",
+      "sequence": {
+        "steps": [
+          {
+            "id": "opening_open",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.SavingsService",
+                "rpc": "OpenPeriod",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "savings_period",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "room_id": "{{ payload.room_id }}"
+                }
+              },
+              "output_var": "opened"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.period.state == 'PERIOD_STATE_OPEN'",
+                "target": "opening_bind"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          },
+          {
+            "id": "opening_bind",
+            "type": "call",
+            "name": "carry the current period id as vars.current.result",
+            "call": {
+              "action": "data.transform",
+              "input": {
+                "source": {
+                  "id": "{{ vars.opened.period.period_id }}"
+                },
+                "expression": "payload.id"
+              },
+              "output_var": "current"
+            },
+            "on_success": "open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "open",
+      "type": "sequence",
+      "name": "OPEN — §9.6: the period runs for period_seconds (pinned); policy activation, freeze or dissolution ends the wait",
+      "sequence": {
+        "steps": [
+          {
+            "id": "open_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "open_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.period_seconds))"
+                  }
+                },
+                {
+                  "id": "open_sig_policy",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "policy.activated",
+                    "output_var": "sig_policy_activated"
+                  }
+                },
+                {
+                  "id": "open_sig_frozen",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "room.frozen",
+                    "output_var": "sig_room_frozen"
+                  }
+                },
+                {
+                  "id": "open_sig_dissolved",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "room.dissolved",
+                    "output_var": "sig_room_dissolved"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "open_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "period window ended",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_policy_activated)",
+                "target": "repin"
+              },
+              {
+                "condition": "has(vars.sig_room_frozen)",
+                "target": "frozen"
+              },
+              {
+                "condition": "has(vars.sig_room_dissolved)",
+                "target": "dissolved"
+              },
+              {
+                "condition": "",
+                "target": "grace"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "grace",
+      "type": "sequence",
+      "name": "GRACE — §15 PeriodState GRACE: grace_seconds (pinned Savings.grace_days) before any penalty evaluation",
+      "sequence": {
+        "steps": [
+          {
+            "id": "grace_timer",
+            "type": "delay",
+            "delay": {
+              "until": "timestamp(int(now) + int(payload.grace_seconds))"
+            }
+          },
+          {
+            "id": "grace_done",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "grace elapsed",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "penalizing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "penalizing",
+      "type": "sequence",
+      "name": "PENALIZING — P25: ApplyPeriodPenalties builds POLICY_EXECUTION penalty intents only where custody holds member-caused FailureCause; other failures suspend the obligation",
+      "sequence": {
+        "steps": [
+          {
+            "id": "penalizing_apply",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.SavingsService",
+                "rpc": "ApplyPeriodPenalties",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "savings_period",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "period_id": "{{ vars.current.result }}"
+                }
+              },
+              "output_var": "penalties"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": "closing",
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "closing",
+      "type": "sequence",
+      "name": "CLOSING — §15: AdvancePeriod closes the period and opens the next; blocked while settlement facts are still pending (P12 eventual correspondence)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "closing_advance",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.SavingsService",
+                "rpc": "AdvancePeriod",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "savings_period",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "period_id": "{{ vars.current.result }}"
+                }
+              },
+              "output_var": "advanced"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.blocked_by_unsettled == true",
+                "target": "blocked"
+              },
+              {
+                "condition": "has(output.next_period) && output.next_period.state == 'PERIOD_STATE_OPEN'",
+                "target": "next"
+              },
+              {
+                "condition": "has(output.closed_period) && output.closed_period.state == 'PERIOD_STATE_CLOSED'",
+                "target": "completed"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "sequence",
+      "name": "BLOCKED_BY_UNSETTLED — §10.2/P12: a contribution intent is not yet FINAL or FAILED; wait for the next finality fact then retry closing. No force.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "blocked_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "period close blocked by unsettled intents; waiting for finality",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            }
+          },
+          {
+            "id": "blocked_wait",
+            "type": "signal_wait",
+            "signal_wait": {
+              "signal_name": "intent.finalized",
+              "output_var": "sig_unblock"
+            },
+            "on_success": "closing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "next",
+      "type": "sequence",
+      "name": "NEXT — the next period is already OPEN (AdvancePeriod opened it); carry its id as the current period and loop to OPEN (bounded by the plan: finance returns no next_period at completion)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "next_bind",
+            "type": "call",
+            "call": {
+              "action": "data.transform",
+              "input": {
+                "source": {
+                  "id": "{{ vars.advanced.next_period.period_id }}"
+                },
+                "expression": "payload.id"
+              },
+              "output_var": "current"
+            },
+            "on_success": "open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "completed",
+      "type": "sequence",
+      "name": "COMPLETED (terminal) — §10.1 plan.completed: last period closed with no successor",
+      "sequence": {
+        "steps": [
+          {
+            "id": "completed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "savings plan periods complete",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "repin",
+      "type": "sequence",
+      "name": "REPIN (terminal) — P10: policy activated; this instance's pinned hashes are stale. Record and stop; the policy.activated trigger starts a fresh instance under the new hashes",
+      "sequence": {
+        "steps": [
+          {
+            "id": "repin_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "policy activated; instance ends so a new instance pins the new hashes",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "policy_epoch": "{{ payload.policy_epoch }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "frozen",
+      "type": "sequence",
+      "name": "FROZEN (terminal) — §10.1 room.frozen: obligations suspend (P25); room.reactivated starts a new instance",
+      "sequence": {
+        "steps": [
+          {
+            "id": "frozen_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "room frozen; period process stops",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dissolved",
+      "type": "sequence",
+      "name": "DISSOLVED (terminal) — §10.1 room.dissolved",
+      "sequence": {
+        "steps": [
+          {
+            "id": "dissolved_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "room dissolved; period process stops",
+                "data": {
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "room_id": "{{ payload.room_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}
