@@ -147,7 +147,7 @@ func (r *workflowScopeRunRepository) ClaimRunning(
 
 		updateResult := tx.Model(&models.WorkflowScopeRun{}).
 			Where("id IN ? AND deleted_at IS NULL", ids).
-			Updates(map[string]any{
+			UpdateColumns(map[string]any{
 				"claim_owner": owner,
 				"claim_until": leaseUntil,
 			})
@@ -174,7 +174,7 @@ func (r *workflowScopeRunRepository) ReleaseClaim(ctx context.Context, id, owner
 
 	result := db.Model(&models.WorkflowScopeRun{}).
 		Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", id, owner, "running").
-		Updates(map[string]any{
+		UpdateColumns(map[string]any{
 			"claim_owner": "",
 			"claim_until": gorm.Expr("NULL"),
 		})
