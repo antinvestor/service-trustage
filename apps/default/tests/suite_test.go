@@ -249,6 +249,10 @@ func (s *DefaultServiceSuite) createTrigger(
 	eventType string,
 	def *models.WorkflowDefinition,
 ) {
+	// The router only starts ACTIVE versions; activate before binding by hand
+	// (activation reconciles the version's bindings with its DSL triggers).
+	s.Require().NoError(s.workflowBusiness().ActivateWorkflow(ctx, def.ID))
+
 	binding := &models.TriggerBinding{
 		EventType:       eventType,
 		WorkflowName:    def.Name,
