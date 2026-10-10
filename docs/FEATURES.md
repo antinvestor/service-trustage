@@ -1139,7 +1139,7 @@ All logging uses `util.Log(ctx)` with structured fields: `tenant_id`, `workflow_
 | Model | Table | Key Fields |
 |-------|-------|------------|
 | WorkflowDefinition | `workflow_definitions` | Name, Version, Status, DSLBlob, TimeoutSeconds |
-| WorkflowInstance | `workflow_instances` | WorkflowName, Version, CurrentState, Status, Revision, TriggerEventID |
+| WorkflowInstance | `workflow_instances` | WorkflowName, Version, CurrentState, Status, Revision, TriggerEventID, CorrelationKey |
 | WorkflowStateExecution | `workflow_state_executions` | ExecutionID, InstanceID, State, Attempt, Status, ExecutionToken |
 | WorkflowStateSchema | `workflow_state_schemas` | WorkflowName, Version, State, SchemaType, SchemaHash, SchemaBlob |
 | WorkflowStateMapping | `workflow_state_mappings` | WorkflowName, Version, FromState, ToState, MappingExpr |
@@ -1147,7 +1147,8 @@ All logging uses `util.Log(ctx)` with structured fields: `tenant_id`, `workflow_
 | WorkflowRetryPolicy | `workflow_retry_policies` | WorkflowName, Version, State, MaxAttempts, BackoffStrategy |
 | WorkflowAuditEvent | `workflow_audit_events` | InstanceID, ExecutionID, EventType, State, FromState, ToState |
 | EventLog | `event_log` | EventType, Source, IdempotencyKey, Payload, Published |
-| TriggerBinding | `trigger_bindings` | EventType, EventFilter, WorkflowName, Version, InputMapping, Active |
+| TriggerBinding | `trigger_bindings` | EventType, EventFilter, KeyExpr, WorkflowName, Version, InputMapping, Active |
+| SignalRoute | `signal_routes` | EventType, WorkflowName, Version, SignalName, Filter, KeyExpr, InstanceExpr, Active |
 | ConnectorConfig | `connector_configs` | ConnectorType, Name, Config, Active |
 | ConnectorCredential | `connector_credentials` | ConnectorType, CredentialBlob, KeyVersion |
 | ScheduleDefinition | `schedule_definitions` | Name, CronExpr, WorkflowName, Version, InputPayload, Active, NextFireAt |
@@ -1164,6 +1165,8 @@ All models include `TenantID`, `PartitionID`, `CreatedAt`, `ModifiedAt`, `Delete
 | `idx_el_unpublished` | event_log | Outbox scheduler: `WHERE published = false` |
 | `idx_sd_due` | schedule_definitions | Cron scheduler: `WHERE active = true` |
 | `idx_tb_event` | trigger_bindings | Event routing: `WHERE active = true` |
+| `idx_sr_event` | signal_routes | Signal routing: `WHERE active = true` |
+| `idx_wi_correlation` | workflow_instances | Key routes: (workflow_name, workflow_version, correlation_key, status) |
 
 ---
 
@@ -1185,6 +1188,11 @@ All configuration via environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MASTER_ENCRYPTION_KEY` | (required) | AES-256 key for credential encryption |
+
+### Connectors
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRUSTAGE_CONNECT_ROUTES` | (empty) | `connect.call` routes: `<service-or-package-prefix>=<base URL>,...`; longest prefix wins; unrouted services fail without retry |
 
 ### Scheduler Intervals
 | Variable | Default | Description |

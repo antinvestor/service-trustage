@@ -38,6 +38,8 @@ and signal delivery.
     "strategy": "fail",
     "fallback": []
   },
+  "triggers": [],
+  "signals": [],
   "steps": []
 }
 ```
@@ -53,7 +55,69 @@ and signal delivery.
 | `config` | object | No | Workflow-level configuration values |
 | `timeout` | string | No | Maximum workflow duration (e.g., `"30d"`, `"24h"`, `"30m"`) |
 | `on_error` | object | No | Workflow-level error handling policy |
+| `triggers` | array | No | Events that start an instance (see below) |
+| `signals` | array | No | Events delivered to running instances as signals (see below) |
 | `steps` | array | Yes | Ordered list of step objects |
+
+### Triggers and Signal Routes
+
+`triggers` start instances from ingested events; `signals` deliver ingested
+events to instances that are already running. Both are part of the version:
+they take effect when the version is activated.
+
+```json
+"triggers": [
+  {"event_type": "proposal.created",
+   "filter": "payload.amount > 0",
+   "key": "payload.proposal_id"}
+],
+"signals": [
+  {"event_type": "proposal.cancelled", "key": "payload.proposal_id"},
+  {"event_type": "intent.finalized", "signal_name": "finalized",
+   "instance": "payload.meta.instance_id"}
+]
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `triggers[].event_type` | string | Yes | Event type that starts an instance |
+| `triggers[].filter` | CEL (bool) | No | Over `payload`; the trigger fires only when it holds |
+| `triggers[].key` | CEL | No | Over the trigger `payload`; the value is stored on the instance as its correlation key |
+| `signals[].event_type` | string | Yes | Event type to deliver as a signal |
+| `signals[].signal_name` | string | No | Signal name to deliver; defaults to `event_type` |
+| `signals[].filter` | CEL (bool) | No | Over `payload`; the route applies only when it holds |
+| `signals[].key` | CEL | One of `key`/`instance` | Delivers to running instances whose correlation key equals the value |
+| `signals[].instance` | CEL | One of `key`/`instance` | Delivers to the running instance whose id is the value |
+
+**Lifecycle.** Activating version V of workflow W deactivates the trigger
+bindings of W's other versions and upserts one binding per trigger of V, plus
+V's signal routes. Archiving V deactivates V's bindings but keeps its signal
+routes, so instances still running on V keep receiving signals. Submitting a
+DSL identical to an ACTIVE version (`CreateWorkflow`) re-asserts its bindings
+and routes. All of this is idempotent. The event router ignores a binding
+whose version is not ACTIVE.
+
+**Correlation key.** A key expression's value becomes a string: strings as
+is, numbers and booleans formatted (`42` → `"42"`). A null, list, map or an
+evaluation error gives an empty key (logged); an empty key never matches a
+key route. Branch children of `parallel`/`foreach` inherit the key.
+
+**Delivery.** A route only delivers to running instances of exactly its own
+workflow name and version. An instance route ignores ids of other workflows,
+versions or tenants, and finished instances. A signal that arrives before the
+instance reaches its `signal_wait` is buffered and consumed when the wait
+starts. Delivery is idempotent per (event id, instance id, signal name): a
+redelivered event never buffers a second signal. Key fan-out is capped at
+the router's binding limit (`EVENT_ROUTER_BINDING_LIMIT`, default 200).
+
+**Validation.** `event_type` is required; `filter` must compile to a bool;
+`key` and `instance` must compile; a route sets exactly one of `key` and
+`instance`; a `key` route requires every trigger to declare `key`; every
+route's signal name must be waited on by some `signal_wait` in the workflow
+(including nested and `on_error.fallback` steps).
+
+`triggers` replaces the free-form `config.triggers` convention. Documents
+without `triggers`/`signals` are unchanged.
 
 ### Duration Strings
 
@@ -139,11 +203,24 @@ Calls an external system through a registered connector adapter.
 | `call.input` | object | Yes | Input fields for the connector (supports `{{ }}` templates) |
 | `call.output_var` | string | No | Variable name to store the connector's response |
 
-**Template syntax:** `{{ expression }}` resolves against available variables:
-- `{{ payload.field }}` -- Event payload
-- `{{ metadata.field }}` -- Event metadata
-- `{{ vars.step_output.field }}` -- Previous step output
-- `{{ env.field }}` -- Workflow config values
+**Template syntax:** `{{ a.b.c }}` dot paths resolve against the step's input:
+- `{{ payload.field }}` -- the step input (the trigger payload for the first step)
+- `{{ field }}` -- a top-level key of the step input
+- `{{ metadata.<name> }}` -- the execution context:
+
+| Variable | Value |
+|----------|-------|
+| `metadata.instance_id` | The workflow instance id |
+| `metadata.execution_id` | The id of this step execution |
+| `metadata.workflow_name` | The workflow name |
+| `metadata.workflow_version` | The workflow version |
+| `metadata.correlation_key` | The instance's correlation key (empty when none) |
+
+These override same-named keys of a `metadata` object carried in the input;
+other keys of that object stay readable. The same variables are available to
+`signal_send.target_workflow_id` and `signal_send.payload`. When the previous
+step sets `output_var`, the engine resolves the next call's templates against
+that output at commit time and leaves `{{ metadata.* }}` for the worker.
 
 ### `delay` -- Durable Wait
 
@@ -540,6 +617,7 @@ Before a workflow definition is stored, the validator checks:
 6. **Expression validity**: All CEL expressions compile without error
 7. **Template validity**: All `{{ }}` references resolve against declared input and known output_vars
 8. **Timeout consistency**: Step timeouts do not exceed workflow timeout
+9. **Routing**: `triggers` and `signals` follow the rules in [Triggers and Signal Routes](#triggers-and-signal-routes)
 
 Validation errors are returned with the step ID and a human-readable message.
 
