@@ -45,6 +45,36 @@ func TestResolveTemplateValueNestedStructures(t *testing.T) {
 	}
 }
 
+func TestResolveTemplateValueDeferringKeepsDeferredRoots(t *testing.T) {
+	value := map[string]any{
+		"id":      "{{ metadata.instance_id }}",
+		"mixed":   "{{ out.value }}/{{metadata.execution_id}}",
+		"nested":  []any{"{{ out.value }}"},
+		"literal": 3,
+	}
+
+	resolved, err := ResolveTemplateValueDeferring(value, map[string]any{
+		"out": map[string]any{"value": "ok"},
+	}, "metadata")
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
+
+	expected := map[string]any{
+		"id":      "{{ metadata.instance_id }}",
+		"mixed":   "ok/{{metadata.execution_id}}",
+		"nested":  []any{"ok"},
+		"literal": 3,
+	}
+	if !reflect.DeepEqual(expected, resolved) {
+		t.Fatalf("expected %#v, got %#v", expected, resolved)
+	}
+
+	if _, err = ResolveTemplateValueDeferring("{{ missing.x }}", map[string]any{}, "metadata"); err == nil {
+		t.Fatal("non-deferred missing path must still fail")
+	}
+}
+
 func TestResolveTemplateMissingPathReturnsError(t *testing.T) {
 	_, err := ResolveTemplate("{{ payload.missing }}", map[string]any{
 		"payload": map[string]any{"name": "Jane"},

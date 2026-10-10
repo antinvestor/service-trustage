@@ -63,6 +63,9 @@ type SchedulerSuite struct {
 	scopeRepo      repository.WorkflowScopeRunRepository
 	signalWaitRepo repository.WorkflowSignalWaitRepository
 	signalMsgRepo  repository.WorkflowSignalMessageRepository
+
+	triggerRepo     repository.TriggerBindingRepository
+	signalRouteRepo repository.SignalRouteRepository
 }
 
 func TestSchedulerSuite(t *testing.T) {
@@ -99,6 +102,8 @@ func (s *SchedulerSuite) SetupSuite() {
 		&models.WorkflowScopeRun{},
 		&models.WorkflowSignalWait{},
 		&models.WorkflowSignalMessage{},
+		&models.TriggerBinding{},
+		&models.SignalRoute{},
 	))
 	s.Require().NoError(db.Exec(
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_state_schema
@@ -123,6 +128,8 @@ func (s *SchedulerSuite) SetupSuite() {
 	s.scopeRepo = repository.NewWorkflowScopeRunRepository(p)
 	s.signalWaitRepo = repository.NewWorkflowSignalWaitRepository(p)
 	s.signalMsgRepo = repository.NewWorkflowSignalMessageRepository(p)
+	s.triggerRepo = repository.NewTriggerBindingRepository(p)
+	s.signalRouteRepo = repository.NewSignalRouteRepository(p)
 }
 
 func (s *SchedulerSuite) SetupTest() {
@@ -131,7 +138,7 @@ func (s *SchedulerSuite) SetupTest() {
 		`TRUNCATE event_log, workflow_audit_events, schedule_definitions, workflow_definitions,
 		 workflow_state_schemas, workflow_instances, workflow_state_executions, workflow_state_outputs,
 		 workflow_retry_policies, workflow_timers, workflow_scope_runs, workflow_signal_waits,
-		 workflow_signal_messages CASCADE`,
+		 workflow_signal_messages, trigger_bindings, signal_routes CASCADE`,
 	).Error)
 	s.Require().NoError(s.rawCache.Flush(ctx))
 }
@@ -160,7 +167,9 @@ func (s *SchedulerSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *SchedulerSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry(), nil)
+	return business.NewWorkflowBusiness(
+		s.defRepo, s.scheduleRepo, s.triggerRepo, s.signalRouteRepo, s.schemaRegistry(), nil,
+	)
 }
 
 func (s *SchedulerSuite) stateEngine() business.StateEngine {

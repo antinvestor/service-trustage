@@ -1298,6 +1298,47 @@ CREATE INDEX idx_ws_timeout ON workflow_signals(timeout_at)
 4. If no (already received): no-op
 ```
 
+### 19.1 Event Correlation: Triggers and Signal Routes
+
+A workflow's DSL declares `triggers[]` (events that start an instance) and
+`signals[]` (events delivered to running instances). They are persisted when a
+version is activated:
+
+| Table | Written by | Read by |
+|-------|-----------|---------|
+| `trigger_bindings` (`event_type`, `event_filter`, `key_expr`, `workflow_name`, `workflow_version`, `active`) | Activate (switches versions), Archive (deactivates), identical-ACTIVE Create (re-asserts) | Event router, by `event_type` |
+| `signal_routes` (`event_type`, `workflow_name`, `workflow_version`, `signal_name`, `filter`, `key_expr`, `instance_expr`, `active`) | Activate / identical-ACTIVE Create; kept on archive | Event router, by `event_type` |
+| `workflow_instances.correlation_key` | Router, from the trigger's key over the payload | Key routes, indexed `(tenant_id, workflow_name, workflow_version, correlation_key, status)` |
+
+Rows have deterministic ids per (tenant, partition, workflow, version, index),
+so re-asserting a version upserts rather than duplicates.
+
+`RouteEvent` first evaluates trigger bindings (skipping any whose version is
+not ACTIVE), creating instances with their correlation key; then, for each
+active signal route of the event type whose filter holds, it finds the
+target running instances of exactly that workflow version — by correlation
+key, or by the instance id the `instance` expression yields — and calls
+`StateEngine.DeliverEventSignal`. That stores the signal message under the id
+`wsg_` + sha256(event_id, instance_id, signal_name), inserting with
+`ON CONFLICT DO NOTHING`, then tries delivery. A redelivered event therefore
+never buffers a second signal, and a signal that arrives before the wait is
+consumed when the wait starts. Lookup or delivery errors fail the event so
+NATS redelivers it; expression errors only skip the route.
+
+Call-step inputs and `signal_send` resolve `{{ metadata.instance_id }}`,
+`{{ metadata.execution_id }}`, `{{ metadata.workflow_name }}`,
+`{{ metadata.workflow_version }}` and `{{ metadata.correlation_key }}`.
+
+### 19.2 Calling Platform Services: `connect.call`
+
+`connect.call` makes a Connect unary JSON call to `<base>/<service>/<rpc>`
+through frame's HTTP client (workload token). `TRUSTAGE_CONNECT_ROUTES`
+(`<service-or-package-prefix>=<base URL>,...`, longest prefix wins) is the
+only source of base URLs; a service without a route fails without retry.
+Connect codes `unavailable`, `deadline_exceeded`, `resource_exhausted`,
+`aborted`, `internal` and `unknown` retry; other codes fail the step. See
+`docs/ADAPTERS.md`.
+
 ---
 
 ## 20. Complete PostgreSQL Schema Summary
@@ -1317,7 +1358,8 @@ CREATE INDEX idx_ws_timeout ON workflow_signals(timeout_at)
 | `form_schemas` | Form structure definitions (from original design) | No |
 | `form_submissions` | Raw submission data (from original design) | Moderate |
 | `event_log` | Event audit trail + outbox (from original design) | Yes (outbox) |
-| `trigger_bindings` | Event → workflow mappings (from original design) | No (cached) |
+| `trigger_bindings` | Event → workflow mappings, written on activation from DSL `triggers[]` | No (cached) |
+| `signal_routes` | Event → running-instance signal routes from DSL `signals[]` | No |
 | `connector_configs` | Per-tenant connector settings (from original design) | No |
 | `connector_credentials` | Encrypted credential storage (from original design) | No (cached) |
 

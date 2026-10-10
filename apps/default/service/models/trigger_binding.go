@@ -25,7 +25,10 @@ type TriggerBinding struct {
 	WorkflowName    string `gorm:"column:workflow_name;not null"`
 	WorkflowVersion int    `gorm:"column:workflow_version;not null"`
 	InputMapping    string `gorm:"column:input_mapping;type:jsonb;default:'{}'"`
-	Active          bool   `gorm:"column:active;not null;default:true"`
+	// KeyExpr is the trigger's CEL key expression; its value over the
+	// trigger payload becomes the created instance's correlation key.
+	KeyExpr string `gorm:"column:key_expr"`
+	Active  bool   `gorm:"column:active;not null;default:true"`
 }
 
 // TableName returns the database table name.

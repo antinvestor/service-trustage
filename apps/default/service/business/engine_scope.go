@@ -599,6 +599,7 @@ func (e *stateEngine) buildScopedChildRecord(
 		Revision:          1,
 		ParentInstanceID:  parent.ID,
 		ParentExecutionID: parentExec.ID,
+		CorrelationKey:    parent.CorrelationKey,
 		ScopeType:         string(parentStep.Type),
 		ScopeParentState:  parentStep.ID,
 		ScopeEntryState:   child.EntryState,

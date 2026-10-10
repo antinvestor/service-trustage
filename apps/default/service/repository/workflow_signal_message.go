@@ -31,6 +31,10 @@ import (
 // WorkflowSignalMessageRepository manages signal message persistence.
 type WorkflowSignalMessageRepository interface {
 	Create(ctx context.Context, message *models.WorkflowSignalMessage) error
+	// CreateIfAbsent inserts a message whose ID the caller derived
+	// deterministically; it reports false (and stores nothing) when a
+	// message with that ID already exists.
+	CreateIfAbsent(ctx context.Context, message *models.WorkflowSignalMessage) (bool, error)
 	ListByInstance(ctx context.Context, instanceID string, limit int) ([]*models.WorkflowSignalMessage, error)
 	ClaimOldestPendingForTarget(
 		ctx context.Context,
@@ -63,6 +67,33 @@ func NewWorkflowSignalMessageRepository(dbPool pool.Pool) WorkflowSignalMessageR
 
 func (r *workflowSignalMessageRepository) Create(ctx context.Context, message *models.WorkflowSignalMessage) error {
 	return r.BaseRepository.Create(ctx, message)
+}
+
+func (r *workflowSignalMessageRepository) CreateIfAbsent(
+	ctx context.Context,
+	message *models.WorkflowSignalMessage,
+) (bool, error) {
+	if message.ID == "" {
+		return false, errors.New("create signal message: deterministic id is required")
+	}
+
+	if message.Version == 0 {
+		// Caller-supplied ids are not xids; stamp creation time explicitly so
+		// BeforeCreate does not derive it from the id.
+		now := time.Now().UTC()
+		message.CreatedAt = now
+		message.ModifiedAt = now
+		message.Version = 1
+	}
+
+	result := r.pool.DB(ctx, false).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
+		Create(message)
+	if result.Error != nil {
+		return false, fmt.Errorf("create signal message: %w", result.Error)
+	}
+
+	return result.RowsAffected > 0, nil
 }
 
 func (r *workflowSignalMessageRepository) ListByInstance(

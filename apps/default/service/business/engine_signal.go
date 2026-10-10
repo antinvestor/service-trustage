@@ -109,6 +109,44 @@ func (e *stateEngine) SendSignal(
 	return e.tryDeliverSignal(ctx, instanceID, signalName)
 }
 
+func (e *stateEngine) DeliverEventSignal(
+	ctx context.Context,
+	eventID string,
+	instanceID string,
+	signalName string,
+	payload json.RawMessage,
+) (bool, error) {
+	if eventID == "" {
+		return false, errors.New("event_id is required")
+	}
+	if instanceID == "" {
+		return false, errors.New("instance_id is required")
+	}
+	if signalName == "" {
+		return false, errors.New("signal_name is required")
+	}
+
+	if payload == nil {
+		payload = json.RawMessage(`{}`)
+	}
+
+	message := &models.WorkflowSignalMessage{
+		TargetInstanceID: instanceID,
+		SignalName:       signalName,
+		Payload:          string(payload),
+		Status:           "pending",
+	}
+	message.ID = deterministicEventSignalID(eventID, instanceID, signalName)
+
+	if _, err := e.signalMsgRepo.CreateIfAbsent(ctx, message); err != nil {
+		return false, fmt.Errorf("store signal message: %w", err)
+	}
+
+	// Always attempt delivery: a previous attempt may have stored the
+	// message and failed before resuming the wait.
+	return e.tryDeliverSignal(ctx, instanceID, signalName)
+}
+
 func (e *stateEngine) tryDeliverSignal(
 	ctx context.Context,
 	instanceID string,

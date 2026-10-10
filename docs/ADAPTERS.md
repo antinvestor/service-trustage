@@ -67,6 +67,7 @@ Execution Flow:
 | `connector/registry.go` | Thread-safe adapter registry (Register, Get, List) |
 | `connector/adapters/webhook.go` | Webhook adapter + HTTP status classifier |
 | `connector/adapters/http.go` | Generic HTTP request adapter |
+| `connector/adapters/connect_call.go` | Connect RPC (unary JSON) adapter + route table |
 | `connector/adapters/notification.go` | Send notification adapter |
 | `connector/adapters/notification_status.go` | Check notification status adapter |
 | `connector/adapters/payment.go` | Initiate payment adapter |
@@ -84,6 +85,7 @@ Execution Flow:
 | Category | Adapters | HTTP Required | Side Effects |
 |----------|----------|---------------|--------------|
 | **HTTP** | `webhook.call`, `http.request` | Yes | External HTTP calls |
+| **Connect RPC** | `connect.call` | Yes | Calls platform services on configured routes |
 | **Notification** | `notification.send`, `notification.status` | Yes | Sends/checks notifications via API |
 | **Payment** | `payment.initiate`, `payment.verify` | Yes | Initiates/verifies payments via API |
 | **Computation** | `data.transform`, `log.entry`, `form.validate` | No | Pure in-memory, no I/O |
@@ -396,6 +398,84 @@ steps:
       query:
         email: "{{ payload.email }}"
       auth_header: "Bearer {{ credentials.api_token }}"
+```
+
+---
+
+### `connect.call` — Connect RPC Call
+
+| Property | Value |
+|----------|-------|
+| **Type** | `connect.call` |
+| **Display Name** | Connect RPC Call |
+| **Source** | `connector/adapters/connect_call.go` |
+| **HTTP Client** | Frame HTTP client (carries Trustage's workload token) |
+| **Configuration** | `TRUSTAGE_CONNECT_ROUTES` (operator) |
+
+Makes a Connect unary call with the JSON codec to a platform service.
+
+#### Input Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `service` | string | Yes | Fully-qualified service, e.g. `finance.v1.FinanceService` |
+| `rpc` | string | Yes | Method name, e.g. `GetProposal` |
+| `request` | object | No | Request message in proto JSON (default `{}`) |
+
+#### Routing — `TRUSTAGE_CONNECT_ROUTES`
+
+Comma-separated `<service-or-package-prefix>=<base URL>` entries, e.g.
+
+```
+TRUSTAGE_CONNECT_ROUTES=finance.v1.=http://finance.finance.svc:80,settlement.v1.=http://settlement.settlement.svc:80
+```
+
+The longest prefix of the fully-qualified service name wins. A service with
+no route fails the step without retry (`CONNECT_NO_ROUTE`). Base URLs must be
+absolute `http(s)` without query or fragment; a malformed value stops the
+service at start-up. Because only these operator-configured bases are ever
+called, the SSRF private-network block does not apply to `connect.call`.
+
+#### Behavior
+
+`POST <base>/<service>/<rpc>` with `Content-Type: application/json` and
+`Connect-Protocol-Version: 1`, body = `request`. On HTTP 200 the output is the
+decoded reply object itself (`output.proposal.state`, not `output.body...`).
+
+#### Error Classification
+
+| Response | Class |
+|----------|-------|
+| Connect error `unavailable`, `deadline_exceeded` | `external_dependency` (retry) |
+| Connect error `resource_exhausted`, `aborted`, `internal`, `unknown` | `retryable` |
+| Any other Connect error code | `fatal` (step fails at once; `on_failure` decides) |
+| Non-JSON 5xx | `external_dependency` (retry) |
+| Non-JSON 429 | `retryable` |
+| Other non-JSON 4xx | `fatal` |
+| Transport error / timeout | `external_dependency` (retry) |
+| 200 with a non-object body | `fatal` |
+
+Error codes are `CONNECT_<CODE>` (e.g. `CONNECT_NOT_FOUND`) with
+`details.connect_code` and `details.http_status`, or `HTTP_<status>`.
+
+#### Example Workflow Step
+
+```json
+{
+  "id": "load_proposal",
+  "type": "call",
+  "call": {
+    "action": "connect.call",
+    "input": {
+      "service": "finance.v1.FinanceService",
+      "rpc": "GetProposal",
+      "request": {
+        "proposal_id": "{{ payload.proposal_id }}",
+        "context": {"instance_id": "{{ metadata.instance_id }}"}
+      }
+    }
+  }
+}
 ```
 
 ---

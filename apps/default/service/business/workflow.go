@@ -61,6 +61,8 @@ type WorkflowListPage struct {
 type workflowBusiness struct {
 	defRepo      repository.WorkflowDefinitionRepository
 	scheduleRepo repository.ScheduleRepository
+	triggerRepo  repository.TriggerBindingRepository
+	routeRepo    repository.SignalRouteRepository
 	schemaReg    SchemaRegistry
 	metrics      *telemetry.Metrics
 }
@@ -69,12 +71,16 @@ type workflowBusiness struct {
 func NewWorkflowBusiness(
 	defRepo repository.WorkflowDefinitionRepository,
 	scheduleRepo repository.ScheduleRepository,
+	triggerRepo repository.TriggerBindingRepository,
+	routeRepo repository.SignalRouteRepository,
 	schemaReg SchemaRegistry,
 	metrics *telemetry.Metrics,
 ) WorkflowBusiness {
 	return &workflowBusiness{
 		defRepo:      defRepo,
 		scheduleRepo: scheduleRepo,
+		triggerRepo:  triggerRepo,
+		routeRepo:    routeRepo,
 		schemaReg:    schemaReg,
 		metrics:      metrics,
 	}
@@ -120,14 +126,17 @@ func (b *workflowBusiness) createWorkflow(
 	if err != nil {
 		return nil, fmt.Errorf("list existing versions: %w", err)
 	}
-	version := 1
-	for _, e := range existing {
-		if e.WorkflowVersion >= version {
-			version = e.WorkflowVersion + 1
+	version, identical := nextVersionOrIdentical(existing, dslBlob)
+	if identical != nil {
+		// Identical live version already exists — idempotent. An ACTIVE one
+		// re-asserts its routing so a version registered before triggers and
+		// signals were persisted is repaired by the next deploy.
+		if identical.Status == models.WorkflowStatusActive {
+			if routeErr := b.assertRouting(ctx, identical, spec); routeErr != nil {
+				return nil, routeErr
+			}
 		}
-		if e.Status != models.WorkflowStatusArchived && sameDSL(e.DSLBlob, dslBlob) {
-			return e, nil // identical live version already exists — idempotent
-		}
+		return identical, nil
 	}
 
 	def := &models.WorkflowDefinition{
@@ -173,6 +182,25 @@ func (b *workflowBusiness) createWorkflow(
 
 	log.Info("workflow created", "workflow_id", def.ID, "name", def.Name)
 	return def, nil
+}
+
+// nextVersionOrIdentical returns the version a new definition would take
+// (max existing + 1) and, when one exists, the non-archived version whose DSL
+// is identical to dslBlob.
+func nextVersionOrIdentical(
+	existing []*models.WorkflowDefinition,
+	dslBlob json.RawMessage,
+) (int, *models.WorkflowDefinition) {
+	version := 1
+	for _, e := range existing {
+		if e.WorkflowVersion >= version {
+			version = e.WorkflowVersion + 1
+		}
+		if e.Status != models.WorkflowStatusArchived && sameDSL(e.DSLBlob, dslBlob) {
+			return version, e
+		}
+	}
+	return version, nil
 }
 
 // sameDSL reports whether two DSL documents are semantically identical,
@@ -460,7 +488,85 @@ func (b *workflowBusiness) activateWorkflow(ctx context.Context, id string) erro
 				"workflow_id", def.ID)
 		return fmt.Errorf("activate schedules: %w", err)
 	}
+
+	// Trigger bindings (switch versions) + signal routes.
+	spec, err := dsl.Parse([]byte(def.DSLBlob))
+	if err != nil {
+		return fmt.Errorf("parse DSL: %w", err)
+	}
+
+	err = b.assertRouting(ctx, def, spec)
+	if err != nil {
+		log.WithError(err).
+			Error("routing activation failed; workflow ACTIVE but routing stale; retry to reconcile",
+				"workflow_id", def.ID)
+		return err
+	}
 	return nil
+}
+
+// assertRouting makes def's triggers the only live bindings of its workflow
+// name and upserts its signal routes. Idempotent; safe to re-run.
+func (b *workflowBusiness) assertRouting(
+	ctx context.Context,
+	def *models.WorkflowDefinition,
+	spec *dsl.WorkflowSpec,
+) error {
+	target := routingTarget(def)
+	bindings, routes := planRouting(spec)
+
+	if err := b.triggerRepo.ReplaceForWorkflow(ctx, target, bindings); err != nil {
+		return fmt.Errorf("activate trigger bindings: %w", err)
+	}
+
+	if err := b.routeRepo.ReplaceForWorkflowVersion(ctx, target, routes); err != nil {
+		return fmt.Errorf("activate signal routes: %w", err)
+	}
+
+	return nil
+}
+
+func routingTarget(def *models.WorkflowDefinition) repository.WorkflowRoutingTarget {
+	return repository.WorkflowRoutingTarget{
+		WorkflowName:    def.Name,
+		WorkflowVersion: def.WorkflowVersion,
+		TenantID:        def.TenantID,
+		PartitionID:     def.PartitionID,
+	}
+}
+
+// planRouting builds the binding and route rows for spec. Pure — no DB access.
+func planRouting(spec *dsl.WorkflowSpec) ([]*models.TriggerBinding, []*models.SignalRoute) {
+	bindings := make([]*models.TriggerBinding, 0, len(spec.Triggers))
+	for _, t := range spec.Triggers {
+		if t == nil {
+			continue
+		}
+		bindings = append(bindings, &models.TriggerBinding{
+			EventType:    t.EventType,
+			EventFilter:  t.Filter,
+			KeyExpr:      t.Key,
+			InputMapping: "{}",
+			Active:       true,
+		})
+	}
+
+	routes := make([]*models.SignalRoute, 0, len(spec.Signals))
+	for _, r := range spec.Signals {
+		if r == nil {
+			continue
+		}
+		routes = append(routes, &models.SignalRoute{
+			EventType:    r.EventType,
+			SignalName:   r.EffectiveSignalName(),
+			Filter:       r.Filter,
+			KeyExpr:      r.Key,
+			InstanceExpr: r.Instance,
+			Active:       true,
+		})
+	}
+
+	return bindings, routes
 }
 
 // ArchiveWorkflow transitions a DRAFT|ACTIVE workflow to ARCHIVED.
@@ -492,6 +598,13 @@ func (b *workflowBusiness) archiveWorkflow(ctx context.Context, id string) error
 	err = b.scheduleRepo.DeactivateByWorkflow(ctx, def.Name, def.TenantID, def.PartitionID)
 	if err != nil {
 		return fmt.Errorf("deactivate schedules: %w", err)
+	}
+
+	// This version's trigger bindings off too. Its signal routes stay in
+	// force for instances still running on it.
+	err = b.triggerRepo.DeactivateByWorkflowVersion(ctx, routingTarget(def))
+	if err != nil {
+		return fmt.Errorf("deactivate trigger bindings: %w", err)
 	}
 
 	// Tx2: workflow status.

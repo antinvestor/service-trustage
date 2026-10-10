@@ -52,6 +52,8 @@ type RepositorySuite struct {
 	signalWaitRepo WorkflowSignalWaitRepository
 	signalMsgRepo  WorkflowSignalMessageRepository
 	runtimeRepo    WorkflowRuntimeRepository
+
+	signalRouteRepo SignalRouteRepository
 }
 
 func TestRepositorySuite(t *testing.T) {
@@ -89,6 +91,7 @@ func (s *RepositorySuite) SetupSuite() {
 		&models.WorkflowScopeRun{},
 		&models.WorkflowSignalWait{},
 		&models.WorkflowSignalMessage{},
+		&models.SignalRoute{},
 	))
 	s.Require().NoError(db.Exec(
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_workflow_state_schema
@@ -111,6 +114,7 @@ func (s *RepositorySuite) SetupSuite() {
 	s.signalWaitRepo = NewWorkflowSignalWaitRepository(p)
 	s.signalMsgRepo = NewWorkflowSignalMessageRepository(p)
 	s.runtimeRepo = NewWorkflowRuntimeRepository(p)
+	s.signalRouteRepo = NewSignalRouteRepository(p)
 }
 
 func (s *RepositorySuite) SetupTest() {
@@ -119,7 +123,7 @@ func (s *RepositorySuite) SetupTest() {
 		`TRUNCATE event_log, workflow_audit_events, workflow_definitions, workflow_instances,
 		 workflow_state_executions, workflow_retry_policies, schedule_definitions, workflow_state_schemas,
 		 trigger_bindings, workflow_state_outputs, workflow_timers, workflow_scope_runs,
-		 workflow_signal_waits, workflow_signal_messages CASCADE`,
+		 workflow_signal_waits, workflow_signal_messages, signal_routes CASCADE`,
 	).Error)
 }
 

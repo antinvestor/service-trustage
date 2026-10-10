@@ -102,6 +102,14 @@ func (s *stubEngine) SendSignal(
 	return true, s.signalSendErr
 }
 
+func (s *stubEngine) DeliverEventSignal(
+	_ context.Context,
+	_, _, _ string,
+	_ json.RawMessage,
+) (bool, error) {
+	return true, nil
+}
+
 func (s *stubEngine) StartBranchScope(
 	_ context.Context,
 	_ *business.ExecutionCommand,
@@ -754,7 +762,7 @@ func TestResolveSignalSend(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			target, payload, err := resolveSignalSend(tc.spec, tc.inputPayload)
+			target, payload, err := resolveSignalSend(tc.spec, tc.inputPayload, nil)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErr)

@@ -1,9 +1,6 @@
 package workflows
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -16,25 +13,18 @@ func parseDSLFile(path string) (*structpb.Struct, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read %s: %w", path, err)
 	}
+	return parseDSL(raw, path)
+}
+
+// parseDSL decodes a workflow document; label names it in errors.
+func parseDSL(raw []byte, label string) (*structpb.Struct, string, error) {
 	s := &structpb.Struct{}
 	if unmarshalErr := protojson.Unmarshal(raw, s); unmarshalErr != nil {
-		return nil, "", fmt.Errorf("parse %s: %w", path, unmarshalErr)
+		return nil, "", fmt.Errorf("parse %s: %w", label, unmarshalErr)
 	}
 	nameVal, ok := s.GetFields()["name"]
 	if !ok || nameVal.GetStringValue() == "" {
-		return nil, "", fmt.Errorf("%s: missing or empty 'name' field", path)
+		return nil, "", fmt.Errorf("%s: missing or empty 'name' field", label)
 	}
 	return s, nameVal.GetStringValue(), nil
-}
-
-func dslHash(s *structpb.Struct) string {
-	b, err := protojson.MarshalOptions{Indent: "", Multiline: false}.Marshal(s)
-	if err != nil {
-		return ""
-	}
-	var m map[string]any
-	_ = json.Unmarshal(b, &m)
-	sorted, _ := json.Marshal(m)
-	h := sha256.Sum256(sorted)
-	return hex.EncodeToString(h[:])
 }

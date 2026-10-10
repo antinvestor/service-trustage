@@ -34,6 +34,10 @@ type WorkflowSpec struct {
 	OnError     *ErrorPolicy      `json:"on_error,omitempty"`
 	Steps       []*StepSpec       `json:"steps"`
 	Schedules   []*ScheduleSpec   `json:"schedules,omitempty"`
+	// Triggers start a new instance when a matching event is ingested.
+	Triggers []*TriggerSpec `json:"triggers,omitempty"`
+	// Signals route ingested events to running instances as signals.
+	Signals []*SignalRouteSpec `json:"signals,omitempty"`
 }
 
 // ScheduleSpec declares a cron-triggered workflow schedule inside a

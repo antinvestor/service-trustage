@@ -34,6 +34,8 @@ func Validate(spec *WorkflowSpec) *ValidationResult {
 	validateRetryPolicies(spec, result)
 	validateTimeouts(spec, result)
 	validateSchedules(spec, result)
+	validateTriggers(spec, result)
+	validateSignalRoutes(spec, result)
 
 	return result
 }

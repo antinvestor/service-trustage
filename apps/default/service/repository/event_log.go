@@ -116,7 +116,7 @@ func (r *eventLogRepository) MarkPublished(ctx context.Context, id string) error
 
 	result := db.Model(&models.EventLog{}).
 		Where("id = ?", id).
-		Updates(map[string]any{
+		UpdateColumns(map[string]any{
 			"published":    true,
 			"published_at": now,
 		})
@@ -135,7 +135,7 @@ func (r *eventLogRepository) MarkPublishedIfUnpublished(ctx context.Context, id 
 
 	result := db.Model(&models.EventLog{}).
 		Where("id = ? AND published = ? AND deleted_at IS NULL", id, false).
-		Updates(map[string]any{
+		UpdateColumns(map[string]any{
 			"published":    true,
 			"published_at": now,
 		})

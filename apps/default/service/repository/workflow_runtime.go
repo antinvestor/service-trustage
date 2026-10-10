@@ -510,7 +510,7 @@ func claimPendingSignalMessage(
 	}
 	if err := tx.Model(&models.WorkflowSignalMessage{}).
 		Where("id = ? AND deleted_at IS NULL", message.ID).
-		Updates(messageUpdates).Error; err != nil {
+		UpdateColumns(messageUpdates).Error; err != nil {
 		return nil, false, fmt.Errorf("lease signal message: %w", err)
 	}
 
@@ -559,7 +559,7 @@ func finalizeSignalDeliveryClaim(
 	}
 	if err := tx.Model(&models.WorkflowSignalWait{}).
 		Where("id = ? AND status = ? AND deleted_at IS NULL", wait.ID, "waiting").
-		Updates(waitUpdates).Error; err != nil {
+		UpdateColumns(waitUpdates).Error; err != nil {
 		return fmt.Errorf("mark signal wait matched: %w", err)
 	}
 
@@ -573,7 +573,7 @@ func finalizeSignalDeliveryClaim(
 	}
 	if err := tx.Model(&models.WorkflowSignalMessage{}).
 		Where("id = ? AND claim_owner = ? AND status = ? AND deleted_at IS NULL", message.ID, req.Owner, "pending").
-		Updates(deliveredUpdates).Error; err != nil {
+		UpdateColumns(deliveredUpdates).Error; err != nil {
 		return fmt.Errorf("mark signal delivered: %w", err)
 	}
 
@@ -740,7 +740,7 @@ func (r *workflowRuntimeRepository) StartBranchScope(ctx context.Context, req *S
 		}
 		if err := tx.Model(&models.WorkflowScopeRun{}).
 			Where("id = ? AND deleted_at IS NULL", req.Scope.ID).
-			Updates(scopeUpdates).Error; err != nil {
+			UpdateColumns(scopeUpdates).Error; err != nil {
 			return fmt.Errorf("update scope launch state: %w", err)
 		}
 

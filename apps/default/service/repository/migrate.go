@@ -48,6 +48,7 @@ func Migrate(ctx context.Context, manager datastore.Manager) error {
 		&models.WorkflowAuditEvent{},
 		&models.EventLog{},
 		&models.TriggerBinding{},
+		&models.SignalRoute{},
 		&models.ConnectorConfig{},
 		&models.ConnectorCredential{},
 		&models.ScheduleDefinition{},
@@ -106,6 +107,7 @@ func migrationIndexes() []migrationIndex {
 				"idx_wi_trigger",
 				"idx_wi_parent_execution",
 				"idx_wi_trigger_dedupe",
+				"idx_wi_correlation",
 			},
 		},
 		{
@@ -162,7 +164,11 @@ func migrationIndexes() []migrationIndex {
 		},
 		{
 			Model: &triggerBindingIndexModel{},
-			Names: []string{"idx_tb_event"},
+			Names: []string{"idx_tb_event", "idx_tb_workflow"},
+		},
+		{
+			Model: &signalRouteIndexModel{},
+			Names: []string{"idx_sr_event", "idx_sr_workflow"},
 		},
 		{
 			Model: &scheduleDefinitionIndexModel{},
@@ -181,11 +187,12 @@ type workflowDefinitionIndexModel struct {
 func (workflowDefinitionIndexModel) TableName() string { return "workflow_definitions" }
 
 type workflowInstanceIndexModel struct {
-	TenantID          string `gorm:"column:tenant_id;index:idx_wi_tenant,priority:1;index:idx_wi_workflow,priority:1;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:1"`
+	TenantID          string `gorm:"column:tenant_id;index:idx_wi_tenant,priority:1;index:idx_wi_workflow,priority:1;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:1;index:idx_wi_correlation,where:correlation_key <> '' AND deleted_at IS NULL,priority:1"`
 	PartitionID       string `gorm:"column:partition_id;index:idx_wi_tenant,priority:2;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:2"`
-	Status            string `gorm:"column:status;index:idx_wi_status,where:deleted_at IS NULL"`
-	WorkflowName      string `gorm:"column:workflow_name;index:idx_wi_workflow,priority:2;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:3"`
-	WorkflowVersion   int    `gorm:"column:workflow_version;index:idx_wi_workflow,priority:3;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:4"`
+	Status            string `gorm:"column:status;index:idx_wi_status,where:deleted_at IS NULL;index:idx_wi_correlation,where:correlation_key <> '' AND deleted_at IS NULL,priority:5"`
+	WorkflowName      string `gorm:"column:workflow_name;index:idx_wi_workflow,priority:2;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:3;index:idx_wi_correlation,where:correlation_key <> '' AND deleted_at IS NULL,priority:2"`
+	WorkflowVersion   int    `gorm:"column:workflow_version;index:idx_wi_workflow,priority:3;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:4;index:idx_wi_correlation,where:correlation_key <> '' AND deleted_at IS NULL,priority:3"`
+	CorrelationKey    string `gorm:"column:correlation_key;index:idx_wi_correlation,where:correlation_key <> '' AND deleted_at IS NULL,priority:4"`
 	TriggerEventID    string `gorm:"column:trigger_event_id;index:idx_wi_trigger,where:trigger_event_id IS NOT NULL;index:idx_wi_trigger_dedupe,unique,where:trigger_event_id IS NOT NULL AND trigger_event_id <> '' AND deleted_at IS NULL,priority:5"`
 	ParentExecutionID string `gorm:"column:parent_execution_id;index:idx_wi_parent_execution,where:parent_execution_id IS NOT NULL AND parent_execution_id <> '' AND deleted_at IS NULL,priority:1"`
 	ScopeIndex        int    `gorm:"column:scope_index;index:idx_wi_parent_execution,where:parent_execution_id IS NOT NULL AND parent_execution_id <> '' AND deleted_at IS NULL,priority:2"`
@@ -296,11 +303,22 @@ type eventLogIndexModel struct {
 func (eventLogIndexModel) TableName() string { return "event_log" }
 
 type triggerBindingIndexModel struct {
-	TenantID  string `gorm:"column:tenant_id;index:idx_tb_event,where:active = true AND deleted_at IS NULL,priority:1"`
-	EventType string `gorm:"column:event_type;index:idx_tb_event,where:active = true AND deleted_at IS NULL,priority:2"`
+	TenantID        string `gorm:"column:tenant_id;index:idx_tb_event,where:active = true AND deleted_at IS NULL,priority:1;index:idx_tb_workflow,where:deleted_at IS NULL,priority:1"`
+	EventType       string `gorm:"column:event_type;index:idx_tb_event,where:active = true AND deleted_at IS NULL,priority:2"`
+	WorkflowName    string `gorm:"column:workflow_name;index:idx_tb_workflow,where:deleted_at IS NULL,priority:2"`
+	WorkflowVersion int    `gorm:"column:workflow_version;index:idx_tb_workflow,where:deleted_at IS NULL,priority:3"`
 }
 
 func (triggerBindingIndexModel) TableName() string { return "trigger_bindings" }
+
+type signalRouteIndexModel struct {
+	TenantID        string `gorm:"column:tenant_id;index:idx_sr_event,where:active = true AND deleted_at IS NULL,priority:1;index:idx_sr_workflow,where:deleted_at IS NULL,priority:1"`
+	EventType       string `gorm:"column:event_type;index:idx_sr_event,where:active = true AND deleted_at IS NULL,priority:2"`
+	WorkflowName    string `gorm:"column:workflow_name;index:idx_sr_workflow,where:deleted_at IS NULL,priority:2"`
+	WorkflowVersion int    `gorm:"column:workflow_version;index:idx_sr_workflow,where:deleted_at IS NULL,priority:3"`
+}
+
+func (signalRouteIndexModel) TableName() string { return "signal_routes" }
 
 type scheduleDefinitionIndexModel struct {
 	TenantID        string    `gorm:"column:tenant_id;index:idx_sd_tenant,priority:1;index:idx_sd_workflow_unique,unique,where:deleted_at IS NULL,priority:1"`
