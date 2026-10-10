@@ -35,6 +35,8 @@ const (
 	ErrMissingRequired     ValidationErrorCode = "MISSING_REQUIRED"
 	ErrInvalidReference    ValidationErrorCode = "INVALID_REFERENCE"
 	ErrInvalidSchedule     ValidationErrorCode = "INVALID_SCHEDULE"
+	ErrInvalidTrigger      ValidationErrorCode = "INVALID_TRIGGER"
+	ErrInvalidSignalRoute  ValidationErrorCode = "INVALID_SIGNAL_ROUTE"
 )
 
 // ValidationError represents a single validation failure in a DSL document.
