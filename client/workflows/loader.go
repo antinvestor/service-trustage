@@ -2,9 +2,12 @@ package workflows
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
+	"sort"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -13,6 +16,8 @@ import (
 	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
 )
 
+// WorkflowClient is the subset of workflowv1connect.WorkflowServiceClient
+// the loader needs; that client satisfies it.
 type WorkflowClient interface {
 	ListWorkflows(
 		context.Context,
@@ -28,69 +33,85 @@ type WorkflowClient interface {
 	) (*connect.Response[workflowv1.ActivateWorkflowResponse], error)
 }
 
-func SyncFromDir(ctx context.Context, client WorkflowClient, dir string) error {
-	log := util.Log(ctx)
+const (
+	syncCreated   = "created"
+	syncUnchanged = "unchanged"
+	syncSkipped   = "skipped"
+)
 
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		log.WithField("dir", dir).Debug("workflows: directory does not exist, skipping")
+// SyncFromDir registers every *.json workflow document directly inside dir.
+// A missing directory is a no-op. See SyncFromFS.
+func SyncFromDir(ctx context.Context, client WorkflowClient, dir string) error {
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		util.Log(ctx).WithField("dir", dir).Debug("workflows: directory does not exist, skipping")
 		return nil
 	}
 
-	entries, err := os.ReadDir(dir)
+	return SyncFromFS(ctx, client, os.DirFS(dir))
+}
+
+// SyncFromFS registers every *.json workflow document at the root of fsys
+// (for example a go:embed'ed directory), in name order.
+//
+// Each document goes through CreateWorkflow, which is idempotent: an
+// identical live version is returned as is, and when that version is ACTIVE
+// the server re-asserts its trigger bindings and signal routes. A version
+// that is not yet ACTIVE is then activated, which switches the workflow's
+// trigger bindings to it.
+func SyncFromFS(ctx context.Context, client WorkflowClient, fsys fs.FS) error {
+	log := util.Log(ctx)
+
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return fmt.Errorf("workflows: read dir %s: %w", dir, err)
+		return fmt.Errorf("workflows: read dir: %w", err)
 	}
 
-	var synced, skipped, created int
+	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || path.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
 
-		action, syncErr := syncOne(ctx, client, path)
+	var created, unchanged, skipped int
+	for _, name := range names {
+		raw, readErr := fs.ReadFile(fsys, name)
+		if readErr != nil {
+			return fmt.Errorf("workflows: read %s: %w", name, readErr)
+		}
+
+		action, syncErr := syncOne(ctx, client, name, raw)
 		if syncErr != nil {
-			return fmt.Errorf("workflows: sync %s: %w", entry.Name(), syncErr)
+			return fmt.Errorf("workflows: sync %s: %w", name, syncErr)
 		}
 
 		switch action {
-		case "created":
+		case syncCreated:
 			created++
-			log.WithField("file", entry.Name()).Info("workflows: created and activated")
-		case "skipped":
+			log.WithField("file", name).Info("workflows: created and activated")
+		case syncUnchanged:
+			unchanged++
+			log.WithField("file", name).Debug("workflows: already active, routing re-asserted")
+		case syncSkipped:
 			skipped++
-			log.WithField("file", entry.Name()).Debug("workflows: already exists, skipped")
+			log.WithField("file", name).Warn("workflows: already exists, skipped")
 		}
-		synced++
 	}
 
-	log.WithField("synced", synced).
+	log.WithField("synced", len(names)).
 		WithField("created", created).
+		WithField("unchanged", unchanged).
 		WithField("skipped", skipped).
 		Info("workflows: sync complete")
 	return nil
 }
 
-func syncOne(ctx context.Context, client WorkflowClient, path string) (string, error) {
-	dslStruct, name, err := parseDSLFile(path)
+func syncOne(ctx context.Context, client WorkflowClient, label string, raw []byte) (string, error) {
+	dslStruct, name, err := parseDSL(raw, label)
 	if err != nil {
 		return "", err
-	}
-
-	hash := dslHash(dslStruct)
-
-	listResp, err := client.ListWorkflows(ctx, connect.NewRequest(&workflowv1.ListWorkflowsRequest{
-		Name: name,
-	}))
-	if err != nil {
-		return "", fmt.Errorf("list workflows: %w", err)
-	}
-
-	for _, existing := range listResp.Msg.GetItems() {
-		if existing.GetInputSchemaHash() == hash &&
-			existing.GetStatus() == workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE {
-			return "skipped", nil
-		}
 	}
 
 	createResp, err := client.CreateWorkflow(ctx, connect.NewRequest(&workflowv1.CreateWorkflowRequest{
@@ -98,21 +119,24 @@ func syncOne(ctx context.Context, client WorkflowClient, path string) (string, e
 	}))
 	if err != nil {
 		if isAlreadyExists(err) {
-			return "skipped", nil
+			return syncSkipped, nil
 		}
 		return "", fmt.Errorf("create workflow %s: %w", name, err)
 	}
 
-	wfID := createResp.Msg.GetWorkflow().GetId()
-
-	_, err = client.ActivateWorkflow(ctx, connect.NewRequest(&workflowv1.ActivateWorkflowRequest{
-		Id: wfID,
-	}))
-	if err != nil {
-		return "", fmt.Errorf("activate workflow %s (id=%s): %w", name, wfID, err)
+	wf := createResp.Msg.GetWorkflow()
+	if wf.GetStatus() == workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE {
+		return syncUnchanged, nil
 	}
 
-	return "created", nil
+	_, err = client.ActivateWorkflow(ctx, connect.NewRequest(&workflowv1.ActivateWorkflowRequest{
+		Id: wf.GetId(),
+	}))
+	if err != nil {
+		return "", fmt.Errorf("activate workflow %s (id=%s): %w", name, wf.GetId(), err)
+	}
+
+	return syncCreated, nil
 }
 
 func isAlreadyExists(err error) bool {

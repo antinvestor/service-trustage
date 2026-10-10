@@ -47,22 +47,3 @@ func TestParseDSLFile_MissingName(t *testing.T) {
 		t.Fatal("expected error for missing name, got nil")
 	}
 }
-
-func TestDSLHash_Deterministic(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "hash-test.json")
-	content := `{"version":"1.0","name":"hash.test","steps":[]}`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s1, _, _ := parseDSLFile(path)
-	s2, _, _ := parseDSLFile(path)
-	h1 := dslHash(s1)
-	h2 := dslHash(s2)
-	if h1 != h2 {
-		t.Errorf("hash not deterministic: %s != %s", h1, h2)
-	}
-	if h1 == "" {
-		t.Error("hash is empty")
-	}
-}
