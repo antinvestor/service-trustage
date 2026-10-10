@@ -60,7 +60,7 @@ func (e *stateEngine) StartBranchScope(
 		return err
 	}
 
-	childDefs, err := branchChildrenFromStep(step, cmd.InputPayload, instance.ID, exec.ID)
+	childDefs, err := branchChildrenFromStep(step, cmd.InputPayload, instance.Vars, instance.ID, exec.ID)
 	if err != nil {
 		return err
 	}
@@ -241,6 +241,7 @@ type scopedChildDefinition struct {
 func branchChildrenFromStep(
 	step *dsl.StepSpec,
 	inputPayload json.RawMessage,
+	instanceVars string,
 	parentInstanceID string,
 	parentExecutionID string,
 ) ([]scopedChildDefinition, error) {
@@ -248,7 +249,7 @@ func branchChildrenFromStep(
 	case dsl.StepTypeParallel:
 		return parallelChildrenFromStep(step, inputPayload, parentInstanceID, parentExecutionID)
 	case dsl.StepTypeForeach:
-		return foreachChildrenFromStep(step, inputPayload, parentInstanceID, parentExecutionID)
+		return foreachChildrenFromStep(step, inputPayload, instanceVars, parentInstanceID, parentExecutionID)
 	case dsl.StepTypeCall,
 		dsl.StepTypeDelay,
 		dsl.StepTypeIf,
@@ -357,6 +358,7 @@ func (e *stateEngine) buildForeachLaunchRecords(
 	childDefs, err := branchChildrenFromStep(
 		scopeCtx.parentStep,
 		json.RawMessage(scopeCtx.parentExec.InputPayload),
+		scopeCtx.parentInstance.Vars,
 		scopeCtx.parentInstance.ID,
 		scopeCtx.parentExec.ID,
 	)
@@ -456,7 +458,12 @@ func (e *stateEngine) completeBranchScopeExecution(
 	failedCount int,
 	successOutput json.RawMessage,
 ) error {
-	resumeErr := e.ResumeWaitingExecution(ctx, scopeCtx.parentExec.ID, successOutput)
+	carried, err := branchCarriedVars(scopeCtx.children)
+	if err != nil {
+		return err
+	}
+
+	resumeErr := e.resumeWaitingExecution(ctx, scopeCtx.parentExec.ID, successOutput, carried)
 	if resumeErr != nil && !errors.Is(resumeErr, ErrStaleExecution) {
 		return resumeErr
 	}
@@ -531,6 +538,7 @@ func parallelChildrenFromStep(
 func foreachChildrenFromStep(
 	step *dsl.StepSpec,
 	inputPayload json.RawMessage,
+	instanceVars string,
 	parentInstanceID string,
 	parentExecutionID string,
 ) ([]scopedChildDefinition, error) {
@@ -541,7 +549,7 @@ func foreachChildrenFromStep(
 		return nil, nil
 	}
 
-	items, err := evaluateForeachItems(step.Foreach, inputPayload)
+	items, err := evaluateForeachItems(step.Foreach, inputPayload, instanceVars)
 	if err != nil {
 		return nil, err
 	}
@@ -600,6 +608,7 @@ func (e *stateEngine) buildScopedChildRecord(
 		ParentInstanceID:  parent.ID,
 		ParentExecutionID: parentExec.ID,
 		CorrelationKey:    parent.CorrelationKey,
+		Vars:              parent.Vars,
 		ScopeType:         string(parentStep.Type),
 		ScopeParentState:  parentStep.ID,
 		ScopeEntryState:   child.EntryState,
@@ -659,7 +668,7 @@ func augmentInputPayload(base json.RawMessage, extra map[string]any) (json.RawMe
 	return payload, nil
 }
 
-func evaluateForeachItems(spec *dsl.ForeachSpec, inputPayload json.RawMessage) ([]any, error) {
+func evaluateForeachItems(spec *dsl.ForeachSpec, inputPayload json.RawMessage, instanceVars string) ([]any, error) {
 	payload := map[string]any{}
 	if len(inputPayload) > 0 {
 		if err := json.Unmarshal(inputPayload, &payload); err != nil {
@@ -681,6 +690,12 @@ func evaluateForeachItems(spec *dsl.ForeachSpec, inputPayload json.RawMessage) (
 	for key, value := range payload {
 		vars[key] = value
 	}
+
+	stored, err := decodeInstanceVars(instanceVars)
+	if err != nil {
+		return nil, err
+	}
+	vars["vars"] = stored
 
 	value, err := dsl.EvaluateExpression(env, ast, vars)
 	if err != nil {

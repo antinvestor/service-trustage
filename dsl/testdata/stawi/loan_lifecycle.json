@@ -1,0 +1,744 @@
+{
+  "version": "1.2",
+  "name": "loan_lifecycle",
+  "description": "Stawi §10.3 loan_lifecycle. Drives a Loan (§15 credit) from submission through the governance decision (a separate proposal_lifecycle instance), funding (§12.3 CreditModule under GOVERNANCE_EXECUTION or POLICY_EXECUTION within cap), scheduled repayment pulls (STANDING_AUTHORIZATION), and result-bound accrual/default evaluation (P25: penalties only with member-caused FailureCause). finance validates every transition; timers are pinned policy parameters (P10).",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "loan_id": "id",
+    "borrower_member_id": "id",
+    "proposal_max_open_seconds": "uint64 (GovernanceLiveness.proposal_max_open, pinned; bounds the approval wait)",
+    "repayment_grace_days": "uint32 (RepaymentPolicy.grace_days, pinned)"
+  },
+  "config": {
+    "spec": "§10.3, §12.3, §15 credit, §6.4, P25",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "proposal_max_open_seconds",
+      "repayment_grace_days"
+    ],
+    "process_commands": [
+      "finance.v1.CreditService/FundLoan",
+      "finance.v1.CreditService/CollectRepayment",
+      "finance.v1.CreditService/AdvanceLoan"
+    ],
+    "terminal_states": [
+      "eligibility_failed",
+      "rejected",
+      "cancelled",
+      "decision_window_elapsed",
+      "funding_failed",
+      "paid",
+      "defaulted",
+      "restructured",
+      "written_off",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "loan.submitted",
+      "key": "payload.loan_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "loan.approved",
+      "key": "payload.loan_id"
+    },
+    {
+      "event_type": "loan.rejected",
+      "key": "payload.loan_id"
+    },
+    {
+      "event_type": "loan.eligibility_failed",
+      "key": "payload.loan_id"
+    },
+    {
+      "event_type": "loan.cancelled",
+      "key": "payload.loan_id"
+    },
+    {
+      "event_type": "intent.finalized",
+      "instance": "payload.meta.instance_id"
+    },
+    {
+      "event_type": "intent.failed",
+      "instance": "payload.meta.instance_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "submitted",
+      "type": "sequence",
+      "name": "SUBMITTED — §15: eligibility and approval are finance/governance decisions (secret ballot via proposal_lifecycle, §11.3); this process waits for the decision fact",
+      "sequence": {
+        "steps": [
+          {
+            "id": "submitted_wait",
+            "type": "parallel",
+            "name": "race: loan.approved | loan.rejected | loan.eligibility_failed | loan.cancelled | proposal_max_open elapses",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "submitted_sig_approved",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "loan.approved",
+                    "output_var": "sig_approved"
+                  }
+                },
+                {
+                  "id": "submitted_sig_rejected",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "loan.rejected",
+                    "output_var": "sig_rejected"
+                  }
+                },
+                {
+                  "id": "submitted_sig_eligibility_failed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "loan.eligibility_failed",
+                    "output_var": "sig_eligibility_failed"
+                  }
+                },
+                {
+                  "id": "submitted_sig_cancelled",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "loan.cancelled",
+                    "output_var": "sig_cancelled"
+                  }
+                },
+                {
+                  "id": "submitted_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.proposal_max_open_seconds))"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "submitted_decide",
+            "type": "call",
+            "name": "route on the decision fact received",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "loan decision received",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_approved)",
+                "target": "funding"
+              },
+              {
+                "condition": "has(vars.sig_rejected)",
+                "target": "rejected"
+              },
+              {
+                "condition": "has(vars.sig_eligibility_failed)",
+                "target": "eligibility_failed"
+              },
+              {
+                "condition": "has(vars.sig_cancelled)",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "decision_window_elapsed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "funding",
+      "type": "sequence",
+      "name": "APPROVED → FUNDING — §12.3: FundLoan builds the LOAN_FUNDING intent (GOVERNANCE_EXECUTION, or POLICY_EXECUTION within cap) and the schedule",
+      "sequence": {
+        "steps": [
+          {
+            "id": "funding_fund",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.CreditService",
+                "rpc": "FundLoan",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "loan_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              },
+              "output_var": "fund"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": "funding_finality",
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "funding_finality",
+      "type": "sequence",
+      "name": "FUNDING_PENDING — §6.4: wait for the funding intent's terminal settlement fact (FINAL | FAILED); finance signals this instance by intent_id",
+      "sequence": {
+        "steps": [
+          {
+            "id": "funding_finality_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "funding_sig_final",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.finalized",
+                    "output_var": "sig_funding_final"
+                  }
+                },
+                {
+                  "id": "funding_sig_failed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.failed",
+                    "output_var": "sig_funding_failed"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "funding_finality_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "funding intent reached a terminal settlement state",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_funding_final)",
+                "target": "funded"
+              },
+              {
+                "condition": "has(vars.sig_funding_failed)",
+                "target": "funding_failed"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "funded",
+      "type": "sequence",
+      "name": "FUNDED — §12.3 repayment: per schedule row, build the STANDING_AUTHORIZATION pull at due_at, then after grace evaluate accrual/default under POLICY_EXECUTION with the recorded FailureCause (P25, §5.4 paused clocks shift effective_due_at)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "funded_rows",
+            "type": "foreach",
+            "foreach": {
+              "items": "vars.fund.schedule.rows",
+              "item_var": "item",
+              "index_var": "row_index",
+              "max_concurrency": 0,
+              "steps": [
+                {
+                  "id": "funded_row_due",
+                  "type": "delay",
+                  "name": "wait until the row's effective due date (domain fact from the schedule)",
+                  "delay": {
+                    "until": "timestamp(item.effective_due_at)"
+                  }
+                },
+                {
+                  "id": "funded_row_collect",
+                  "type": "call",
+                  "name": "CollectRepayment: build the repayment pull; the member's account is the final authority (§12.3)",
+                  "call": {
+                    "action": "connect.call",
+                    "input": {
+                      "service": "finance.v1.CreditService",
+                      "rpc": "CollectRepayment",
+                      "request": {
+                        "process": {
+                          "instance_id": "{{ metadata.instance_id }}",
+                          "execution_id": "{{ metadata.execution_id }}",
+                          "workflow": "loan_lifecycle",
+                          "constitution_hash": "{{ payload.constitution_hash }}",
+                          "security_policy_hash": "{{ payload.security_policy_hash }}"
+                        },
+                        "schedule_row_id": "{{ item.schedule_row_id }}"
+                      }
+                    },
+                    "output_var": "repayment"
+                  },
+                  "retry": {
+                    "max_attempts": 3,
+                    "initial_interval": "5s",
+                    "backoff_coefficient": 2.0,
+                    "max_interval": "1m"
+                  },
+                  "on_failure": "stalled"
+                },
+                {
+                  "id": "funded_row_grace",
+                  "type": "delay",
+                  "name": "grace (pinned RepaymentPolicy.grace_days) before any accrual or default evaluation",
+                  "delay": {
+                    "until": "timestamp(int(timestamp(item.effective_due_at)) + int(payload.repayment_grace_days) * 86400)"
+                  }
+                },
+                {
+                  "id": "funded_row_evaluate",
+                  "type": "call",
+                  "name": "AdvanceLoan: accrue interest / declare default / call guarantees only with member-caused evidence (P25)",
+                  "call": {
+                    "action": "connect.call",
+                    "input": {
+                      "service": "finance.v1.CreditService",
+                      "rpc": "AdvanceLoan",
+                      "request": {
+                        "process": {
+                          "instance_id": "{{ metadata.instance_id }}",
+                          "execution_id": "{{ metadata.execution_id }}",
+                          "workflow": "loan_lifecycle",
+                          "constitution_hash": "{{ payload.constitution_hash }}",
+                          "security_policy_hash": "{{ payload.security_policy_hash }}"
+                        },
+                        "loan_id": "{{ payload.loan_id }}"
+                      }
+                    },
+                    "output_var": "loan_eval"
+                  },
+                  "retry": {
+                    "max_attempts": 3,
+                    "initial_interval": "5s",
+                    "backoff_coefficient": 2.0,
+                    "max_interval": "1m"
+                  },
+                  "on_failure": "stalled"
+                },
+                {
+                  "id": "funded_row_check",
+                  "type": "if",
+                  "name": "loan left FUNDED mid-schedule → settle now",
+                  "if": {
+                    "expr": "has(vars.loan_eval) && vars.loan_eval.loan.state != 'LOAN_STATE_FUNDED'",
+                    "then": [
+                      {
+                        "id": "funded_row_leave",
+                        "type": "call",
+                        "call": {
+                          "action": "log.entry",
+                          "input": {
+                            "level": "info",
+                            "message": "loan changed state mid-schedule",
+                            "data": {
+                              "loan_id": "{{ payload.loan_id }}"
+                            }
+                          }
+                        },
+                        "on_success": "settle"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "settle",
+      "type": "sequence",
+      "name": "SETTLING — schedule exhausted (or state changed): AdvanceLoan reports the loan's terminal state",
+      "sequence": {
+        "steps": [
+          {
+            "id": "settle_advance",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.CreditService",
+                "rpc": "AdvanceLoan",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "loan_lifecycle",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              },
+              "output_var": "loan_final"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.loan.state == 'LOAN_STATE_PAID'",
+                "target": "paid"
+              },
+              {
+                "condition": "output.loan.state == 'LOAN_STATE_DEFAULTED'",
+                "target": "defaulted"
+              },
+              {
+                "condition": "output.loan.state == 'LOAN_STATE_RESTRUCTURED'",
+                "target": "restructured"
+              },
+              {
+                "condition": "output.loan.state == 'LOAN_STATE_WRITTEN_OFF'",
+                "target": "written_off"
+              },
+              {
+                "condition": "output.loan.state == 'LOAN_STATE_CANCELLED'",
+                "target": "cancelled"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "eligibility_failed",
+      "type": "sequence",
+      "name": "ELIGIBILITY_FAILED (terminal) — §10.1 loan.eligibility_failed",
+      "sequence": {
+        "steps": [
+          {
+            "id": "eligibility_failed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "loan eligibility failed",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "sequence",
+      "name": "REJECTED (terminal) — §11.3 governance rejected the loan proposal",
+      "sequence": {
+        "steps": [
+          {
+            "id": "rejected_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "loan rejected",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cancelled",
+      "type": "sequence",
+      "name": "CANCELLED (terminal) — §10.1 loan.cancelled",
+      "sequence": {
+        "steps": [
+          {
+            "id": "cancelled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "loan cancelled",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "decision_window_elapsed",
+      "type": "sequence",
+      "name": "DECISION_WINDOW_ELAPSED (terminal) — §11.2 proposal_max_open elapsed without a decision fact; proposal_lifecycle owns expiry, this process records and stops",
+      "sequence": {
+        "steps": [
+          {
+            "id": "decision_window_elapsed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "no loan decision within proposal_max_open; no transition forced",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "funding_failed",
+      "type": "sequence",
+      "name": "FUNDING_FAILED (terminal) — §6.4 funding intent FAILED with a FailureCause; re-funding needs a new authorization (P21), never a process retry",
+      "sequence": {
+        "steps": [
+          {
+            "id": "funding_failed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "funding intent failed; no re-funding forced",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "paid",
+      "type": "sequence",
+      "name": "PAID (terminal) — §10.1 loan.paid",
+      "sequence": {
+        "steps": [
+          {
+            "id": "paid_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "loan paid",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "defaulted",
+      "type": "sequence",
+      "name": "DEFAULTED (terminal) — P25: only with on-chain member-caused FailureCause; guarantees called under POLICY_EXECUTION",
+      "sequence": {
+        "steps": [
+          {
+            "id": "defaulted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "loan defaulted",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "restructured",
+      "type": "sequence",
+      "name": "RESTRUCTURED (terminal for this instance) — §10.1 loan.restructured; a new schedule starts a new instance under current policy hashes",
+      "sequence": {
+        "steps": [
+          {
+            "id": "restructured_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "loan restructured; new schedule runs as a new instance",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "written_off",
+      "type": "sequence",
+      "name": "WRITTEN_OFF (terminal) — §14.2 5200 loan loss expense by governance decision",
+      "sequence": {
+        "steps": [
+          {
+            "id": "written_off_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "loan written off",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop, operators resume with RetryExecution",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "loan_id": "{{ payload.loan_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

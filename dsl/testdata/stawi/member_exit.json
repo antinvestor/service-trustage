@@ -1,0 +1,446 @@
+{
+  "version": "1.2",
+  "name": "member_exit",
+  "description": "Stawi §10.3 member_exit. Drives a Membership from EXITING to EXITED (§15 rooms): the constitution's exit notice (Exit.notice), the refund timelock (Exit.refund_timelock_seconds), then AdvanceMemberExit settles the entitlement and builds the MEMBER_REFUND intent (§12.3: MembershipModule under GOVERNANCE_EXECUTION or the pinned process proof), and the refund's terminal settlement fact. Timers are pinned at start (P10).",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "member_id": "id",
+    "exit_id": "id",
+    "exit_notice_seconds": "uint64 (Exit.notice, pinned)",
+    "refund_timelock_seconds": "uint64 (Exit.refund_timelock_seconds, pinned)"
+  },
+  "config": {
+    "spec": "§10.3, §12.3, §15 rooms, §6.4",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "exit_notice_seconds",
+      "refund_timelock_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.RoomService/AdvanceMemberExit"
+    ],
+    "terminal_states": [
+      "exited",
+      "withdrawn",
+      "suspended",
+      "refund_failed",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "member.exit_requested",
+      "key": "payload.member_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "member.exited",
+      "key": "payload.member_id"
+    },
+    {
+      "event_type": "member.suspended",
+      "key": "payload.member_id"
+    },
+    {
+      "event_type": "intent.finalized",
+      "instance": "payload.meta.instance_id"
+    },
+    {
+      "event_type": "intent.failed",
+      "instance": "payload.meta.instance_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "notice",
+      "type": "sequence",
+      "name": "NOTICE — Exit.notice (pinned): the member remains EXITING and obligations continue; an early member.exited (governance removal, §12.3 add/remove member) or member.suspended ends the wait",
+      "sequence": {
+        "steps": [
+          {
+            "id": "notice_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "notice_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.exit_notice_seconds))"
+                  }
+                },
+                {
+                  "id": "notice_sig_exited",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "member.exited",
+                    "output_var": "sig_exited"
+                  }
+                },
+                {
+                  "id": "notice_sig_suspended",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "member.suspended",
+                    "output_var": "sig_suspended"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "notice_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "exit notice ended",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_exited)",
+                "target": "withdrawn"
+              },
+              {
+                "condition": "has(vars.sig_suspended)",
+                "target": "suspended"
+              },
+              {
+                "condition": "",
+                "target": "timelock"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "timelock",
+      "type": "sequence",
+      "name": "REFUND_TIMELOCK — Exit.refund_timelock_seconds (pinned): governance may still cancel the exit at threshold before the refund is built",
+      "sequence": {
+        "steps": [
+          {
+            "id": "timelock_timer",
+            "type": "delay",
+            "delay": {
+              "until": "timestamp(int(now) + int(payload.refund_timelock_seconds))"
+            }
+          },
+          {
+            "id": "timelock_done",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "refund timelock elapsed",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": "settling"
+          }
+        ]
+      }
+    },
+    {
+      "id": "settling",
+      "type": "sequence",
+      "name": "SETTLING — §12.3 member refund: AdvanceMemberExit computes the settled entitlement (2300 refunds payable, §14.2) and builds the MEMBER_REFUND intent bounded by that entitlement",
+      "sequence": {
+        "steps": [
+          {
+            "id": "settling_advance",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.RoomService",
+                "rpc": "AdvanceMemberExit",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "member_exit",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "room_id": "{{ payload.room_id }}",
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              },
+              "output_var": "exit"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.member_state == 'MEMBER_STATE_EXITED'",
+                "target": "exited"
+              },
+              {
+                "condition": "output.member_state == 'MEMBER_STATE_EXITING' && has(output.refund_intent)",
+                "target": "refunding"
+              },
+              {
+                "condition": "output.member_state == 'MEMBER_STATE_ACTIVE'",
+                "target": "withdrawn"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "refunding",
+      "type": "sequence",
+      "name": "REFUND_PENDING — §6.4: wait for the refund intent's terminal fact; finance signals this instance by intent_id",
+      "sequence": {
+        "steps": [
+          {
+            "id": "refunding_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "refunding_sig_final",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.finalized",
+                    "output_var": "sig_refund_final"
+                  }
+                },
+                {
+                  "id": "refunding_sig_failed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.failed",
+                    "output_var": "sig_refund_failed"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "refunding_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "refund intent reached a terminal state",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_refund_final)",
+                "target": "exited"
+              },
+              {
+                "condition": "has(vars.sig_refund_failed)",
+                "target": "refund_failed"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "exited",
+      "type": "sequence",
+      "name": "EXITED (terminal) — §10.1 member.exited; standing authorizations for the room are revoked by finance",
+      "sequence": {
+        "steps": [
+          {
+            "id": "exited_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "member exited",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "withdrawn",
+      "type": "sequence",
+      "name": "WITHDRAWN (terminal) — the exit was cancelled or the member was removed by governance during notice; finance owns that fact",
+      "sequence": {
+        "steps": [
+          {
+            "id": "withdrawn_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "exit ended by another fact; no refund built by this process",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "suspended",
+      "type": "sequence",
+      "name": "SUSPENDED (terminal) — §10.1 member.suspended during notice; exit resumes as a new instance when governance decides",
+      "sequence": {
+        "steps": [
+          {
+            "id": "suspended_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "member suspended during exit notice; process stops",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "refund_failed",
+      "type": "sequence",
+      "name": "REFUND_FAILED (terminal) — §6.4 the refund intent FAILED; a new refund needs a new authorization (P21). Record and stop.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "refund_failed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "refund intent failed; no retry forced",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "exit_id": "{{ payload.exit_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

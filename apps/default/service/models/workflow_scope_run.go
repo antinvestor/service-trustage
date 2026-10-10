@@ -29,7 +29,7 @@ type WorkflowScopeRun struct {
 	ParentState       string `gorm:"column:parent_state;not null"`
 	ScopeType         string `gorm:"column:scope_type;not null"`
 	Status            string `gorm:"column:status;not null;default:running"`
-	WaitAll           bool   `gorm:"column:wait_all;not null;default:true"`
+	WaitAll           bool   `gorm:"column:wait_all;not null;default:false"`
 
 	TotalChildren     int `gorm:"column:total_children;not null;default:0"`
 	CompletedChildren int `gorm:"column:completed_children;not null;default:0"`

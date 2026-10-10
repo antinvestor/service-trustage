@@ -1,0 +1,274 @@
+{
+  "version": "1.2",
+  "name": "dispute_resolution",
+  "description": "Stawi §10.3 dispute_resolution. Process time for a treasury Dispute (§15: OPEN → RESOLVED → CLOSED). Resolution is a human/governance act (ResolveDispute, optionally through a proposal; any compensating movement is a new FinancialIntent, §6.4) and closing is CloseDispute. finance.proto exposes no process command for disputes, so this contract only waits for the domain facts, bounds the open window with the pinned dispute_max_open_seconds, and records overdue disputes without forcing any transition.",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "room_id": "id",
+    "dispute_id": "id",
+    "disputed_intent_id": "id",
+    "dispute_max_open_seconds": "uint64 (pinned; GovernanceLiveness.proposal_max_open applied to the dispute's proposal, see README gaps)"
+  },
+  "config": {
+    "spec": "§10.3, §15 treasury, §6.4, §10.1",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "dispute_max_open_seconds"
+    ],
+    "process_commands": [],
+    "terminal_states": [
+      "closed",
+      "overdue",
+      "halted"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "dispute.opened",
+      "key": "payload.dispute_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "dispute.resolved",
+      "key": "payload.dispute_id"
+    },
+    {
+      "event_type": "dispute.closed",
+      "key": "payload.dispute_id"
+    },
+    {
+      "event_type": "intent.failed",
+      "instance": "payload.meta.instance_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "open",
+      "type": "sequence",
+      "name": "OPEN — §15 DisputeState OPEN: wait for dispute.resolved (human/governance) or the pinned open window",
+      "sequence": {
+        "steps": [
+          {
+            "id": "open_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "open_sig_resolved",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "dispute.resolved",
+                    "output_var": "sig_resolved"
+                  }
+                },
+                {
+                  "id": "open_sig_closed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "dispute.closed",
+                    "output_var": "sig_closed_early"
+                  }
+                },
+                {
+                  "id": "open_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.dispute_max_open_seconds))"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "open_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "dispute open wait ended",
+                "data": {
+                  "dispute_id": "{{ payload.dispute_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_closed_early)",
+                "target": "closed"
+              },
+              {
+                "condition": "has(vars.sig_resolved)",
+                "target": "resolved"
+              },
+              {
+                "condition": "",
+                "target": "overdue"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "resolved",
+      "type": "sequence",
+      "name": "RESOLVED — §15: outcome recorded; if the resolution carries a compensating intent (resolution_intent_id) its finality is a settlement fact, and closing follows dispute.closed",
+      "sequence": {
+        "steps": [
+          {
+            "id": "resolved_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "resolved_sig_closed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "dispute.closed",
+                    "output_var": "sig_closed"
+                  }
+                },
+                {
+                  "id": "resolved_sig_intent_failed",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "intent.failed",
+                    "output_var": "sig_resolution_failed"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "resolved_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "dispute resolution wait ended",
+                "data": {
+                  "dispute_id": "{{ payload.dispute_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_closed)",
+                "target": "closed"
+              },
+              {
+                "condition": "has(vars.sig_resolution_failed)",
+                "target": "halted"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "closed",
+      "type": "sequence",
+      "name": "CLOSED (terminal) — §10.1 dispute.closed",
+      "sequence": {
+        "steps": [
+          {
+            "id": "closed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "dispute closed",
+                "data": {
+                  "dispute_id": "{{ payload.dispute_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "overdue",
+      "type": "sequence",
+      "name": "OVERDUE (terminal) — the pinned window elapsed without resolution; the dispute stays OPEN in finance (no process command exists to escalate it). Record for operators/governance and stop.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "overdue_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "dispute unresolved within window; no transition forced",
+                "data": {
+                  "dispute_id": "{{ payload.dispute_id }}",
+                  "room_id": "{{ payload.room_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: the resolution intent FAILED or an unexpected fact arrived; a compensating movement needs a new intent (§6.4). Record and stop.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: resolution not completed; no transition forced",
+                "data": {
+                  "dispute_id": "{{ payload.dispute_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

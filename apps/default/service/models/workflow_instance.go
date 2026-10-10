@@ -44,16 +44,19 @@ type WorkflowInstance struct { //nolint:recvcheck // TableName() must be value r
 	TriggerEventID  string                 `gorm:"column:trigger_event_id"`
 	// CorrelationKey is the value of the starting trigger's key expression;
 	// key signal routes deliver to running instances whose key matches.
-	CorrelationKey    string     `gorm:"column:correlation_key"`
-	ParentInstanceID  string     `gorm:"column:parent_instance_id"`
-	ParentExecutionID string     `gorm:"column:parent_execution_id"`
-	ScopeType         string     `gorm:"column:scope_type"`
-	ScopeParentState  string     `gorm:"column:scope_parent_state"`
-	ScopeEntryState   string     `gorm:"column:scope_entry_state"`
-	ScopeIndex        int        `gorm:"column:scope_index;not null;default:0"`
-	Metadata          string     `gorm:"column:metadata;type:jsonb;default:'{}'"`
-	StartedAt         *time.Time `gorm:"column:started_at"`
-	FinishedAt        *time.Time `gorm:"column:finished_at"`
+	CorrelationKey    string `gorm:"column:correlation_key"`
+	ParentInstanceID  string `gorm:"column:parent_instance_id"`
+	ParentExecutionID string `gorm:"column:parent_execution_id"`
+	ScopeType         string `gorm:"column:scope_type"`
+	ScopeParentState  string `gorm:"column:scope_parent_state"`
+	ScopeEntryState   string `gorm:"column:scope_entry_state"`
+	ScopeIndex        int    `gorm:"column:scope_index;not null;default:0"`
+	Metadata          string `gorm:"column:metadata;type:jsonb;default:'{}'"`
+	// Vars holds every output_var value set so far: {"<output_var>": output}.
+	// Templates and expressions read it as vars.<output_var>.
+	Vars       string     `gorm:"column:vars;type:jsonb;default:'{}'"`
+	StartedAt  *time.Time `gorm:"column:started_at"`
+	FinishedAt *time.Time `gorm:"column:finished_at"`
 }
 
 // TableName returns the database table name.

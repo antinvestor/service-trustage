@@ -1,0 +1,129 @@
+{
+  "version": "1.2",
+  "name": "chain_timer",
+  "description": "Scale spec §9 chain_timer. One instance per piece of due-time work the chain made due: settlement publishes chain.timer_scheduled when it sees the chain event (a cycle's end, a loan that can default, a delegation's activation or expiry, a member holding credit at a cycle's start). The instance waits until due_at and calls SettlementService.RunDue once. Settlement simulates the call and relays it only if it would succeed; work the chain says is not yet due is rescheduled by settlement as a new timer, so this instance never loops and nothing polls rooms. Protocol-scoped: it acts on the chain's own schedule, not on a room's pinned policy.",
+  "input": {
+    "custody": "0x-hex (the room's custody)",
+    "kind": "cycle_close | member_settle | loan_default | loan_recover | delegation_activate | delegation_expire",
+    "ref": "identifies the work; RunDue is idempotent by (kind, ref)",
+    "due_at": "RFC 3339 timestamp: when the chain says the work is due"
+  },
+  "config": {
+    "spec": "scale spec §9",
+    "scope": "protocol",
+    "pinned_parameters": [
+      "due_at"
+    ],
+    "process_commands": [
+      "settlement.v1.SettlementService/RunDue"
+    ],
+    "terminal_states": [
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "chain.timer_scheduled"
+    }
+  ],
+  "steps": [
+    {
+      "id": "waiting",
+      "type": "sequence",
+      "name": "WAITING — until the time the chain named",
+      "sequence": {
+        "steps": [
+          {
+            "id": "waiting_until_due",
+            "type": "delay",
+            "delay": {
+              "until": "timestamp(payload.due_at)"
+            },
+            "on_success": "running"
+          }
+        ]
+      }
+    },
+    {
+      "id": "running",
+      "type": "sequence",
+      "name": "RUNNING — settlement simulates and relays the call once (ENQUEUED), reschedules it as a new timer (NOT_DUE), or finds it done (NOTHING_TO_DO)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "running_run_due",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "settlement.v1.SettlementService",
+                "rpc": "RunDue",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "chain_timer"
+                  },
+                  "kind": "{{ payload.kind }}",
+                  "ref": "{{ payload.ref }}"
+                }
+              },
+              "output_var": "due"
+            },
+            "retry": {
+              "max_attempts": 5,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "5m"
+            },
+            "on_success": "end",
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — RunDue failed after retries; the next chain event about this work sets a new timer, and anyone may still make the call",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "chain timer stalled: RunDue failed after retries",
+                "data": {
+                  "kind": "{{ payload.kind }}",
+                  "ref": "{{ payload.ref }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "chain timer done",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -38,7 +38,7 @@ func TestBranchChildrenFromStepParallelAndForeach(t *testing.T) {
 		},
 	}
 
-	children, err := branchChildrenFromStep(parallelStep, json.RawMessage(`{"value":1}`), "inst-1", "exec-1")
+	children, err := branchChildrenFromStep(parallelStep, json.RawMessage(`{"value":1}`), "", "inst-1", "exec-1")
 	if err != nil {
 		t.Fatalf("branchChildrenFromStep(parallel) error = %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBranchChildrenFromStepParallelAndForeach(t *testing.T) {
 		},
 	}
 
-	children, err = branchChildrenFromStep(foreachStep, json.RawMessage(`{"items":["a","b"]}`), "inst-1", "exec-1")
+	children, err = branchChildrenFromStep(foreachStep, json.RawMessage(`{"items":["a","b"]}`), "", "inst-1", "exec-1")
 	if err != nil {
 		t.Fatalf("branchChildrenFromStep(foreach) error = %v", err)
 	}
@@ -80,7 +80,13 @@ func TestBranchChildrenFromStepParallelAndForeach(t *testing.T) {
 func TestBranchChildrenHelpersAndScopeSuccess(t *testing.T) {
 	t.Parallel()
 
-	if _, err := branchChildrenFromStep(&dsl.StepSpec{Type: dsl.StepTypeParallel}, nil, "inst", "exec"); err == nil {
+	if _, err := branchChildrenFromStep(
+		&dsl.StepSpec{Type: dsl.StepTypeParallel},
+		nil,
+		"",
+		"inst",
+		"exec",
+	); err == nil {
 		t.Fatal("expected missing parallel config error")
 	}
 	if _, err := branchChildrenFromStep(&dsl.StepSpec{
@@ -89,7 +95,7 @@ func TestBranchChildrenHelpersAndScopeSuccess(t *testing.T) {
 			Items: "payload.value",
 			Steps: []*dsl.StepSpec{{ID: "child", Type: dsl.StepTypeCall}},
 		},
-	}, json.RawMessage(`{"value":"x"}`), "inst", "exec"); err == nil {
+	}, json.RawMessage(`{"value":"x"}`), "", "inst", "exec"); err == nil {
 		t.Fatal("expected foreach list error")
 	}
 

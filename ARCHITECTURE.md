@@ -174,6 +174,16 @@ The biggest long-term failure in automation systems is "states passing arbitrary
 
 **State output is the only legal input for the next state.** There is no ambient context, no global variables, no implicit data inheritance.
 
+> **As implemented (v0.5.1):** a step's `payload` is the instance input,
+> carried unchanged from step to step. A step's output reaches later steps only
+> through a declared `output_var`: the commit stores it in
+> `workflow_instances.vars` (same transaction, under the instance revision
+> CAS), and every later template, expression and transition reads it as
+> `vars.<output_var>`. Templates are resolved once, by the worker, when the step
+> runs; the commit only resolves the next step. Branch scopes copy the parent's
+> vars to their children and merge completed branches' vars back on completion.
+> See `docs/dsl-reference.md` (Instance Vars).
+
 ```sql
 -- Stores the validated output of each state execution
 CREATE TABLE workflow_state_outputs (

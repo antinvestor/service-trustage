@@ -1,0 +1,350 @@
+{
+  "version": "1.2",
+  "name": "account_recovery",
+  "description": "Stawi §10.3 account_recovery. Process time for the §8.5 contest model (P24): k-of-n guardians proposed a new key; after recovery_delay (72 h default) AdvanceRecovery executes (recovery_epoch++). A device may contest once: the account becomes GUARDIAN_FROZEN, the delay extends to contest_delay (7 d) and the threshold rises to min(k+1, n). If the raised threshold is met, recovery executes; otherwise it lapses and the freeze remains until guardians lift it. This process never lifts a freeze, never cancels, never counts approvals; RecoveryModule and finance do. Timers are pinned at start (P10).",
+  "input": {
+    "constitution_hash": "bytes32-hex",
+    "finance_policy_hash": "bytes32-hex",
+    "security_policy_hash": "bytes32-hex",
+    "policy_epoch": "uint64",
+    "account_id": "id",
+    "recovery_request_id": "id",
+    "recovery_delay_seconds": "uint64 (§8.5 protocol default 72 h, pinned from the security policy / manifest)",
+    "contest_delay_seconds": "uint64 (§8.5 protocol default 7 d, pinned from the security policy / manifest)"
+  },
+  "config": {
+    "spec": "§10.3, §8.5, P24, §6.5",
+    "pinned_parameters": [
+      "constitution_hash",
+      "finance_policy_hash",
+      "security_policy_hash",
+      "policy_epoch",
+      "recovery_delay_seconds",
+      "contest_delay_seconds"
+    ],
+    "process_commands": [
+      "finance.v1.IdentityService/AdvanceRecovery"
+    ],
+    "terminal_states": [
+      "recovered",
+      "lapsed",
+      "halted",
+      "stalled"
+    ],
+    "owner": "stawi"
+  },
+  "triggers": [
+    {
+      "event_type": "account.recovery_requested",
+      "key": "payload.account_id"
+    }
+  ],
+  "signals": [
+    {
+      "event_type": "account.frozen",
+      "key": "payload.account_id"
+    },
+    {
+      "event_type": "account.recovered",
+      "key": "payload.account_id"
+    }
+  ],
+  "steps": [
+    {
+      "id": "pending",
+      "type": "sequence",
+      "name": "PENDING — §8.5: recovery_delay (pinned) during which the current device may contest once (signalled as account.frozen with reason GUARDIAN_FROZEN, see README gaps) or the request may already be executed on-chain",
+      "sequence": {
+        "steps": [
+          {
+            "id": "pending_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "pending_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.recovery_delay_seconds))"
+                  }
+                },
+                {
+                  "id": "pending_sig_contested",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "account.frozen",
+                    "output_var": "sig_contested"
+                  }
+                },
+                {
+                  "id": "pending_sig_recovered",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "account.recovered",
+                    "output_var": "sig_recovered"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "pending_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "recovery delay ended or contested",
+                "data": {
+                  "recovery_request_id": "{{ payload.recovery_request_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_recovered)",
+                "target": "recovered"
+              },
+              {
+                "condition": "has(vars.sig_contested)",
+                "target": "contested"
+              },
+              {
+                "condition": "",
+                "target": "executing"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "contested",
+      "type": "sequence",
+      "name": "CONTESTED — §8.5: account GUARDIAN_FROZEN; delay extends to contest_delay (pinned); threshold min(k+1, n) collected after the contest. No device action can stop it once met.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "contested_wait",
+            "type": "parallel",
+            "parallel": {
+              "wait_all": false,
+              "steps": [
+                {
+                  "id": "contested_timer",
+                  "type": "delay",
+                  "delay": {
+                    "until": "timestamp(int(now) + int(payload.contest_delay_seconds))"
+                  }
+                },
+                {
+                  "id": "contested_sig_recovered",
+                  "type": "signal_wait",
+                  "signal_wait": {
+                    "signal_name": "account.recovered",
+                    "output_var": "sig_recovered_after_contest"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "contested_route",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "contest window ended",
+                "data": {
+                  "recovery_request_id": "{{ payload.recovery_request_id }}"
+                }
+              }
+            },
+            "on_success": [
+              {
+                "condition": "has(vars.sig_recovered_after_contest)",
+                "target": "recovered"
+              },
+              {
+                "condition": "",
+                "target": "executing"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "executing",
+      "type": "sequence",
+      "name": "EXECUTING — AdvanceRecovery: execute (threshold met, recovery_epoch++) or lapse (threshold not met; freeze remains for guardians to lift). Authority is evaluated at execution state (P9).",
+      "sequence": {
+        "steps": [
+          {
+            "id": "executing_advance",
+            "type": "call",
+            "call": {
+              "action": "connect.call",
+              "input": {
+                "service": "finance.v1.IdentityService",
+                "rpc": "AdvanceRecovery",
+                "request": {
+                  "process": {
+                    "instance_id": "{{ metadata.instance_id }}",
+                    "execution_id": "{{ metadata.execution_id }}",
+                    "workflow": "account_recovery",
+                    "constitution_hash": "{{ payload.constitution_hash }}",
+                    "security_policy_hash": "{{ payload.security_policy_hash }}"
+                  },
+                  "recovery_request_id": "{{ payload.recovery_request_id }}"
+                }
+              },
+              "output_var": "recovery"
+            },
+            "retry": {
+              "max_attempts": 3,
+              "initial_interval": "5s",
+              "backoff_coefficient": 2.0,
+              "max_interval": "1m"
+            },
+            "on_success": [
+              {
+                "condition": "output.recovery.state == 'RECOVERY_STATE_EXECUTED'",
+                "target": "recovered"
+              },
+              {
+                "condition": "output.recovery.state == 'RECOVERY_STATE_LAPSED'",
+                "target": "lapsed"
+              },
+              {
+                "condition": "output.recovery.state == 'RECOVERY_STATE_CONTESTED'",
+                "target": "contested"
+              },
+              {
+                "condition": "",
+                "target": "halted"
+              }
+            ],
+            "on_failure": "stalled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "recovered",
+      "type": "sequence",
+      "name": "RECOVERED (terminal) — §8.5 after recovery: recovery_epoch bumped; standing authorizations under the old epoch are invalid; plans stay PAUSED until re-granted (P25 suspension, 14 d)",
+      "sequence": {
+        "steps": [
+          {
+            "id": "recovered_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "info",
+                "message": "recovery executed",
+                "data": {
+                  "recovery_request_id": "{{ payload.recovery_request_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lapsed",
+      "type": "sequence",
+      "name": "LAPSED (terminal) — §8.5: raised threshold not met in the window; GUARDIAN_FROZEN remains until guardians lift it. This process cannot lift it.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "lapsed_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "recovery lapsed; freeze remains for guardians",
+                "data": {
+                  "recovery_request_id": "{{ payload.recovery_request_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "halted",
+      "type": "sequence",
+      "name": "HALTED (terminal) — §10.3: unexpected domain state; record and stop",
+      "sequence": {
+        "steps": [
+          {
+            "id": "halted_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "warn",
+                "message": "process halted: unexpected domain state; no transition forced",
+                "data": {
+                  "recovery_request_id": "{{ payload.recovery_request_id }}",
+                  "instance_id": "{{ metadata.instance_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "stalled",
+      "type": "sequence",
+      "name": "STALLED (terminal) — §10.3: RPC fault after retries; record and stop. P24 liveness is preserved because guardians can execute on-chain without this process.",
+      "sequence": {
+        "steps": [
+          {
+            "id": "stalled_record",
+            "type": "call",
+            "call": {
+              "action": "log.entry",
+              "input": {
+                "level": "error",
+                "message": "process stalled: process command failed after retries; no transition forced",
+                "data": {
+                  "recovery_request_id": "{{ payload.recovery_request_id }}",
+                  "instance_id": "{{ metadata.instance_id }}",
+                  "execution_id": "{{ metadata.execution_id }}"
+                }
+              }
+            },
+            "on_success": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "call",
+      "name": "END — instance terminal (§10.1, D-Q7)",
+      "call": {
+        "action": "log.entry",
+        "input": {
+          "level": "info",
+          "message": "instance complete",
+          "data": {
+            "instance_id": "{{ metadata.instance_id }}"
+          }
+        }
+      }
+    }
+  ]
+}

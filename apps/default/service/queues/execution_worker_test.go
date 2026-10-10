@@ -693,7 +693,7 @@ func TestResolveDelayFireAt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			fireAt, err := resolveDelayFireAt(tc.step, tc.inputPayload)
+			fireAt, err := resolveDelayFireAt(tc.step, tc.inputPayload, nil)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErr)

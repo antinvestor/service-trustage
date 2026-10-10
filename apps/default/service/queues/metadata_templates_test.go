@@ -124,7 +124,7 @@ func TestResolveSignalSend_ResolvesExecutionMetadata(t *testing.T) {
 		TargetWorkflowID: "{{ payload.proposal_id }}",
 		SignalName:       "done",
 		Payload:          map[string]any{"from": "{{ metadata.instance_id }}", "key": "{{ metadata.correlation_key }}"},
-	}, cmd.InputPayload, executionMetadata(&cmd))
+	}, cmd.InputPayload, executionScope(&cmd))
 	require.NoError(t, err)
 	require.Equal(t, "p-1", target)
 	require.JSONEq(t, `{"from":"inst-9","key":"p-1"}`, string(payload))
@@ -138,8 +138,34 @@ func TestExecutionMetadata_EmptyCorrelationKeyResolvesEmpty(t *testing.T) {
 	resolved, err := resolveStepInput(
 		map[string]any{"key": "{{ metadata.correlation_key }}"},
 		cmd.InputPayload,
-		executionMetadata(&cmd),
+		executionScope(&cmd),
 	)
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"key": ""}, resolved)
+}
+
+func TestResolveDelayFireAt_ReadsInstanceVars(t *testing.T) {
+	cmd := metadataCmd()
+	cmd.Vars = json.RawMessage(`{"plan":{"due":"2030-01-02T03:04:05Z"}}`)
+
+	fireAt, err := resolveDelayFireAt(
+		&dsl.StepSpec{ID: "wait", Type: dsl.StepTypeDelay, Delay: &dsl.DelaySpec{Until: "vars.plan.due"}},
+		cmd.InputPayload,
+		executionScope(&cmd),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "2030-01-02T03:04:05Z", fireAt.UTC().Format("2006-01-02T15:04:05Z"))
+}
+
+func TestResolveStepInput_ReadsInstanceVars(t *testing.T) {
+	cmd := metadataCmd()
+	cmd.Vars = json.RawMessage(`{"opened":{"period":{"period_id":"per-7"}}}`)
+
+	resolved, err := resolveStepInput(
+		map[string]any{"period_id": "{{ vars.opened.period.period_id }}", "room": "{{ payload.proposal_id }}"},
+		cmd.InputPayload,
+		executionScope(&cmd),
+	)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"period_id": "per-7", "room": "p-1"}, resolved)
 }

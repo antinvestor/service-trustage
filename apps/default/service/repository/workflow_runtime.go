@@ -71,6 +71,9 @@ type CommitExecutionRequest struct {
 	NextState           string
 	NextInputPayload    string
 	NextInputSchemaHash string
+	// InstanceVars, when set, replaces the instance's vars in the same
+	// transaction (the committed step set an output_var).
+	InstanceVars string
 }
 
 // ParkExecutionRequest describes parking a dispatched execution behind a durable timer.
@@ -225,7 +228,7 @@ func (r *workflowRuntimeRepository) CommitExecution(
 			return err
 		}
 		if req.NextState == "" {
-			return completeInstance(tx, req.Instance.ID)
+			return completeInstance(tx, req.Instance.ID, req.InstanceVars)
 		}
 
 		return createCommitNextExecution(tx, req)
@@ -286,7 +289,7 @@ func lockCommitInstance(tx *gorm.DB, req *CommitExecutionRequest) error {
 }
 
 func createCommitNextExecution(tx *gorm.DB, req *CommitExecutionRequest) error {
-	if err := transitionInstance(tx, req.Instance.ID, req.NextState); err != nil {
+	if err := transitionInstance(tx, req.Instance.ID, req.NextState, req.InstanceVars); err != nil {
 		return err
 	}
 
@@ -924,15 +927,20 @@ func transitionInstance(
 	tx *gorm.DB,
 	instanceID string,
 	nextState string,
+	vars string,
 ) error {
 	now := time.Now()
+	updates := map[string]any{
+		"current_state": nextState,
+		"revision":      gorm.Expr("revision + 1"),
+		"modified_at":   now,
+	}
+	if vars != "" {
+		updates["vars"] = vars
+	}
 	result := tx.Model(&models.WorkflowInstance{}).
 		Where("id = ? AND deleted_at IS NULL", instanceID).
-		UpdateColumns(map[string]any{
-			"current_state": nextState,
-			"revision":      gorm.Expr("revision + 1"),
-			"modified_at":   now,
-		})
+		UpdateColumns(updates)
 	if result.Error != nil {
 		return fmt.Errorf("transition workflow instance: %w", result.Error)
 	}
@@ -943,16 +951,20 @@ func transitionInstance(
 	return nil
 }
 
-func completeInstance(tx *gorm.DB, instanceID string) error {
+func completeInstance(tx *gorm.DB, instanceID string, vars string) error {
 	now := time.Now()
+	updates := map[string]any{
+		"status":      models.InstanceStatusCompleted,
+		"revision":    gorm.Expr("revision + 1"),
+		"modified_at": now,
+		"finished_at": now,
+	}
+	if vars != "" {
+		updates["vars"] = vars
+	}
 	result := tx.Model(&models.WorkflowInstance{}).
 		Where("id = ? AND deleted_at IS NULL", instanceID).
-		UpdateColumns(map[string]any{
-			"status":      models.InstanceStatusCompleted,
-			"revision":    gorm.Expr("revision + 1"),
-			"modified_at": now,
-			"finished_at": now,
-		})
+		UpdateColumns(updates)
 	if result.Error != nil {
 		return fmt.Errorf("complete workflow instance: %w", result.Error)
 	}
