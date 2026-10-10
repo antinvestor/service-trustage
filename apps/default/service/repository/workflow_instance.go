@@ -40,6 +40,16 @@ type WorkflowInstanceRepository interface {
 		triggerEventID string,
 	) (*models.WorkflowInstance, error)
 	List(ctx context.Context, status, workflowName string, limit int) ([]*models.WorkflowInstance, error)
+	// ListRunningByCorrelationKey returns up to limit running instances of
+	// exactly (workflowName, workflowVersion) whose correlation key equals
+	// key. An empty key matches nothing.
+	ListRunningByCorrelationKey(
+		ctx context.Context,
+		workflowName string,
+		workflowVersion int,
+		key string,
+		limit int,
+	) ([]*models.WorkflowInstance, error)
 	ListPage(ctx context.Context, filter WorkflowInstanceListFilter) (*WorkflowInstancePage, error)
 	CASTransition(
 		ctx context.Context,
@@ -129,6 +139,38 @@ func (r *workflowInstanceRepository) FindByTriggerEvent(
 	}
 
 	return &instance, nil
+}
+
+func (r *workflowInstanceRepository) ListRunningByCorrelationKey(
+	ctx context.Context,
+	workflowName string,
+	workflowVersion int,
+	key string,
+	limit int,
+) ([]*models.WorkflowInstance, error) {
+	if key == "" {
+		return nil, nil
+	}
+
+	if limit <= 0 {
+		limit = defaultFindByEventTypeLimit
+	}
+
+	// Primary read: an instance created moments ago by the same event stream
+	// must be visible to the signal that follows it.
+	db := r.BaseRepository.Pool().DB(ctx, false)
+
+	var instances []*models.WorkflowInstance
+
+	result := db.Where(
+		"workflow_name = ? AND workflow_version = ? AND correlation_key = ? AND status = ? AND deleted_at IS NULL",
+		workflowName, workflowVersion, key, models.InstanceStatusRunning,
+	).Order("id ASC").Limit(limit).Find(&instances)
+	if result.Error != nil {
+		return nil, fmt.Errorf("list instances by correlation key: %w", result.Error)
+	}
+
+	return instances, nil
 }
 
 func (r *workflowInstanceRepository) List(
