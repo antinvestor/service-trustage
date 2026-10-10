@@ -25,6 +25,10 @@ var templatePattern = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 // ResolveTemplate replaces all {{ expr }} placeholders in the input string
 // with values from the vars map using dot-notation path resolution.
 func ResolveTemplate(template string, vars map[string]any) (string, error) {
+	return resolveTemplate(template, vars, nil)
+}
+
+func resolveTemplate(template string, vars map[string]any, deferred map[string]bool) (string, error) {
 	var resolveErr error
 
 	result := templatePattern.ReplaceAllStringFunc(template, func(match string) string {
@@ -38,6 +42,11 @@ func ResolveTemplate(template string, vars map[string]any) (string, error) {
 		}
 
 		path := strings.TrimSpace(submatch[1])
+
+		root, _, _ := strings.Cut(path, ".")
+		if deferred[root] {
+			return match
+		}
 
 		val, err := resolvePath(path, vars)
 		if err != nil {
@@ -118,14 +127,30 @@ func resolvePath(path string, vars map[string]any) (any, error) {
 
 // ResolveTemplateValue resolves templates within any value type (string, map, or slice).
 func ResolveTemplateValue(value any, vars map[string]any) (any, error) {
+	return resolveTemplateValue(value, vars, nil)
+}
+
+// ResolveTemplateValueDeferring is ResolveTemplateValue except that
+// placeholders whose path starts with one of deferredRoots are left verbatim,
+// for a later resolution pass that has those variables.
+func ResolveTemplateValueDeferring(value any, vars map[string]any, deferredRoots ...string) (any, error) {
+	deferred := make(map[string]bool, len(deferredRoots))
+	for _, root := range deferredRoots {
+		deferred[root] = true
+	}
+
+	return resolveTemplateValue(value, vars, deferred)
+}
+
+func resolveTemplateValue(value any, vars map[string]any, deferred map[string]bool) (any, error) {
 	switch v := value.(type) {
 	case string:
-		return ResolveTemplate(v, vars)
+		return resolveTemplate(v, vars, deferred)
 	case map[string]any:
 		result := make(map[string]any, len(v))
 
 		for k, val := range v {
-			resolved, err := ResolveTemplateValue(val, vars)
+			resolved, err := resolveTemplateValue(val, vars, deferred)
 			if err != nil {
 				return nil, fmt.Errorf("resolve key %q: %w", k, err)
 			}
@@ -138,7 +163,7 @@ func ResolveTemplateValue(value any, vars map[string]any) (any, error) {
 		result := make([]any, len(v))
 
 		for i, val := range v {
-			resolved, err := ResolveTemplateValue(val, vars)
+			resolved, err := resolveTemplateValue(val, vars, deferred)
 			if err != nil {
 				return nil, fmt.Errorf("resolve index %d: %w", i, err)
 			}

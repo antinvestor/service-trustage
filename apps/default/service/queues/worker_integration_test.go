@@ -446,7 +446,7 @@ func TestQueueHelpers_TableDriven(t *testing.T) {
 
 	t.Run("payload vars extracts payload and top level aliases", func(t *testing.T) {
 		t.Parallel()
-		vars, err := payloadVars(json.RawMessage(`{"message":"hello","amount":10}`))
+		vars, err := payloadVars(json.RawMessage(`{"message":"hello","amount":10}`), nil)
 		require.NoError(t, err)
 		require.Equal(t, "hello", vars["message"])
 		require.Equal(t, map[string]any{"message": "hello", "amount": float64(10)}, vars["payload"])
@@ -454,7 +454,7 @@ func TestQueueHelpers_TableDriven(t *testing.T) {
 
 	t.Run("resolve step input uses payload when step input empty", func(t *testing.T) {
 		t.Parallel()
-		resolved, err := resolveStepInput(nil, json.RawMessage(`{"message":"hello"}`))
+		resolved, err := resolveStepInput(nil, json.RawMessage(`{"message":"hello"}`), nil)
 		require.NoError(t, err)
 		require.Equal(t, "hello", resolved["message"])
 	})
@@ -467,7 +467,7 @@ func TestQueueHelpers_TableDriven(t *testing.T) {
 			Payload: map[string]any{
 				"approved": "{{ payload.approved }}",
 			},
-		}, json.RawMessage(`{"instance_id":"inst-1","approved":true}`))
+		}, json.RawMessage(`{"instance_id":"inst-1","approved":true}`), nil)
 		require.NoError(t, err)
 		require.Equal(t, "inst-1", target)
 		require.Contains(t, string(payload), `"approved":"true"`)

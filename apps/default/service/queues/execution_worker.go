@@ -142,7 +142,7 @@ func (w *ExecutionWorker) executeCallStep(
 	}
 
 	// Build connector input from mapping or static definition.
-	connectorInput, err := resolveStepInput(step.Call.Input, cmd.InputPayload)
+	connectorInput, err := resolveStepInput(step.Call.Input, cmd.InputPayload, executionMetadata(cmd))
 	if err != nil {
 		w.commitError(ctx, cmd, "fatal", "input_resolution_failed", err.Error())
 		return nil
@@ -297,7 +297,7 @@ func (w *ExecutionWorker) executeSignalSendStep(
 		return nil
 	}
 
-	targetInstanceID, payload, err := resolveSignalSend(step.SignalSend, cmd.InputPayload)
+	targetInstanceID, payload, err := resolveSignalSend(step.SignalSend, cmd.InputPayload, executionMetadata(cmd))
 	if err != nil {
 		w.commitError(ctx, cmd, "fatal", "signal_resolution_failed", err.Error())
 		return nil
@@ -454,8 +454,12 @@ func resolveDelayFireAt(step *dsl.StepSpec, inputPayload json.RawMessage) (time.
 	}
 }
 
-func resolveStepInput(stepInput map[string]any, inputPayload json.RawMessage) (map[string]any, error) {
-	payloadMap, err := payloadVars(inputPayload)
+func resolveStepInput(
+	stepInput map[string]any,
+	inputPayload json.RawMessage,
+	metadata map[string]any,
+) (map[string]any, error) {
+	payloadMap, err := payloadVars(inputPayload, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -485,8 +489,9 @@ func resolveStepInput(stepInput map[string]any, inputPayload json.RawMessage) (m
 func resolveSignalSend(
 	spec *dsl.SignalSendSpec,
 	inputPayload json.RawMessage,
+	metadata map[string]any,
 ) (string, json.RawMessage, error) {
-	vars, err := payloadVars(inputPayload)
+	vars, err := payloadVars(inputPayload, metadata)
 	if err != nil {
 		return "", nil, err
 	}
@@ -513,7 +518,22 @@ func resolveSignalSend(
 	return targetInstanceID, payload, nil
 }
 
-func payloadVars(inputPayload json.RawMessage) (map[string]any, error) {
+// executionMetadata is the execution context templates read as
+// {{ metadata.<field> }}.
+func executionMetadata(cmd *business.ExecutionCommand) map[string]any {
+	return map[string]any{
+		"instance_id":      cmd.InstanceID,
+		"execution_id":     cmd.ExecutionID,
+		"workflow_name":    cmd.Workflow,
+		"workflow_version": cmd.WorkflowVersion,
+		"correlation_key":  cmd.CorrelationKey,
+	}
+}
+
+// payloadVars builds the template variables: the input as "payload", its
+// top-level keys, and "metadata" — the execution context laid over any
+// "metadata" object the input itself carries.
+func payloadVars(inputPayload json.RawMessage, metadata map[string]any) (map[string]any, error) {
 	payload := map[string]any{}
 	if len(inputPayload) > 0 {
 		if err := json.Unmarshal(inputPayload, &payload); err != nil {
@@ -526,6 +546,19 @@ func payloadVars(inputPayload json.RawMessage) (map[string]any, error) {
 	}
 	for key, value := range payload {
 		vars[key] = value
+	}
+
+	if len(metadata) > 0 {
+		merged := map[string]any{}
+		if carried, ok := payload["metadata"].(map[string]any); ok {
+			for key, value := range carried {
+				merged[key] = value
+			}
+		}
+		for key, value := range metadata {
+			merged[key] = value
+		}
+		vars["metadata"] = merged
 	}
 
 	return vars, nil

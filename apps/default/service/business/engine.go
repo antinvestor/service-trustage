@@ -822,7 +822,9 @@ func (e *stateEngine) evaluateMapping(
 		outputVar: outputData,
 	}
 
-	resolved, resolveErr := dsl.ResolveTemplateValue(nextStep.Call.Input, vars)
+	// {{ metadata.* }} names the next execution (its id does not exist yet),
+	// so it is left for the worker to resolve.
+	resolved, resolveErr := dsl.ResolveTemplateValueDeferring(nextStep.Call.Input, vars, "metadata")
 	if resolveErr != nil {
 		return nil, fmt.Errorf("resolve mapping templates: %w", resolveErr)
 	}

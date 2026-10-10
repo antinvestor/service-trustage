@@ -762,7 +762,7 @@ func TestResolveSignalSend(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			target, payload, err := resolveSignalSend(tc.spec, tc.inputPayload)
+			target, payload, err := resolveSignalSend(tc.spec, tc.inputPayload, nil)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErr)

@@ -659,6 +659,17 @@ func TestEvaluateMapping_TableDriven(t *testing.T) {
 				},
 			},
 			{
+				ID:   "next_with_metadata",
+				Type: dsl.StepTypeCall,
+				Call: &dsl.CallSpec{
+					Action: "log.entry",
+					Input: map[string]any{
+						"value":    "{{ result.value }}",
+						"instance": "{{ metadata.instance_id }}",
+					},
+				},
+			},
+			{
 				ID:   "plain_next",
 				Type: dsl.StepTypeCall,
 				Call: &dsl.CallSpec{
@@ -691,6 +702,14 @@ func TestEvaluateMapping_TableDriven(t *testing.T) {
 			currentInput: json.RawMessage(`{"original":true}`),
 			output:       json.RawMessage(`{"approved":true}`),
 			wantJSON:     `{"approved":"true"}`,
+		},
+		{
+			name:         "execution metadata templates are left for the worker",
+			currentState: "call_step",
+			nextStepID:   "next_with_metadata",
+			currentInput: json.RawMessage(`{"original":true}`),
+			output:       json.RawMessage(`{"value":"ok"}`),
+			wantJSON:     `{"value":"ok","instance":"{{ metadata.instance_id }}"}`,
 		},
 		{
 			name:         "if step preserves current input",
