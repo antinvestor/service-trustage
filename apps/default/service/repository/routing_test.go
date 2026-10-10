@@ -19,9 +19,9 @@ import (
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )
 
-func (s *RepositorySuite) routingTarget(name string, version int) WorkflowRoutingTarget {
+func (s *RepositorySuite) routingTarget(version int) WorkflowRoutingTarget {
 	return WorkflowRoutingTarget{
-		WorkflowName:    name,
+		WorkflowName:    "vote",
 		WorkflowVersion: version,
 		TenantID:        "test-tenant",
 		PartitionID:     "test-partition",
@@ -34,9 +34,9 @@ func (s *RepositorySuite) TestTriggerBindings_ReplaceForWorkflowSwitchesVersions
 	v1 := []*models.TriggerBinding{
 		{EventType: "proposal.created", EventFilter: "payload.ok", KeyExpr: "payload.id"},
 	}
-	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget("vote", 1), v1))
+	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget(1), v1))
 	// Idempotent: replaying the same set changes nothing.
-	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget("vote", 1), v1))
+	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget(1), v1))
 
 	found, err := s.triggerRepo.FindByEventType(ctx, "proposal.created", 10)
 	s.Require().NoError(err)
@@ -49,7 +49,7 @@ func (s *RepositorySuite) TestTriggerBindings_ReplaceForWorkflowSwitchesVersions
 		{EventType: "proposal.created", KeyExpr: "payload.proposal_id"},
 		{EventType: "proposal.reopened"},
 	}
-	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget("vote", 2), v2))
+	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget(2), v2))
 
 	found, err = s.triggerRepo.FindByEventType(ctx, "proposal.created", 10)
 	s.Require().NoError(err)
@@ -58,19 +58,19 @@ func (s *RepositorySuite) TestTriggerBindings_ReplaceForWorkflowSwitchesVersions
 	s.Equal("payload.proposal_id", found[0].KeyExpr)
 
 	// Dropping a trigger from the version deactivates its stale row.
-	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget("vote", 2), v2[:1]))
+	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget(2), v2[:1]))
 	found, err = s.triggerRepo.FindByEventType(ctx, "proposal.reopened", 10)
 	s.Require().NoError(err)
 	s.Empty(found)
 
 	// Re-activating v1 swaps back.
-	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget("vote", 1), v1))
+	s.Require().NoError(s.triggerRepo.ReplaceForWorkflow(ctx, s.routingTarget(1), v1))
 	found, err = s.triggerRepo.FindByEventType(ctx, "proposal.created", 10)
 	s.Require().NoError(err)
 	s.Require().Len(found, 1)
 	s.Equal(1, found[0].WorkflowVersion)
 
-	s.Require().NoError(s.triggerRepo.DeactivateByWorkflowVersion(ctx, s.routingTarget("vote", 1)))
+	s.Require().NoError(s.triggerRepo.DeactivateByWorkflowVersion(ctx, s.routingTarget(1)))
 	found, err = s.triggerRepo.FindByEventType(ctx, "proposal.created", 10)
 	s.Require().NoError(err)
 	s.Empty(found)
@@ -89,9 +89,9 @@ func (s *RepositorySuite) TestSignalRoutes_ReplaceForWorkflowVersionKeepsOtherVe
 	v2 := []*models.SignalRoute{
 		{EventType: "proposal.cancelled", SignalName: "cancelled", InstanceExpr: "payload.meta.instance_id"},
 	}
-	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget("vote", 1), v1))
-	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget("vote", 2), v2))
-	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget("vote", 2), v2))
+	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget(1), v1))
+	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget(2), v2))
+	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget(2), v2))
 
 	routes, err := s.signalRouteRepo.FindActiveByEventType(ctx, "proposal.cancelled", 10)
 	s.Require().NoError(err)
@@ -105,7 +105,7 @@ func (s *RepositorySuite) TestSignalRoutes_ReplaceForWorkflowVersionKeepsOtherVe
 	s.Equal("cancelled", byVersion[2].SignalName)
 	s.Equal("payload.meta.instance_id", byVersion[2].InstanceExpr)
 
-	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget("vote", 2), nil))
+	s.Require().NoError(s.signalRouteRepo.ReplaceForWorkflowVersion(ctx, s.routingTarget(2), nil))
 	routes, err = s.signalRouteRepo.FindActiveByEventType(ctx, "proposal.cancelled", 10)
 	s.Require().NoError(err)
 	s.Require().Len(routes, 1)

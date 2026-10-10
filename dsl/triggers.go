@@ -148,25 +148,29 @@ func validateSignalRoutes(spec *WorkflowSpec, result *ValidationResult) {
 		validateRoutingExpr(env, prefix, "instance", route.Instance, ErrInvalidSignalRoute, result)
 
 		if hasKey && !hasInstance {
-			for j, trigger := range spec.Triggers {
-				if trigger != nil && strings.TrimSpace(trigger.Key) == "" {
-					result.AddError(ErrInvalidSignalRoute, fmt.Sprintf(
-						"%s: a key route requires every trigger to declare key (triggers[%d] has none)",
-						prefix, j,
-					))
-
-					break
-				}
-			}
+			validateKeyRouteTriggers(spec, prefix, result)
 		}
 
 		name := route.EffectiveSignalName()
-		if strings.TrimSpace(name) != "" {
-			if _, ok := waited[name]; !ok {
-				result.AddError(ErrInvalidSignalRoute, fmt.Sprintf(
-					"%s: no signal_wait step waits on signal %q", prefix, name,
-				))
-			}
+		if _, ok := waited[name]; !ok && strings.TrimSpace(name) != "" {
+			result.AddError(ErrInvalidSignalRoute, fmt.Sprintf(
+				"%s: no signal_wait step waits on signal %q", prefix, name,
+			))
+		}
+	}
+}
+
+// validateKeyRouteTriggers enforces that a key route can match: every
+// trigger must give the instances it creates a correlation key.
+func validateKeyRouteTriggers(spec *WorkflowSpec, prefix string, result *ValidationResult) {
+	for j, trigger := range spec.Triggers {
+		if trigger != nil && strings.TrimSpace(trigger.Key) == "" {
+			result.AddError(ErrInvalidSignalRoute, fmt.Sprintf(
+				"%s: a key route requires every trigger to declare key (triggers[%d] has none)",
+				prefix, j,
+			))
+
+			return
 		}
 	}
 }
