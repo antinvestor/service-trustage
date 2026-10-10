@@ -149,6 +149,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	auditRepo := repository.NewAuditEventRepository(dbPool)
 	eventLogRepo := repository.NewEventLogRepository(dbPool)
 	triggerRepo := repository.NewTriggerBindingRepository(dbPool)
+	signalRouteRepo := repository.NewSignalRouteRepository(dbPool)
 	retryPolicyRepo := repository.NewRetryPolicyRepository(dbPool)
 	scheduleRepo := repository.NewScheduleRepository(dbPool)
 
@@ -202,6 +203,7 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 	)
 	eventRouter := business.NewEventRouter(
 		triggerRepo,
+		signalRouteRepo,
 		defRepo,
 		scheduleRepo,
 		instanceRepo,
@@ -211,7 +213,9 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 		cfg.EventRouterBindingLimit,
 		execRepo,
 	)
-	workflowBiz := business.NewWorkflowBusiness(defRepo, scheduleRepo, schemaReg, metrics)
+	workflowBiz := business.NewWorkflowBusiness(
+		defRepo, scheduleRepo, triggerRepo, signalRouteRepo, schemaReg, metrics,
+	)
 
 	sm := svc.SecurityManager()
 	auth := sm.GetAuthorizer(ctx)

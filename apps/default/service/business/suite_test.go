@@ -51,6 +51,7 @@ var businessTruncateTables = []string{ //nolint:gochecknoglobals // shared test 
 	"workflow_definitions",
 	"workflow_retry_policies",
 	"trigger_bindings",
+	"signal_routes",
 	"schedule_definitions",
 	"connector_configs",
 	"connector_credentials",
@@ -82,6 +83,8 @@ type BusinessSuite struct {
 	scopeRepo      repository.WorkflowScopeRunRepository
 	signalWaitRepo repository.WorkflowSignalWaitRepository
 	signalMsgRepo  repository.WorkflowSignalMessageRepository
+
+	signalRouteRepo repository.SignalRouteRepository
 }
 
 func TestBusinessSuite(t *testing.T) {
@@ -118,6 +121,7 @@ func (s *BusinessSuite) SetupSuite() {
 		&models.WorkflowDefinition{},
 		&models.WorkflowRetryPolicy{},
 		&models.TriggerBinding{},
+		&models.SignalRoute{},
 		&models.ScheduleDefinition{},
 		&models.ConnectorConfig{},
 		&models.ConnectorCredential{},
@@ -148,6 +152,7 @@ func (s *BusinessSuite) SetupSuite() {
 		&models.WorkflowDefinition{},
 		&models.WorkflowRetryPolicy{},
 		&models.TriggerBinding{},
+		&models.SignalRoute{},
 		&models.ScheduleDefinition{},
 		&models.ConnectorConfig{},
 		&models.ConnectorCredential{},
@@ -208,6 +213,7 @@ func (s *BusinessSuite) SetupSuite() {
 	s.scopeRepo = repository.NewWorkflowScopeRunRepository(p)
 	s.signalWaitRepo = repository.NewWorkflowSignalWaitRepository(p)
 	s.signalMsgRepo = repository.NewWorkflowSignalMessageRepository(p)
+	s.signalRouteRepo = repository.NewSignalRouteRepository(p)
 }
 
 func (s *BusinessSuite) SetupTest() {
@@ -247,7 +253,9 @@ func (s *BusinessSuite) schemaRegistry() SchemaRegistry {
 }
 
 func (s *BusinessSuite) workflowBusiness() WorkflowBusiness {
-	return NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry(), nil)
+	return NewWorkflowBusiness(
+		s.defRepo, s.scheduleRepo, s.triggerRepo, s.signalRouteRepo, s.schemaRegistry(), nil,
+	)
 }
 
 func (s *BusinessSuite) stateEngine() StateEngine {
@@ -272,6 +280,7 @@ func (s *BusinessSuite) stateEngine() StateEngine {
 func (s *BusinessSuite) eventRouter() EventRouter {
 	return NewEventRouter(
 		s.triggerRepo,
+		s.signalRouteRepo,
 		s.defRepo,
 		s.scheduleRepo,
 		s.instanceRepo,

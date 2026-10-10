@@ -50,6 +50,7 @@ var dslCache = cacheutil.NewBoundedCache[*dsl.WorkflowSpec](maxDSLCacheSize) //n
 type ExecutionCommand struct {
 	ExecutionID     string          `json:"execution_id"`
 	InstanceID      string          `json:"instance_id"`
+	CorrelationKey  string          `json:"correlation_key,omitempty"`
 	Workflow        string          `json:"workflow"`
 	WorkflowVersion int             `json:"workflow_version"`
 	State           string          `json:"state"`
@@ -106,6 +107,17 @@ type StateEngine interface {
 	) error
 	SendSignal(
 		ctx context.Context,
+		instanceID string,
+		signalName string,
+		payload json.RawMessage,
+	) (bool, error)
+	// DeliverEventSignal is SendSignal for a routed event: the buffered
+	// message is keyed by (event, instance, signal), so a redelivered event
+	// never buffers a second signal. Returns whether a waiting execution
+	// was resumed.
+	DeliverEventSignal(
+		ctx context.Context,
+		eventID string,
 		instanceID string,
 		signalName string,
 		payload json.RawMessage,
@@ -299,6 +311,7 @@ func (e *stateEngine) CreateInitialExecution(
 	return &ExecutionCommand{
 		ExecutionID:     exec.ID,
 		InstanceID:      instance.ID,
+		CorrelationKey:  instance.CorrelationKey,
 		Workflow:        instance.WorkflowName,
 		WorkflowVersion: instance.WorkflowVersion,
 		State:           instance.CurrentState,
@@ -380,6 +393,7 @@ func (e *stateEngine) Dispatch(
 	cmd := &ExecutionCommand{
 		ExecutionID:     execution.ID,
 		InstanceID:      execution.InstanceID,
+		CorrelationKey:  instance.CorrelationKey,
 		Workflow:        instance.WorkflowName,
 		WorkflowVersion: instance.WorkflowVersion,
 		State:           execution.State,

@@ -17,6 +17,7 @@ package business
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -54,6 +55,7 @@ const DefaultEventRouterBindingLimit = 200
 
 type eventRouter struct {
 	triggerRepo  repository.TriggerBindingRepository
+	routeRepo    repository.SignalRouteRepository
 	defRepo      repository.WorkflowDefinitionRepository
 	scheduleRepo repository.ScheduleRepository
 	instanceRepo repository.WorkflowInstanceRepository
@@ -68,6 +70,7 @@ type eventRouter struct {
 // execRepo is optional (may be nil); when set, dedupe heal can detect missing initial executions.
 func NewEventRouter(
 	triggerRepo repository.TriggerBindingRepository,
+	routeRepo repository.SignalRouteRepository,
 	defRepo repository.WorkflowDefinitionRepository,
 	scheduleRepo repository.ScheduleRepository,
 	instanceRepo repository.WorkflowInstanceRepository,
@@ -83,6 +86,7 @@ func NewEventRouter(
 
 	r := &eventRouter{
 		triggerRepo:  triggerRepo,
+		routeRepo:    routeRepo,
 		defRepo:      defRepo,
 		scheduleRepo: scheduleRepo,
 		instanceRepo: instanceRepo,
@@ -97,8 +101,9 @@ func NewEventRouter(
 	return r
 }
 
-// RouteEvent finds matching trigger bindings, evaluates CEL filters,
-// and creates workflow instances. Returns the number of instances created.
+// RouteEvent finds matching trigger bindings, evaluates CEL filters, and
+// creates workflow instances; then delivers the event as a signal along every
+// matching signal route. Returns the number of instances created.
 func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEventMessage) (int, error) {
 	ctx, span := telemetry.StartSpan(ctx, telemetry.TracerEvent, telemetry.SpanRouteEvent,
 		attribute.String(telemetry.AttrTenantID, event.TenantID),
@@ -110,20 +115,39 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 		telemetry.EndSpan(span, routeErr)
 	}()
 
-	log := util.Log(ctx)
-
 	if event.EventType == events.ScheduleFiredType {
 		return r.routeScheduleFired(ctx, event)
 	}
 
-	bindings, err := r.triggerRepo.FindByEventType(ctx, event.EventType, r.bindingLimit)
+	created, err := r.routeTriggers(ctx, event)
 	if err != nil {
-		routeErr = fmt.Errorf("find triggers: %w", err)
+		routeErr = err
 		return 0, routeErr
 	}
 
-	if len(bindings) == 0 {
-		return 0, nil
+	r.metrics.EventsRoutedTotal.Add(ctx, int64(created))
+
+	if signalErr := r.routeSignals(ctx, event); signalErr != nil {
+		routeErr = signalErr
+		return created, routeErr
+	}
+
+	return created, nil
+}
+
+func (r *eventRouter) routeTriggers(ctx context.Context, event *events.IngestedEventMessage) (int, error) {
+	log := util.Log(ctx)
+
+	bindings, err := r.triggerRepo.FindByEventType(ctx, event.EventType, r.bindingLimit)
+	if err != nil {
+		return 0, fmt.Errorf("find triggers: %w", err)
+	}
+
+	if len(bindings) >= r.bindingLimit {
+		log.Warn("event router: trigger bindings capped",
+			"event_type", event.EventType,
+			"limit", r.bindingLimit,
+		)
 	}
 
 	created := 0
@@ -163,8 +187,6 @@ func (r *eventRouter) RouteEvent(ctx context.Context, event *events.IngestedEven
 			created++
 		}
 	}
-
-	r.metrics.EventsRoutedTotal.Add(ctx, int64(created))
 
 	return created, nil
 }
@@ -223,6 +245,15 @@ func (r *eventRouter) createInstance(
 		return false, fmt.Errorf("load workflow: %w", err)
 	}
 
+	if def.Status != models.WorkflowStatusActive {
+		util.Log(ctx).Debug("event router: skipping binding of inactive workflow version",
+			"workflow", binding.WorkflowName,
+			"workflow_version", binding.WorkflowVersion,
+			"status", string(def.Status),
+		)
+		return false, nil
+	}
+
 	// Parse DSL to find initial state.
 	spec, err := dsl.Parse([]byte(def.DSLBlob))
 	if err != nil {
@@ -243,6 +274,7 @@ func (r *eventRouter) createInstance(
 		Status:          models.InstanceStatusRunning,
 		Revision:        1,
 		TriggerEventID:  event.EventID,
+		CorrelationKey:  r.correlationKey(ctx, binding, event),
 		StartedAt:       &now,
 	}
 	instance.ID = deterministicEventInstanceID(
@@ -339,36 +371,98 @@ func (r *eventRouter) healMissingInitialExecution(
 	return nil
 }
 
-func evaluateTriggerFilter(filter string, payload map[string]any) (bool, error) {
-	if filter == "" {
-		return true, nil
+// correlationKey evaluates the binding's key expression over the trigger
+// payload. Empty when the binding has no key; an evaluation failure or a
+// non-scalar result is logged and also yields an empty key.
+func (r *eventRouter) correlationKey(
+	ctx context.Context,
+	binding *models.TriggerBinding,
+	event *events.IngestedEventMessage,
+) string {
+	if binding.KeyExpr == "" {
+		return ""
 	}
 
-	// Initialize CEL environment once.
+	key, err := evaluateRoutingValue(binding.KeyExpr, event.Payload)
+	if err != nil {
+		util.Log(ctx).WithError(err).Warn(
+			"event router: trigger key evaluation failed; instance has no correlation key",
+			"binding_id", binding.ID,
+			"workflow", binding.WorkflowName,
+			"event_id", event.EventID,
+		)
+		return ""
+	}
+
+	return key
+}
+
+func routingCELEnv() (*cel.Env, error) {
 	var envErr error
 	celEnvOnce.Do(func() {
 		celEnv, envErr = dsl.NewExpressionEnv()
 	})
 	if envErr != nil {
-		return false, fmt.Errorf("create CEL env: %w", envErr)
+		return nil, fmt.Errorf("create CEL env: %w", envErr)
+	}
+	if celEnv == nil {
+		return nil, errors.New("CEL env unavailable")
+	}
+
+	return celEnv, nil
+}
+
+func compileRoutingExpr(expr string) (*cel.Env, *cel.Ast, error) {
+	env, err := routingCELEnv()
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Check bounded cache for compiled AST.
-	ast, cached := celCache.Get(filter)
-
+	ast, cached := celCache.Get(expr)
 	if !cached {
 		var compileErr error
-		ast, compileErr = dsl.CompileExpression(celEnv, filter)
+		ast, compileErr = dsl.CompileExpression(env, expr)
 		if compileErr != nil {
-			return false, fmt.Errorf("compile filter: %w", compileErr)
+			return nil, nil, fmt.Errorf("compile expression: %w", compileErr)
 		}
 
-		celCache.Put(filter, ast)
+		celCache.Put(expr, ast)
 	}
 
-	vars := map[string]any{
-		"payload": payload,
+	return env, ast, nil
+}
+
+func evaluateTriggerFilter(filter string, payload map[string]any) (bool, error) {
+	if filter == "" {
+		return true, nil
 	}
 
-	return dsl.EvaluateCondition(celEnv, ast, vars)
+	env, ast, err := compileRoutingExpr(filter)
+	if err != nil {
+		return false, err
+	}
+
+	return dsl.EvaluateCondition(env, ast, map[string]any{"payload": payload})
+}
+
+// evaluateRoutingValue evaluates a key or instance expression over the
+// payload and formats the result as a string.
+func evaluateRoutingValue(expr string, payload map[string]any) (string, error) {
+	env, ast, err := compileRoutingExpr(expr)
+	if err != nil {
+		return "", err
+	}
+
+	value, err := dsl.EvaluateExpression(env, ast, map[string]any{"payload": payload})
+	if err != nil {
+		return "", err
+	}
+
+	key, ok := dsl.FormatCorrelationKey(value)
+	if !ok {
+		return "", fmt.Errorf("expression %q yielded %T, want a non-empty scalar", expr, value)
+	}
+
+	return key, nil
 }

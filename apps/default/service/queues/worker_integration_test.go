@@ -47,19 +47,20 @@ type WorkerSuite struct {
 
 	metrics *telemetry.Metrics
 
-	defRepo        repository.WorkflowDefinitionRepository
-	schemaRepo     repository.SchemaRegistryRepository
-	instanceRepo   repository.WorkflowInstanceRepository
-	execRepo       repository.WorkflowExecutionRepository
-	outputRepo     repository.WorkflowOutputRepository
-	triggerRepo    repository.TriggerBindingRepository
-	retryRepo      repository.RetryPolicyRepository
-	scheduleRepo   repository.ScheduleRepository
-	timerRepo      repository.WorkflowTimerRepository
-	scopeRepo      repository.WorkflowScopeRunRepository
-	signalWaitRepo repository.WorkflowSignalWaitRepository
-	signalMsgRepo  repository.WorkflowSignalMessageRepository
-	auditRepo      repository.AuditEventRepository
+	defRepo         repository.WorkflowDefinitionRepository
+	schemaRepo      repository.SchemaRegistryRepository
+	instanceRepo    repository.WorkflowInstanceRepository
+	execRepo        repository.WorkflowExecutionRepository
+	outputRepo      repository.WorkflowOutputRepository
+	triggerRepo     repository.TriggerBindingRepository
+	signalRouteRepo repository.SignalRouteRepository
+	retryRepo       repository.RetryPolicyRepository
+	scheduleRepo    repository.ScheduleRepository
+	timerRepo       repository.WorkflowTimerRepository
+	scopeRepo       repository.WorkflowScopeRunRepository
+	signalWaitRepo  repository.WorkflowSignalWaitRepository
+	signalMsgRepo   repository.WorkflowSignalMessageRepository
+	auditRepo       repository.AuditEventRepository
 }
 
 func TestWorkerSuite(t *testing.T) {
@@ -95,6 +96,7 @@ func (s *WorkerSuite) SetupSuite() {
 		&models.WorkflowDefinition{},
 		&models.WorkflowRetryPolicy{},
 		&models.TriggerBinding{},
+		&models.SignalRoute{},
 		&models.ScheduleDefinition{},
 	))
 	s.Require().NoError(db.Exec(
@@ -117,6 +119,7 @@ func (s *WorkerSuite) SetupSuite() {
 	s.execRepo = repository.NewWorkflowExecutionRepository(p)
 	s.outputRepo = repository.NewWorkflowOutputRepository(p)
 	s.triggerRepo = repository.NewTriggerBindingRepository(p)
+	s.signalRouteRepo = repository.NewSignalRouteRepository(p)
 	s.retryRepo = repository.NewRetryPolicyRepository(p)
 	s.scheduleRepo = repository.NewScheduleRepository(p)
 	s.timerRepo = repository.NewWorkflowTimerRepository(p)
@@ -132,7 +135,7 @@ func (s *WorkerSuite) SetupTest() {
 		`TRUNCATE event_log, workflow_audit_events, workflow_state_outputs, workflow_state_executions,
 		 workflow_scope_runs, workflow_signal_waits, workflow_signal_messages, workflow_timers,
 		 workflow_state_schemas, workflow_instances, workflow_definitions, workflow_retry_policies,
-		 trigger_bindings CASCADE`,
+		 trigger_bindings, signal_routes CASCADE`,
 	).Error)
 	s.Require().NoError(s.cache.Flush(ctx))
 }
@@ -162,7 +165,9 @@ func (s *WorkerSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *WorkerSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry(), nil)
+	return business.NewWorkflowBusiness(
+		s.defRepo, s.scheduleRepo, s.triggerRepo, s.signalRouteRepo, s.schemaRegistry(), nil,
+	)
 }
 
 func (s *WorkerSuite) stateEngine() business.StateEngine {
@@ -187,6 +192,7 @@ func (s *WorkerSuite) stateEngine() business.StateEngine {
 func (s *WorkerSuite) eventRouter() business.EventRouter {
 	return business.NewEventRouter(
 		s.triggerRepo,
+		s.signalRouteRepo,
 		s.defRepo,
 		s.scheduleRepo,
 		s.instanceRepo,

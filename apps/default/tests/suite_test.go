@@ -54,6 +54,7 @@ var truncateTables = []string{
 	"workflow_definitions",
 	"workflow_retry_policies",
 	"trigger_bindings",
+	"signal_routes",
 	"schedule_definitions",
 	"connector_configs",
 	"connector_credentials",
@@ -68,20 +69,21 @@ type DefaultServiceSuite struct {
 
 	metrics *telemetry.Metrics
 
-	eventRepo      repository.EventLogRepository
-	auditRepo      repository.AuditEventRepository
-	defRepo        repository.WorkflowDefinitionRepository
-	schemaRepo     repository.SchemaRegistryRepository
-	instanceRepo   repository.WorkflowInstanceRepository
-	execRepo       repository.WorkflowExecutionRepository
-	outputRepo     repository.WorkflowOutputRepository
-	triggerRepo    repository.TriggerBindingRepository
-	retryRepo      repository.RetryPolicyRepository
-	scheduleRepo   repository.ScheduleRepository
-	timerRepo      repository.WorkflowTimerRepository
-	scopeRepo      repository.WorkflowScopeRunRepository
-	signalWaitRepo repository.WorkflowSignalWaitRepository
-	signalMsgRepo  repository.WorkflowSignalMessageRepository
+	eventRepo       repository.EventLogRepository
+	auditRepo       repository.AuditEventRepository
+	defRepo         repository.WorkflowDefinitionRepository
+	schemaRepo      repository.SchemaRegistryRepository
+	instanceRepo    repository.WorkflowInstanceRepository
+	execRepo        repository.WorkflowExecutionRepository
+	outputRepo      repository.WorkflowOutputRepository
+	triggerRepo     repository.TriggerBindingRepository
+	signalRouteRepo repository.SignalRouteRepository
+	retryRepo       repository.RetryPolicyRepository
+	scheduleRepo    repository.ScheduleRepository
+	timerRepo       repository.WorkflowTimerRepository
+	scopeRepo       repository.WorkflowScopeRunRepository
+	signalWaitRepo  repository.WorkflowSignalWaitRepository
+	signalMsgRepo   repository.WorkflowSignalMessageRepository
 }
 
 func TestDefaultServiceSuite(t *testing.T) {
@@ -121,6 +123,7 @@ func (s *DefaultServiceSuite) SetupSuite() {
 		&models.WorkflowDefinition{},
 		&models.WorkflowRetryPolicy{},
 		&models.TriggerBinding{},
+		&models.SignalRoute{},
 		&models.ScheduleDefinition{},
 		&models.ConnectorConfig{},
 		&models.ConnectorCredential{},
@@ -157,6 +160,7 @@ func (s *DefaultServiceSuite) SetupSuite() {
 	s.signalMsgRepo = repository.NewWorkflowSignalMessageRepository(p)
 	s.outputRepo = repository.NewWorkflowOutputRepository(p)
 	s.triggerRepo = repository.NewTriggerBindingRepository(p)
+	s.signalRouteRepo = repository.NewSignalRouteRepository(p)
 	s.retryRepo = repository.NewRetryPolicyRepository(p)
 	s.scheduleRepo = repository.NewScheduleRepository(p)
 }
@@ -194,7 +198,9 @@ func (s *DefaultServiceSuite) schemaRegistry() business.SchemaRegistry {
 }
 
 func (s *DefaultServiceSuite) workflowBusiness() business.WorkflowBusiness {
-	return business.NewWorkflowBusiness(s.defRepo, s.scheduleRepo, s.schemaRegistry(), nil)
+	return business.NewWorkflowBusiness(
+		s.defRepo, s.scheduleRepo, s.triggerRepo, s.signalRouteRepo, s.schemaRegistry(), nil,
+	)
 }
 
 func (s *DefaultServiceSuite) stateEngine() business.StateEngine {
@@ -219,6 +225,7 @@ func (s *DefaultServiceSuite) stateEngine() business.StateEngine {
 func (s *DefaultServiceSuite) eventRouter() business.EventRouter {
 	return business.NewEventRouter(
 		s.triggerRepo,
+		s.signalRouteRepo,
 		s.defRepo,
 		s.scheduleRepo,
 		s.instanceRepo,

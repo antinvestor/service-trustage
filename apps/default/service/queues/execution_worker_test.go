@@ -102,6 +102,14 @@ func (s *stubEngine) SendSignal(
 	return true, s.signalSendErr
 }
 
+func (s *stubEngine) DeliverEventSignal(
+	_ context.Context,
+	_, _, _ string,
+	_ json.RawMessage,
+) (bool, error) {
+	return true, nil
+}
+
 func (s *stubEngine) StartBranchScope(
 	_ context.Context,
 	_ *business.ExecutionCommand,

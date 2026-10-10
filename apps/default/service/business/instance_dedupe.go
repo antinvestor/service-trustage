@@ -48,6 +48,18 @@ func deterministicEventInstanceID(
 	return deterministicInstanceIDPrefix + hex.EncodeToString(sum[:])[:deterministicInstanceIDHexLen]
 }
 
+const deterministicSignalIDPrefix = "wsg_"
+
+// deterministicEventSignalID keys a routed signal message by the event, the
+// target instance and the signal name. Instance ids are tenant-unique, so
+// the tenant is implied.
+func deterministicEventSignalID(eventID, instanceID, signalName string) string {
+	key := fmt.Sprintf("event=%s|instance=%s|signal=%s", eventID, instanceID, signalName)
+	sum := sha256.Sum256([]byte(key))
+
+	return deterministicSignalIDPrefix + hex.EncodeToString(sum[:])[:deterministicInstanceIDHexLen]
+}
+
 func isDuplicateCreateError(err error) bool {
 	return errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate")
 }
