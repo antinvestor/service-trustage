@@ -142,7 +142,7 @@ func (w *ExecutionWorker) executeCallStep(
 	}
 
 	// Build connector input from mapping or static definition.
-	connectorInput, err := resolveStepInput(step.Call.Input, cmd.InputPayload, executionMetadata(cmd))
+	connectorInput, err := resolveStepInput(step.Call.Input, cmd.InputPayload, executionScope(cmd))
 	if err != nil {
 		w.commitError(ctx, cmd, "fatal", "input_resolution_failed", err.Error())
 		return nil
@@ -217,10 +217,7 @@ func (w *ExecutionWorker) executeIfStep(
 		return nil
 	}
 
-	matched, err := dsl.EvaluateCondition(env, ast, map[string]any{
-		"payload": payload,
-		"now":     time.Now(),
-	})
+	matched, err := dsl.EvaluateCondition(env, ast, expressionVars(payload, time.Now(), executionScope(cmd)))
 	if err != nil {
 		w.commitError(ctx, cmd, "fatal", "if_evaluation_failed", err.Error())
 		return nil
@@ -244,7 +241,7 @@ func (w *ExecutionWorker) executeDelayStep(
 	cmd *business.ExecutionCommand,
 	step *dsl.StepSpec,
 ) error {
-	fireAt, err := resolveDelayFireAt(step, cmd.InputPayload)
+	fireAt, err := resolveDelayFireAt(step, cmd.InputPayload, executionScope(cmd))
 	if err != nil {
 		w.commitError(ctx, cmd, "fatal", "delay_resolution_failed", err.Error())
 		return nil
@@ -297,7 +294,7 @@ func (w *ExecutionWorker) executeSignalSendStep(
 		return nil
 	}
 
-	targetInstanceID, payload, err := resolveSignalSend(step.SignalSend, cmd.InputPayload, executionMetadata(cmd))
+	targetInstanceID, payload, err := resolveSignalSend(step.SignalSend, cmd.InputPayload, executionScope(cmd))
 	if err != nil {
 		w.commitError(ctx, cmd, "fatal", "signal_resolution_failed", err.Error())
 		return nil
@@ -402,7 +399,11 @@ func tenantIDFromContext(ctx context.Context) string {
 	return claims.GetTenantID()
 }
 
-func resolveDelayFireAt(step *dsl.StepSpec, inputPayload json.RawMessage) (time.Time, error) {
+func resolveDelayFireAt(
+	step *dsl.StepSpec,
+	inputPayload json.RawMessage,
+	scope map[string]any,
+) (time.Time, error) {
 	if step.Delay == nil {
 		return time.Time{}, errors.New("delay step is missing delay configuration")
 	}
@@ -432,10 +433,7 @@ func resolveDelayFireAt(step *dsl.StepSpec, inputPayload json.RawMessage) (time.
 		return time.Time{}, fmt.Errorf("compile delay.until: %w", err)
 	}
 
-	value, err := dsl.EvaluateExpression(env, ast, map[string]any{
-		"payload": payload,
-		"now":     now,
-	})
+	value, err := dsl.EvaluateExpression(env, ast, expressionVars(payload, now, scope))
 	if err != nil {
 		return time.Time{}, fmt.Errorf("evaluate delay.until: %w", err)
 	}
@@ -457,9 +455,9 @@ func resolveDelayFireAt(step *dsl.StepSpec, inputPayload json.RawMessage) (time.
 func resolveStepInput(
 	stepInput map[string]any,
 	inputPayload json.RawMessage,
-	metadata map[string]any,
+	scope map[string]any,
 ) (map[string]any, error) {
-	payloadMap, err := payloadVars(inputPayload, metadata)
+	payloadMap, err := payloadVars(inputPayload, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -489,9 +487,9 @@ func resolveStepInput(
 func resolveSignalSend(
 	spec *dsl.SignalSendSpec,
 	inputPayload json.RawMessage,
-	metadata map[string]any,
+	scope map[string]any,
 ) (string, json.RawMessage, error) {
-	vars, err := payloadVars(inputPayload, metadata)
+	vars, err := payloadVars(inputPayload, scope)
 	if err != nil {
 		return "", nil, err
 	}
@@ -518,6 +516,41 @@ func resolveSignalSend(
 	return targetInstanceID, payload, nil
 }
 
+// executionScope is what a step reads besides its payload: the execution
+// context as metadata.<field> and the instance's output_var values as
+// vars.<output_var>.
+func executionScope(cmd *business.ExecutionCommand) map[string]any {
+	vars := map[string]any{}
+	if len(cmd.Vars) > 0 {
+		// The engine writes vars; an undecodable value reads as none.
+		_ = json.Unmarshal(cmd.Vars, &vars)
+	}
+	if vars == nil {
+		vars = map[string]any{}
+	}
+
+	return map[string]any{
+		"metadata": executionMetadata(cmd),
+		"vars":     vars,
+	}
+}
+
+// expressionVars is the CEL scope of if, delay.until and similar
+// expressions: payload, now, vars and metadata.
+func expressionVars(payload map[string]any, now time.Time, scope map[string]any) map[string]any {
+	out := map[string]any{
+		"payload":  payload,
+		"now":      now,
+		"vars":     map[string]any{},
+		"metadata": map[string]any{},
+	}
+	for key, value := range scope {
+		out[key] = value
+	}
+
+	return out
+}
+
 // executionMetadata is the execution context templates read as
 // {{ metadata.<field> }}.
 func executionMetadata(cmd *business.ExecutionCommand) map[string]any {
@@ -531,9 +564,11 @@ func executionMetadata(cmd *business.ExecutionCommand) map[string]any {
 }
 
 // payloadVars builds the template variables: the input as "payload", its
-// top-level keys, and "metadata" — the execution context laid over any
-// "metadata" object the input itself carries.
-func payloadVars(inputPayload json.RawMessage, metadata map[string]any) (map[string]any, error) {
+// top-level keys, "vars" (the instance's output_var values) and "metadata"
+// (the execution context laid over any "metadata" object the input
+// carries). scope is executionScope's result; nil adds neither.
+func payloadVars(inputPayload json.RawMessage, scope map[string]any) (map[string]any, error) {
+	metadata, _ := scope["metadata"].(map[string]any)
 	payload := map[string]any{}
 	if len(inputPayload) > 0 {
 		if err := json.Unmarshal(inputPayload, &payload); err != nil {
@@ -559,6 +594,10 @@ func payloadVars(inputPayload json.RawMessage, metadata map[string]any) (map[str
 			merged[key] = value
 		}
 		vars["metadata"] = merged
+	}
+
+	if instanceVars, ok := scope["vars"].(map[string]any); ok {
+		vars["vars"] = instanceVars
 	}
 
 	return vars, nil

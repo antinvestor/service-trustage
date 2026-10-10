@@ -16,6 +16,7 @@
 package dsl
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -61,90 +62,116 @@ func TestStawiContractsParseAndValidate(t *testing.T) {
 	}
 }
 
+// contractScopes lists the names a contract's references may use.
+type contractScopes struct {
+	outputVars map[string]bool
+	loopVars   map[string]bool
+}
+
+var contractMetadataNames = map[string]bool{ //nolint:gochecknoglobals // test fixture
+	"instance_id": true, "execution_id": true, "workflow_name": true,
+	"workflow_version": true, "correlation_key": true,
+}
+
+func scopesOf(spec *WorkflowSpec) contractScopes {
+	scopes := contractScopes{outputVars: map[string]bool{}, loopVars: map[string]bool{}}
+
+	for _, step := range CollectAllSteps(spec) {
+		if step.Call != nil && step.Call.OutputVar != "" {
+			scopes.outputVars[step.Call.OutputVar] = true
+		}
+		if step.SignalWait != nil && step.SignalWait.OutputVar != "" {
+			scopes.outputVars[step.SignalWait.OutputVar] = true
+		}
+		// foreach bodies also read their item and index variables.
+		if step.Foreach != nil {
+			scopes.loopVars[firstNonEmpty(step.Foreach.ItemVar, "item")] = true
+			scopes.loopVars[firstNonEmpty(step.Foreach.IndexVar, "index")] = true
+		}
+	}
+
+	return scopes
+}
+
+// templatePathProblem explains why a template path names nothing the
+// engine provides, or returns "".
+func (c contractScopes) templatePathProblem(path string) string {
+	parts := strings.Split(path, ".")
+
+	switch {
+	case parts[0] == "payload", c.loopVars[parts[0]]:
+		return ""
+	case parts[0] == "vars":
+		if len(parts) < 2 || !c.outputVars[parts[1]] {
+			return fmt.Sprintf("%q names no output_var", path)
+		}
+	case parts[0] == "metadata":
+		if len(parts) != 2 || !contractMetadataNames[parts[1]] {
+			return fmt.Sprintf("%q is not an execution metadata variable", path)
+		}
+	default:
+		return fmt.Sprintf("template root %q is not payload, vars or metadata", parts[0])
+	}
+
+	return ""
+}
+
+// stepExpressions returns every CEL expression a step evaluates.
+func stepExpressions(step *StepSpec) []string {
+	var exprs []string
+	for _, ct := range step.OnSuccess.Conditional {
+		exprs = append(exprs, ct.Condition)
+	}
+	for _, ct := range step.OnFailure.Conditional {
+		exprs = append(exprs, ct.Condition)
+	}
+	if step.If != nil {
+		exprs = append(exprs, step.If.Expr)
+	}
+	if step.Delay != nil {
+		exprs = append(exprs, step.Delay.Until)
+	}
+	if step.Foreach != nil {
+		exprs = append(exprs, step.Foreach.Items)
+	}
+
+	return exprs
+}
+
+// stepTemplatePaths returns every {{ }} path in a step's call input and
+// signal_send payload.
+func stepTemplatePaths(step *StepSpec) []string {
+	var paths []string
+	collect := func(s string) { paths = append(paths, ExtractTemplateVars(s)...) }
+
+	if step.Call != nil {
+		walkTemplateStrings(step.Call.Input, collect)
+	}
+	if step.SignalSend != nil {
+		walkTemplateStrings(step.SignalSend.Payload, collect)
+	}
+
+	return paths
+}
+
 func checkContractReferences(t *testing.T, spec *WorkflowSpec) {
 	t.Helper()
 
-	outputVars := map[string]bool{}
-	for _, step := range CollectAllSteps(spec) {
-		if step.Call != nil && step.Call.OutputVar != "" {
-			outputVars[step.Call.OutputVar] = true
-		}
-		if step.SignalWait != nil && step.SignalWait.OutputVar != "" {
-			outputVars[step.SignalWait.OutputVar] = true
-		}
-	}
-
-	// foreach bodies also read their item and index variables.
-	loopVars := map[string]bool{}
-	for _, step := range CollectAllSteps(spec) {
-		if step.Foreach != nil {
-			loopVars[firstNonEmpty(step.Foreach.ItemVar, "item")] = true
-			loopVars[firstNonEmpty(step.Foreach.IndexVar, "index")] = true
-		}
-	}
-
-	metadataNames := map[string]bool{
-		"instance_id": true, "execution_id": true, "workflow_name": true,
-		"workflow_version": true, "correlation_key": true,
-	}
-
-	checkPath := func(stepID, path string) {
-		parts := strings.Split(path, ".")
-		switch parts[0] {
-		case "payload":
-		case "vars":
-			if len(parts) < 2 || !outputVars[parts[1]] {
-				t.Errorf("step %s: %q names no output_var", stepID, path)
-			}
-		case "metadata":
-			if len(parts) != 2 || !metadataNames[parts[1]] {
-				t.Errorf("step %s: %q is not an execution metadata variable", stepID, path)
-			}
-		default:
-			if loopVars[parts[0]] {
-				return
-			}
-			t.Errorf("step %s: template root %q is not payload, vars or metadata", stepID, parts[0])
-		}
-	}
-
-	checkCEL := func(stepID, expr string) {
-		for _, m := range celVarsRef.FindAllStringSubmatch(expr, -1) {
-			if !outputVars[m[1]] {
-				t.Errorf("step %s: expression %q reads vars.%s, which no step sets", stepID, expr, m[1])
-			}
-		}
-	}
+	scopes := scopesOf(spec)
 
 	for _, step := range CollectAllSteps(spec) {
-		if step.Call != nil {
-			walkTemplateStrings(step.Call.Input, func(s string) {
-				for _, path := range ExtractTemplateVars(s) {
-					checkPath(step.ID, path)
+		for _, path := range stepTemplatePaths(step) {
+			if problem := scopes.templatePathProblem(path); problem != "" {
+				t.Errorf("step %s: %s", step.ID, problem)
+			}
+		}
+
+		for _, expr := range stepExpressions(step) {
+			for _, m := range celVarsRef.FindAllStringSubmatch(expr, -1) {
+				if !scopes.outputVars[m[1]] {
+					t.Errorf("step %s: expression %q reads vars.%s, which no step sets", step.ID, expr, m[1])
 				}
-			})
-		}
-		if step.SignalSend != nil {
-			walkTemplateStrings(step.SignalSend.Payload, func(s string) {
-				for _, path := range ExtractTemplateVars(s) {
-					checkPath(step.ID, path)
-				}
-			})
-		}
-		for _, ct := range step.OnSuccess.Conditional {
-			checkCEL(step.ID, ct.Condition)
-		}
-		for _, ct := range step.OnFailure.Conditional {
-			checkCEL(step.ID, ct.Condition)
-		}
-		if step.If != nil {
-			checkCEL(step.ID, step.If.Expr)
-		}
-		if step.Delay != nil {
-			checkCEL(step.ID, step.Delay.Until)
-		}
-		if step.Foreach != nil {
-			checkCEL(step.ID, step.Foreach.Items)
+			}
 		}
 	}
 }

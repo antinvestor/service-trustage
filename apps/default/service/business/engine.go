@@ -48,9 +48,11 @@ var dslCache = cacheutil.NewBoundedCache[*dsl.WorkflowSpec](maxDSLCacheSize) //n
 
 // ExecutionCommand is the immutable instruction sent to a worker.
 type ExecutionCommand struct {
-	ExecutionID     string          `json:"execution_id"`
-	InstanceID      string          `json:"instance_id"`
-	CorrelationKey  string          `json:"correlation_key,omitempty"`
+	ExecutionID    string `json:"execution_id"`
+	InstanceID     string `json:"instance_id"`
+	CorrelationKey string `json:"correlation_key,omitempty"`
+	// Vars is the instance's output_var values at dispatch (vars.<name>).
+	Vars            json.RawMessage `json:"vars,omitempty"`
 	Workflow        string          `json:"workflow"`
 	WorkflowVersion int             `json:"workflow_version"`
 	State           string          `json:"state"`
@@ -312,6 +314,7 @@ func (e *stateEngine) CreateInitialExecution(
 		ExecutionID:     exec.ID,
 		InstanceID:      instance.ID,
 		CorrelationKey:  instance.CorrelationKey,
+		Vars:            instanceVarsJSON(instance),
 		Workflow:        instance.WorkflowName,
 		WorkflowVersion: instance.WorkflowVersion,
 		State:           instance.CurrentState,
@@ -394,6 +397,7 @@ func (e *stateEngine) Dispatch(
 		ExecutionID:     execution.ID,
 		InstanceID:      execution.InstanceID,
 		CorrelationKey:  instance.CorrelationKey,
+		Vars:            instanceVarsJSON(instance),
 		Workflow:        instance.WorkflowName,
 		WorkflowVersion: instance.WorkflowVersion,
 		State:           execution.State,
@@ -505,26 +509,15 @@ func (e *stateEngine) Commit( //nolint:funlen // commit coordinates validation, 
 		return commitErr
 	}
 
-	// Resolve the next step, evaluating CEL conditions on transitions if defined.
-	transitionVars, varsErr := transitionVarsFromOutput(req.Output)
-	if varsErr != nil {
-		commitErr = varsErr
+	// Resolve the next step: transition conditions see output, vars (with
+	// this step's output_var applied), payload and metadata.
+	advance, advanceErr := planAdvance(spec, instance, exec, req.Output, nil)
+	if advanceErr != nil {
+		commitErr = advanceErr
 		return commitErr
 	}
-
-	nextStep, resolveErr := resolveNextStepForInstance(spec, instance, exec.State, transitionVars)
-	if resolveErr != nil {
-		commitErr = fmt.Errorf("resolve next step: %w", resolveErr)
-		return commitErr
-	}
-
-	// Evaluate mapping to produce input for the next state.
-	currentInput := executionInputPayload(exec)
-	mappedInput, mappingErr := e.evaluateMapping(spec, exec.State, nextStep, currentInput, req.Output)
-	if mappingErr != nil {
-		commitErr = fmt.Errorf("evaluate mapping: %w", mappingErr)
-		return commitErr
-	}
+	nextStep := advance.nextStep
+	mappedInput := advance.nextInput
 
 	nextInputSchemaHash, schemaErr := e.validateNextInput(ctx, instance, nextStep, mappedInput)
 	if schemaErr != nil {
@@ -549,6 +542,7 @@ func (e *stateEngine) Commit( //nolint:funlen // commit coordinates validation, 
 		NextState:           nextState,
 		NextInputPayload:    nextInputPayload,
 		NextInputSchemaHash: nextInputSchemaHash,
+		InstanceVars:        advance.varsJSON,
 	}
 	if txErr := e.runtimeRepo.CommitExecution(ctx, commitReq); txErr != nil {
 		if errors.Is(txErr, repository.ErrInvalidExecutionToken) {
@@ -631,6 +625,17 @@ func (e *stateEngine) ResumeWaitingExecution(
 	executionID string,
 	output json.RawMessage,
 ) error {
+	return e.resumeWaitingExecution(ctx, executionID, output, nil)
+}
+
+// resumeWaitingExecution completes a waiting execution with output. carried
+// are vars a finished branch scope hands back to its parent.
+func (e *stateEngine) resumeWaitingExecution(
+	ctx context.Context,
+	executionID string,
+	output json.RawMessage,
+	carried map[string]any,
+) error {
 	exec, err := e.execRepo.GetByID(ctx, executionID)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrExecutionNotFound, err)
@@ -675,21 +680,12 @@ func (e *stateEngine) ResumeWaitingExecution(
 		return fmt.Errorf("%w: %w", ErrOutputContractViolation, validateErr)
 	}
 
-	transitionVars, err := transitionVarsFromOutput(output)
+	advance, err := planAdvance(spec, instance, exec, output, carried)
 	if err != nil {
 		return err
 	}
-
-	nextStep, err := resolveNextStepForInstance(spec, instance, exec.State, transitionVars)
-	if err != nil {
-		return fmt.Errorf("resolve next step: %w", err)
-	}
-
-	currentInput := executionInputPayload(exec)
-	mappedInput, err := e.evaluateMapping(spec, exec.State, nextStep, currentInput, output)
-	if err != nil {
-		return fmt.Errorf("evaluate mapping: %w", err)
-	}
+	nextStep := advance.nextStep
+	mappedInput := advance.nextInput
 
 	nextInputSchemaHash, err := e.validateNextInput(ctx, instance, nextStep, mappedInput)
 	if err != nil {
@@ -711,6 +707,7 @@ func (e *stateEngine) ResumeWaitingExecution(
 		NextState:           nextState,
 		NextInputPayload:    nextInputPayload,
 		NextInputSchemaHash: nextInputSchemaHash,
+		InstanceVars:        advance.varsJSON,
 	}); txErr != nil {
 		if errors.Is(txErr, repository.ErrStaleMutation) {
 			return ErrStaleExecution
@@ -736,17 +733,6 @@ func executionInputPayload(exec *models.WorkflowStateExecution) json.RawMessage 
 	return json.RawMessage(exec.InputPayload)
 }
 
-func transitionVarsFromOutput(output json.RawMessage) (map[string]any, error) {
-	var outputData any
-	if unmarshalErr := json.Unmarshal(output, &outputData); unmarshalErr != nil {
-		return nil, fmt.Errorf("unmarshal output for transition: %w", unmarshalErr)
-	}
-
-	return map[string]any{
-		"output": outputData,
-	}, nil
-}
-
 func (e *stateEngine) validateNextInput(
 	ctx context.Context,
 	instance *models.WorkflowInstance,
@@ -769,72 +755,6 @@ func (e *stateEngine) validateNextInput(
 	}
 
 	return nextInputSchemaHash, nil
-}
-
-// evaluateMapping evaluates the state mapping from currentState to nextStep.
-// If no mapping is defined, passes the raw output through.
-func (e *stateEngine) evaluateMapping(
-	spec *dsl.WorkflowSpec,
-	currentState string,
-	nextStep *dsl.StepSpec,
-	currentInput json.RawMessage,
-	output json.RawMessage,
-) (json.RawMessage, error) {
-	if nextStep == nil {
-		return nil, nil
-	}
-
-	// Find the current step to check for output_var mapping.
-	currentStep := dsl.FindStep(spec, currentState)
-	if currentStep == nil {
-		return output, nil
-	}
-
-	switch currentStep.Type { //nolint:exhaustive // only explicit control-flow cases override default passthrough
-	case dsl.StepTypeSequence, dsl.StepTypeIf, dsl.StepTypeDelay:
-		return currentInput, nil
-	}
-
-	// Only apply mapping when current step exposes an output_var and next step has call input.
-	outputVar := ""
-	switch currentStep.Type { //nolint:exhaustive // unsupported step types are validated at definition time and handled by the default branch here.
-	case dsl.StepTypeCall:
-		if currentStep.Call != nil {
-			outputVar = currentStep.Call.OutputVar
-		}
-	case dsl.StepTypeSignalWait:
-		if currentStep.SignalWait != nil {
-			outputVar = currentStep.SignalWait.OutputVar
-		}
-	}
-	hasNextInput := nextStep.Type == dsl.StepTypeCall && nextStep.Call != nil && len(nextStep.Call.Input) > 0
-
-	if outputVar == "" || !hasNextInput {
-		return output, nil
-	}
-
-	var outputData any
-	if unmarshalErr := json.Unmarshal(output, &outputData); unmarshalErr != nil {
-		return output, nil //nolint:nilerr // pass through if output is not JSON
-	}
-
-	vars := map[string]any{
-		outputVar: outputData,
-	}
-
-	// {{ metadata.* }} names the next execution (its id does not exist yet),
-	// so it is left for the worker to resolve.
-	resolved, resolveErr := dsl.ResolveTemplateValueDeferring(nextStep.Call.Input, vars, "metadata")
-	if resolveErr != nil {
-		return nil, fmt.Errorf("resolve mapping templates: %w", resolveErr)
-	}
-
-	mappedBytes, marshalErr := json.Marshal(resolved)
-	if marshalErr != nil {
-		return nil, fmt.Errorf("marshal mapped input: %w", marshalErr)
-	}
-
-	return mappedBytes, nil
 }
 
 // commitError handles the error path in Commit: verifies token, classifies errors, schedules retries with backoff.

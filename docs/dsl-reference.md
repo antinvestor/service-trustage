@@ -203,9 +203,15 @@ Calls an external system through a registered connector adapter.
 | `call.input` | object | Yes | Input fields for the connector (supports `{{ }}` templates) |
 | `call.output_var` | string | No | Variable name to store the connector's response |
 
-**Template syntax:** `{{ a.b.c }}` dot paths resolve against the step's input:
-- `{{ payload.field }}` -- the step input (the trigger payload for the first step)
-- `{{ field }}` -- a top-level key of the step input
+**Template syntax:** `{{ a.b.c }}` dot paths. Each step's templates are
+resolved exactly once, by the worker, when the step runs:
+- `{{ payload.field }}` -- the instance input (the trigger payload; for a
+  schedule, `{schedule_id, schedule_name, fired_at, input}`). It is carried
+  unchanged from step to step for the life of the instance; branch children of
+  `parallel`/`foreach` receive it plus their branch keys (`item`, `index`, ...).
+- `{{ field }}` -- a top-level key of the payload (`{{ item }}` in a foreach body)
+- `{{ vars.<output_var>.field }}` -- the output of an earlier step that set
+  `output_var` (see Instance Vars below)
 - `{{ metadata.<name> }}` -- the execution context:
 
 | Variable | Value |
@@ -218,204 +224,31 @@ Calls an external system through a registered connector adapter.
 
 These override same-named keys of a `metadata` object carried in the input;
 other keys of that object stay readable. The same variables are available to
-`signal_send.target_workflow_id` and `signal_send.payload`. When the previous
-step sets `output_var`, the engine resolves the next call's templates against
-that output at commit time and leaves `{{ metadata.* }}` for the worker.
+`signal_send.target_workflow_id` and `signal_send.payload`.
 
-### `delay` -- Durable Wait
+### Instance Vars
 
-Pauses the workflow for a specified duration. Survives process restarts.
+A `call` or `signal_wait` step with `output_var: "x"` stores its result on the
+instance as `vars.x` (a call: its whole output; a signal_wait: the signal
+payload). Vars persist in `workflow_instances.vars` in the same transaction as
+the commit that set them, so they survive restarts and stay available to every
+later step of the instance: call and signal_send templates, `if.expr`,
+`delay.until`, `foreach.items` and transition conditions. A later step with the
+same `output_var` replaces the value. Branch children start with the parent's
+vars; when a `parallel`/`foreach` scope completes, the vars its completed
+branches set are merged into the parent (in branch order), so
+`has(vars.<signal output_var>)` after a first-wins `parallel` tells which
+branch won. Reading an unset var fails the template (`key not found`); test
+with `has(vars.x)` in expressions.
 
-```json
-{
-  "id": "wait_3_days",
-  "type": "delay",
-  "name": "Wait 3 Days",
-  "delay": {
-    "duration": "72h"
-  }
-}
-```
-
-Or wait until a computed timestamp:
-
-```json
-{
-  "id": "wait_until_deadline",
-  "type": "delay",
-  "delay": {
-    "until": "now + duration('48h')"
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `delay.duration` | string | One of duration/until | Fixed duration string |
-| `delay.until` | string | One of duration/until | CEL expression evaluating to a timestamp |
-
-### `if` -- Conditional Branching
-
-Evaluates a CEL expression and executes one of two branches.
-
-```json
-{
-  "id": "check_amount",
-  "type": "if",
-  "if": {
-    "expr": "payload.amount > 100",
-    "then": [
-      {
-        "id": "notify_sales",
-        "type": "call",
-        "call": { "action": "slack.post", "input": { "message": "High-value lead: {{ payload.email }}" } }
-      }
-    ],
-    "else": [
-      {
-        "id": "add_to_drip",
-        "type": "call",
-        "call": { "action": "email.send", "input": { "to": "{{ payload.email }}", "subject": "Thanks for your interest" } }
-      }
-    ]
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `if.expr` | string | Yes | CEL expression that evaluates to boolean |
-| `if.then` | array | Yes | Steps to execute if expression is true |
-| `if.else` | array | No | Steps to execute if expression is false |
-
-### `sequence` -- Ordered Execution
-
-Executes sub-steps in order. Useful for grouping steps with shared error handling.
-
-```json
-{
-  "id": "onboarding_sequence",
-  "type": "sequence",
-  "name": "Onboarding Flow",
-  "on_error": { "strategy": "continue" },
-  "sequence": {
-    "steps": [
-      { "id": "step_a", "type": "call", "call": { "action": "email.send", "input": { "to": "{{ payload.email }}" } } },
-      { "id": "step_b", "type": "delay", "delay": { "duration": "24h" } },
-      { "id": "step_c", "type": "call", "call": { "action": "email.send", "input": { "to": "{{ payload.email }}" } } }
-    ]
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `sequence.steps` | array | Yes | Ordered list of sub-steps |
-
-### `parallel` -- Concurrent Execution (v1.1)
-
-Executes sub-steps concurrently.
-
-```json
-{
-  "id": "notify_all",
-  "type": "parallel",
-  "parallel": {
-    "steps": [
-      { "id": "email_user", "type": "call", "call": { "action": "email.send", "input": {} } },
-      { "id": "slack_team", "type": "call", "call": { "action": "slack.post", "input": {} } },
-      { "id": "update_crm", "type": "call", "call": { "action": "crm.upsert", "input": {} } }
-    ],
-    "wait_all": true
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `parallel.steps` | array | Yes | Steps to execute concurrently |
-| `parallel.wait_all` | boolean | No | If true (default), wait for all steps. If false, continue when first completes. |
-
-### `foreach` -- Iteration (v1.1)
-
-Iterates over a list and executes sub-steps for each item.
-
-```json
-{
-  "id": "process_recipients",
-  "type": "foreach",
-  "foreach": {
-    "items": "payload.recipients",
-    "item_var": "recipient",
-    "index_var": "i",
-    "max_concurrency": 5,
-    "steps": [
-      {
-        "id": "send_to_recipient",
-        "type": "call",
-        "call": {
-          "action": "email.send",
-          "input": { "to": "{{ recipient.email }}", "subject": "Hello {{ recipient.name }}" }
-        }
-      }
-    ]
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `foreach.items` | string | Yes | CEL expression evaluating to a list |
-| `foreach.item_var` | string | No | Variable name for current item (default: `"item"`) |
-| `foreach.index_var` | string | No | Variable name for current index (default: `"index"`) |
-| `foreach.max_concurrency` | int | No | Max parallel iterations (0 = sequential) |
-| `foreach.steps` | array | Yes | Steps to execute per item |
-
-### `signal_wait` -- Wait for External Signal (v1.2)
-
-Pauses the workflow until an external signal is received. Used for human approvals and external callbacks.
-
-```json
-{
-  "id": "wait_for_approval",
-  "type": "signal_wait",
-  "signal_wait": {
-    "signal_name": "manager_approval",
-    "timeout": "48h",
-    "output_var": "approval"
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `signal_wait.signal_name` | string | Yes | Signal channel name |
-| `signal_wait.timeout` | string | No | Maximum wait time before timeout |
-| `signal_wait.output_var` | string | No | Variable to store signal payload |
-
-### `signal_send` -- Send Signal to Workflow (v1.2)
-
-Sends a signal to another running workflow.
-
-```json
-{
-  "id": "notify_parent",
-  "type": "signal_send",
-  "signal_send": {
-    "target_workflow_id": "{{ vars.parent_workflow_id }}",
-    "signal_name": "child_completed",
-    "payload": { "result": "{{ vars.processing_result }}" }
-  }
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `signal_send.target_workflow_id` | string | Yes | Target workflow ID (supports templates) |
-| `signal_send.signal_name` | string | Yes | Signal channel name |
-| `signal_send.payload` | object | No | Signal payload (supports templates) |
-
----
+| Scope | Call / signal_send templates | `if.expr`, `delay.until`, `foreach.items` | `on_success` / `on_failure` conditions |
+|-------|------------------------------|-------------------------------------------|----------------------------------------|
+| `payload` | yes | yes | yes |
+| top-level payload keys | yes | `foreach.items` only | no |
+| `vars` | yes | yes | yes (including this step's own output_var) |
+| `metadata` | yes | `if.expr`, `delay.until` | yes |
+| `output` (this step's result) | no | no | yes |
+| `now` | no | yes | no |
 
 ## CEL Expression Reference
 
@@ -425,9 +258,10 @@ CEL (Common Expression Language) is used in `if` conditions, `foreach` items, `d
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `payload` | map | Event payload data |
-| `metadata` | map | Event metadata |
-| `vars` | map | Accumulated step output variables |
+| `payload` | map | The instance input (trigger payload), carried unchanged |
+| `metadata` | map | Execution context (`instance_id`, `execution_id`, `workflow_name`, `workflow_version`, `correlation_key`) |
+| `vars` | map | Instance vars: `vars.<output_var>` for every earlier step that set `output_var` |
+| `output` | any | The step's own result (transition conditions only) |
 | `env` | map | Workflow config values |
 | `now` | timestamp | Current time |
 | `item` | any | Current foreach item (only in foreach body) |

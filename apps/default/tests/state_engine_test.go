@@ -176,7 +176,7 @@ func (s *DefaultServiceSuite) TestStateEngine_CommitFatalMarksFailed() {
 	s.NotEmpty(updatedInstance.Status)
 }
 
-func (s *DefaultServiceSuite) TestStateEngine_CommitMapsOutputToNextInput() {
+func (s *DefaultServiceSuite) TestStateEngine_CommitStoresOutputVarAndCarriesPayload() {
 	tenantCtx := s.tenantCtx()
 	ctx := context.Background()
 
@@ -198,7 +198,7 @@ func (s *DefaultServiceSuite) TestStateEngine_CommitMapsOutputToNextInput() {
       "type": "call",
       "call": {
         "action": "log.entry",
-        "input": {"message": "{{ step_out.result }}"}
+        "input": {"message": "{{ vars.step_out.result }}"}
       }
     }
   ]
@@ -240,7 +240,13 @@ func (s *DefaultServiceSuite) TestStateEngine_CommitMapsOutputToNextInput() {
 	nextExec, err := s.execRepo.GetLatestByInstance(ctx, instance.ID)
 	s.Require().NoError(err)
 	s.Equal("step_b", nextExec.State)
-	s.Contains(nextExec.InputPayload, "mapped")
+	// The payload is carried unchanged; step_b's templates read the output
+	// as vars.step_out when the worker runs it (resolved exactly once).
+	s.JSONEq(`{"hello":"world"}`, nextExec.InputPayload)
+
+	stored, err := s.instanceRepo.GetByID(ctx, instance.ID)
+	s.Require().NoError(err)
+	s.JSONEq(`{"step_out":{"result":"mapped"}}`, stored.Vars)
 }
 
 func (s *DefaultServiceSuite) TestStateEngine_SignalWaitAndSendSignal() {
