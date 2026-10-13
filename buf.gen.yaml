@@ -1,15 +1,25 @@
 version: v2
 managed:
   enabled: true
+  # Resolve imported modules to the BSR-generated Go packages, not their own
+  # go_package (common's points at the legacy github.com/antinvestor/common
+  # v1 module; gnostic's own package panics on duplicate extensions).
+  override:
+    - file_option: go_package_prefix
+      module: buf.build/antinvestor/common
+      value: buf.build/gen/go/antinvestor/common/protocolbuffers/go
+    - file_option: go_package_prefix
+      module: buf.build/gnostic/gnostic
+      value: buf.build/gen/go/gnostic/gnostic/protocolbuffers/go
 
 plugins:
-  - remote: buf.build/protocolbuffers/go
+  - remote: buf.build/protocolbuffers/go:v1.36.12
     out: .
     opt:
       - paths=import
       - module=github.com/antinvestor/service-trustage
 
-  - remote: buf.build/connectrpc/go
+  - remote: buf.build/connectrpc/go:v1.21.0
     out: .
     opt:
       - paths=import
