@@ -50,9 +50,10 @@ class _QueueListScreenState extends ConsumerState<QueueListScreen> {
         final filtered = _search.isEmpty
             ? queues
             : queues
-                .where((q) =>
-                    q.name.toLowerCase().contains(_search.toLowerCase()))
-                .toList();
+                  .where(
+                    (q) => q.name.toLowerCase().contains(_search.toLowerCase()),
+                  )
+                  .toList();
 
         return EntityListPage<QueueDefinition>(
           title: 'Queues',
@@ -83,9 +84,7 @@ class _QueueListScreenState extends ConsumerState<QueueListScreen> {
       selected: {_activeFilter},
       onSelectionChanged: (v) => setState(() => _activeFilter = v.first),
       showSelectedIcon: false,
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-      ),
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
     );
   }
 }

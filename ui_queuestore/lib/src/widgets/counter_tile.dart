@@ -108,52 +108,37 @@ class CounterTile extends StatelessWidget {
   List<Widget> _buildActions(CounterStatus status) {
     return switch (status) {
       CounterStatus.closed => [
-          if (onOpen != null)
-            FilledButton.tonal(
-              onPressed: onOpen,
-              child: const Text('Open'),
-            ),
-        ],
+        if (onOpen != null)
+          FilledButton.tonal(onPressed: onOpen, child: const Text('Open')),
+      ],
       CounterStatus.open => [
-          if (counter.currentItemId.isEmpty && onCallNext != null)
-            FilledButton.icon(
-              onPressed: onCallNext,
-              icon: const Icon(Icons.person_add, size: 16),
-              label: const Text('Call Next'),
-            ),
-          if (counter.currentItemId.isNotEmpty && onBeginService != null)
-            FilledButton.tonal(
-              onPressed: onBeginService,
-              child: const Text('Begin Service'),
-            ),
-          if (counter.currentItemId.isNotEmpty && onCompleteService != null)
-            FilledButton.tonal(
-              onPressed: onCompleteService,
-              child: const Text('Complete'),
-            ),
-          if (onPause != null)
-            OutlinedButton(
-              onPressed: onPause,
-              child: const Text('Pause'),
-            ),
-          if (onClose != null)
-            OutlinedButton(
-              onPressed: onClose,
-              child: const Text('Close'),
-            ),
-        ],
+        if (counter.currentItemId.isEmpty && onCallNext != null)
+          FilledButton.icon(
+            onPressed: onCallNext,
+            icon: const Icon(Icons.person_add, size: 16),
+            label: const Text('Call Next'),
+          ),
+        if (counter.currentItemId.isNotEmpty && onBeginService != null)
+          FilledButton.tonal(
+            onPressed: onBeginService,
+            child: const Text('Begin Service'),
+          ),
+        if (counter.currentItemId.isNotEmpty && onCompleteService != null)
+          FilledButton.tonal(
+            onPressed: onCompleteService,
+            child: const Text('Complete'),
+          ),
+        if (onPause != null)
+          OutlinedButton(onPressed: onPause, child: const Text('Pause')),
+        if (onClose != null)
+          OutlinedButton(onPressed: onClose, child: const Text('Close')),
+      ],
       CounterStatus.paused => [
-          if (onOpen != null)
-            FilledButton.tonal(
-              onPressed: onOpen,
-              child: const Text('Resume'),
-            ),
-          if (onClose != null)
-            OutlinedButton(
-              onPressed: onClose,
-              child: const Text('Close'),
-            ),
-        ],
+        if (onOpen != null)
+          FilledButton.tonal(onPressed: onOpen, child: const Text('Resume')),
+        if (onClose != null)
+          OutlinedButton(onPressed: onClose, child: const Text('Close')),
+      ],
     };
   }
 }

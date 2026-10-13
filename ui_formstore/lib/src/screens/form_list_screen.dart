@@ -50,10 +50,12 @@ class _FormListScreenState extends ConsumerState<FormListScreen> {
         final filtered = _search.isEmpty
             ? definitions
             : definitions
-                .where((d) =>
-                    d.name.toLowerCase().contains(_search.toLowerCase()) ||
-                    d.formId.toLowerCase().contains(_search.toLowerCase()))
-                .toList();
+                  .where(
+                    (d) =>
+                        d.name.toLowerCase().contains(_search.toLowerCase()) ||
+                        d.formId.toLowerCase().contains(_search.toLowerCase()),
+                  )
+                  .toList();
 
         return EntityListPage<FormDefinition>(
           title: 'Forms',
@@ -83,9 +85,7 @@ class _FormListScreenState extends ConsumerState<FormListScreen> {
       selected: {_activeFilter},
       onSelectionChanged: (v) => setState(() => _activeFilter = v.first),
       showSelectedIcon: false,
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-      ),
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
     );
   }
 }

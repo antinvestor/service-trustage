@@ -15,12 +15,17 @@ class CounterStatusBadge extends StatelessWidget {
     return StatusBadge.fromEnum(
       value: status,
       mapper: (s) => switch (s) {
-        CounterStatus.open =>
-          ('Open', Colors.green, Icons.check_circle_outline),
-        CounterStatus.closed =>
-          ('Closed', Colors.red, Icons.block_outlined),
-        CounterStatus.paused =>
-          ('Paused', Colors.orange, Icons.pause_circle_outline),
+        CounterStatus.open => (
+          'Open',
+          Colors.green,
+          Icons.check_circle_outline,
+        ),
+        CounterStatus.closed => ('Closed', Colors.red, Icons.block_outlined),
+        CounterStatus.paused => (
+          'Paused',
+          Colors.orange,
+          Icons.pause_circle_outline,
+        ),
       },
     );
   }

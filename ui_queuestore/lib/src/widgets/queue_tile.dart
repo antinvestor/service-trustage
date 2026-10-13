@@ -4,11 +4,7 @@ import '../models/queue_definition.dart';
 
 /// Compact card for a [QueueDefinition] in a list.
 class QueueTile extends StatelessWidget {
-  const QueueTile({
-    super.key,
-    required this.queue,
-    this.onTap,
-  });
+  const QueueTile({super.key, required this.queue, this.onTap});
 
   final QueueDefinition queue;
   final VoidCallback? onTap;
@@ -69,11 +65,11 @@ class QueueTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: (queue.active ? Colors.green : Colors.grey)
-                      .withAlpha(25),
+                  color: (queue.active ? Colors.green : Colors.grey).withAlpha(
+                    25,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(

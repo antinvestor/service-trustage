@@ -37,9 +37,7 @@ class _FormDetailScreenState extends ConsumerState<FormDetailScreen> {
     final definition = asyncDef.value ?? widget.initialDefinition;
 
     if (definition == null && asyncDef.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (definition == null) {
@@ -56,8 +54,10 @@ class _FormDetailScreenState extends ConsumerState<FormDetailScreen> {
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Edit',
-            onPressed: () =>
-                context.go('/formstore/edit/${definition.id}', extra: definition),
+            onPressed: () => context.go(
+              '/formstore/edit/${definition.id}',
+              extra: definition,
+            ),
           ),
           IconButton(
             icon: _isDeleting
@@ -114,7 +114,9 @@ class _FormDetailScreenState extends ConsumerState<FormDetailScreen> {
             if (def.description.isNotEmpty)
               MetadataRow(label: 'Description', value: def.description),
             MetadataRow(
-                label: 'Status', value: def.active ? 'Active' : 'Inactive'),
+              label: 'Status',
+              value: def.active ? 'Active' : 'Inactive',
+            ),
             if (def.createdAt != null)
               MetadataRow(
                 label: 'Created',
@@ -136,15 +138,16 @@ class _FormDetailScreenState extends ConsumerState<FormDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Form'),
-        content:
-            Text('Are you sure you want to delete "${def.name}"?'),
+        content: Text('Are you sure you want to delete "${def.name}"?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -158,9 +161,9 @@ class _FormDetailScreenState extends ConsumerState<FormDetailScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isDeleting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
   }
@@ -193,13 +196,13 @@ class _SubmissionsList extends ConsumerWidget {
         }
         return Column(
           children: submissions
-              .map((sub) => SubmissionTile(
-                    submission: sub,
-                    onTap: () => context.go(
-                      '/formstore/submission/${sub.id}',
-                      extra: sub,
-                    ),
-                  ))
+              .map(
+                (sub) => SubmissionTile(
+                  submission: sub,
+                  onTap: () =>
+                      context.go('/formstore/submission/${sub.id}', extra: sub),
+                ),
+              )
               .toList(),
         );
       },

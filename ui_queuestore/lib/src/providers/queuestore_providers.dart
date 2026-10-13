@@ -32,14 +32,18 @@ final queuestoreClientProvider = Provider<QueuestoreClient>((ref) {
 // Queue definitions
 // ---------------------------------------------------------------------------
 
-final queueListProvider =
-    FutureProvider.family<List<QueueDefinition>, bool?>((ref, active) async {
+final queueListProvider = FutureProvider.family<List<QueueDefinition>, bool?>((
+  ref,
+  active,
+) async {
   final client = ref.watch(queuestoreClientProvider);
   return client.listQueues(active: active);
 });
 
-final queueDetailProvider =
-    FutureProvider.family<QueueDefinition, String>((ref, id) async {
+final queueDetailProvider = FutureProvider.family<QueueDefinition, String>((
+  ref,
+  id,
+) async {
   final client = ref.watch(queuestoreClientProvider);
   return client.getQueue(id);
 });
@@ -64,7 +68,9 @@ class QueueDefinitionNotifier extends Notifier<AsyncValue<void>> {
   }
 
   Future<QueueDefinition> update(
-      String id, Map<String, dynamic> updates) async {
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
     state = const AsyncValue.loading();
     try {
       final result = await _client.updateQueue(id, updates);
@@ -93,20 +99,25 @@ class QueueDefinitionNotifier extends Notifier<AsyncValue<void>> {
 
 final queueDefinitionNotifierProvider =
     NotifierProvider<QueueDefinitionNotifier, AsyncValue<void>>(
-        QueueDefinitionNotifier.new);
+      QueueDefinitionNotifier.new,
+    );
 
 // ---------------------------------------------------------------------------
 // Queue items
 // ---------------------------------------------------------------------------
 
-final queueItemListProvider =
-    FutureProvider.family<List<QueueItem>, String>((ref, queueId) async {
+final queueItemListProvider = FutureProvider.family<List<QueueItem>, String>((
+  ref,
+  queueId,
+) async {
   final client = ref.watch(queuestoreClientProvider);
   return client.listItems(queueId);
 });
 
-final queueItemProvider =
-    FutureProvider.family<QueueItem, String>((ref, id) async {
+final queueItemProvider = FutureProvider.family<QueueItem, String>((
+  ref,
+  id,
+) async {
   final client = ref.watch(queuestoreClientProvider);
   return client.getItem(id);
 });
@@ -187,14 +198,17 @@ class QueueItemNotifier extends Notifier<AsyncValue<void>> {
 
 final queueItemNotifierProvider =
     NotifierProvider<QueueItemNotifier, AsyncValue<void>>(
-        QueueItemNotifier.new);
+      QueueItemNotifier.new,
+    );
 
 // ---------------------------------------------------------------------------
 // Counters
 // ---------------------------------------------------------------------------
 
-final counterListProvider =
-    FutureProvider.family<List<QueueCounter>, String>((ref, queueId) async {
+final counterListProvider = FutureProvider.family<List<QueueCounter>, String>((
+  ref,
+  queueId,
+) async {
   final client = ref.watch(queuestoreClientProvider);
   return client.listCounters(queueId);
 });
@@ -302,8 +316,10 @@ final counterNotifierProvider =
 // Stats
 // ---------------------------------------------------------------------------
 
-final queueStatsProvider =
-    FutureProvider.family<QueueStats, String>((ref, queueId) async {
+final queueStatsProvider = FutureProvider.family<QueueStats, String>((
+  ref,
+  queueId,
+) async {
   final client = ref.watch(queuestoreClientProvider);
   return client.getStats(queueId);
 });

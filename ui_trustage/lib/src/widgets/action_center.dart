@@ -27,7 +27,9 @@ class ActionCenter extends ConsumerStatefulWidget {
 
 class _ActionCenterState extends ConsumerState<ActionCenter> {
   final _signalNameCtl = TextEditingController();
-  final _signalPayloadCtl = TextEditingController(text: '{\n  "approved": true\n}');
+  final _signalPayloadCtl = TextEditingController(
+    text: '{\n  "approved": true\n}',
+  );
   String? _statusMessage;
   bool _busy = false;
 
@@ -112,9 +114,7 @@ class _ActionCenterState extends ConsumerState<ActionCenter> {
           FilledButton.tonalIcon(
             onPressed: _busy ? null : _sendSignal,
             icon: const Icon(Icons.send, size: 16),
-            label: Text(
-              'Send signal to ${shortId(inst.id)}',
-            ),
+            label: Text('Send signal to ${shortId(inst.id)}'),
           ),
 
           // Status message
@@ -127,10 +127,7 @@ class _ActionCenterState extends ConsumerState<ActionCenter> {
                 color: theme.colorScheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                _statusMessage!,
-                style: theme.textTheme.bodySmall,
-              ),
+              child: Text(_statusMessage!, style: theme.textTheme.bodySmall),
             ),
           ],
         ],
@@ -173,7 +170,8 @@ class _ActionCenterState extends ConsumerState<ActionCenter> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _statusMessage = 'Retry scheduled for instance ${shortId(instanceId)}';
+          _statusMessage =
+              'Retry scheduled for instance ${shortId(instanceId)}';
         });
       }
     } catch (e) {

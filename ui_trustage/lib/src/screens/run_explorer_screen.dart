@@ -42,7 +42,10 @@ class _RunExplorerScreenState extends ConsumerState<RunExplorerScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final asyncInstances = ref.watch(
-        instanceListProvider(InstanceQuery(query: _query.isEmpty ? null : _query)));
+      instanceListProvider(
+        InstanceQuery(query: _query.isEmpty ? null : _query),
+      ),
+    );
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,12 +59,18 @@ class _RunExplorerScreenState extends ConsumerState<RunExplorerScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Row(
                   children: [
-                    Icon(Icons.play_circle_outline,
-                        size: 24, color: theme.colorScheme.primary),
+                    Icon(
+                      Icons.play_circle_outline,
+                      size: 24,
+                      color: theme.colorScheme.primary,
+                    ),
                     const SizedBox(width: 8),
-                    Text('Run Explorer',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(
+                      'Run Explorer',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.refresh, size: 20),
@@ -176,7 +185,9 @@ class _InstanceListTile extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
-          color: isSelected ? color.withAlpha(60) : theme.colorScheme.outlineVariant,
+          color: isSelected
+              ? color.withAlpha(60)
+              : theme.colorScheme.outlineVariant,
         ),
       ),
       child: InkWell(
@@ -234,8 +245,11 @@ class _InstanceListTile extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 2),
                   child: Row(
                     children: [
-                      Icon(Icons.subdirectory_arrow_right,
-                          size: 12, color: theme.colorScheme.onSurfaceVariant),
+                      Icon(
+                        Icons.subdirectory_arrow_right,
+                        size: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 2),
                       Text(
                         'child of ${shortId(instance.parentInstanceId)}',
@@ -361,10 +375,7 @@ class _RunDetailView extends ConsumerWidget {
 }
 
 class _RightSidebar extends ConsumerWidget {
-  const _RightSidebar({
-    required this.instanceId,
-    this.selectedExecutionId,
-  });
+  const _RightSidebar({required this.instanceId, this.selectedExecutionId});
   final String instanceId;
   final String? selectedExecutionId;
 
@@ -381,8 +392,9 @@ class _RightSidebar extends ConsumerWidget {
         rt.StateOutput? selectedOutput;
         if (selectedExecutionId != null) {
           try {
-            selectedExec = run.executions
-                .firstWhere((e) => e.id == selectedExecutionId);
+            selectedExec = run.executions.firstWhere(
+              (e) => e.id == selectedExecutionId,
+            );
             selectedOutput = run.outputs
                 .where((o) => o.executionId == selectedExecutionId)
                 .firstOrNull;
@@ -414,7 +426,9 @@ class _RightSidebar extends ConsumerWidget {
               // Action center
               ActionCenter(
                 instance: run.instance,
-                selectedExecution: selectedExec.id.isNotEmpty ? selectedExec : null,
+                selectedExecution: selectedExec.id.isNotEmpty
+                    ? selectedExec
+                    : null,
                 signalWaits: run.signalWaits.toList(),
               ),
             ],

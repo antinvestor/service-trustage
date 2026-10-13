@@ -76,22 +76,24 @@ class ExecutionGraph extends StatelessWidget {
             ),
           )
         else
-          ...executions.map((exec) => _ExecutionNode(
-                execution: exec,
-                isSelected: exec.id == selectedExecutionId,
-                onTap: () => onSelectExecution?.call(exec.id),
-                outputs: run.outputs
-                    .where((o) => o.executionId == exec.id)
-                    .toList(),
-                scopeRuns: run.scopeRuns
-                    .where((s) => s.parentExecutionId == exec.id)
-                    .toList(),
-                signalWaits: run.signalWaits
-                    .where((w) => w.executionId == exec.id)
-                    .toList(),
-                signalMessages: run.signalMessages.toList(),
-                onSelectInstance: onSelectInstance,
-              )),
+          ...executions.map(
+            (exec) => _ExecutionNode(
+              execution: exec,
+              isSelected: exec.id == selectedExecutionId,
+              onTap: () => onSelectExecution?.call(exec.id),
+              outputs: run.outputs
+                  .where((o) => o.executionId == exec.id)
+                  .toList(),
+              scopeRuns: run.scopeRuns
+                  .where((s) => s.parentExecutionId == exec.id)
+                  .toList(),
+              signalWaits: run.signalWaits
+                  .where((w) => w.executionId == exec.id)
+                  .toList(),
+              signalMessages: run.signalMessages.toList(),
+              onSelectInstance: onSelectInstance,
+            ),
+          ),
       ],
     );
   }
@@ -158,8 +160,11 @@ class _InstanceHeader extends StatelessWidget {
             const SizedBox(height: 6),
             Row(
               children: [
-                Icon(Icons.subdirectory_arrow_right,
-                    size: 14, color: theme.colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.subdirectory_arrow_right,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   'Child of ${shortId(instance.parentInstanceId)}',
@@ -244,9 +249,7 @@ class _ExecutionNode extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected
-              ? color.withAlpha(15)
-              : theme.colorScheme.surface,
+          color: isSelected ? color.withAlpha(15) : theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected ? color.withAlpha(60) : Colors.transparent,
@@ -261,10 +264,7 @@ class _ExecutionNode extends StatelessWidget {
               child: Container(
                 width: 10,
                 height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: color,
-                ),
+                decoration: BoxDecoration(shape: BoxShape.circle, color: color),
               ),
             ),
 
@@ -302,7 +302,9 @@ class _ExecutionNode extends StatelessWidget {
                       _MetaChip(label: 'ID', value: shortId(execution.id)),
                       if (execution.traceId.isNotEmpty)
                         _MetaChip(
-                            label: 'Trace', value: shortId(execution.traceId)),
+                          label: 'Trace',
+                          value: shortId(execution.traceId),
+                        ),
                       if (execution.hasStartedAt())
                         _MetaChip(
                           label: 'At',
@@ -321,12 +323,15 @@ class _ExecutionNode extends StatelessWidget {
                         color: const Color(0xFFFFF1F2), // rose-50
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                            color: const Color(0xFFFECDD3)), // rose-200
+                          color: const Color(0xFFFECDD3),
+                        ), // rose-200
                       ),
                       child: Text(
                         execution.errorMessage,
                         style: const TextStyle(
-                            fontSize: 12, color: Color(0xFFBE123C)),
+                          fontSize: 12,
+                          color: Color(0xFFBE123C),
+                        ),
                       ),
                     ),
                   ],
@@ -418,7 +423,11 @@ class _ScopeRunBox extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.account_tree, size: 14, color: Color(0xFF0284C7)),
+                const Icon(
+                  Icons.account_tree,
+                  size: 14,
+                  color: Color(0xFF0284C7),
+                ),
                 const SizedBox(width: 6),
                 TrustageStatusBadge(status: scopeRun.status),
                 const SizedBox(width: 6),
@@ -438,17 +447,26 @@ class _ScopeRunBox extends StatelessWidget {
               children: [
                 Text(
                   'Children: ${scopeRun.completedChildren}/${scopeRun.totalChildren}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF0369A1),
+                  ),
                 ),
                 if (scopeRun.failedChildren > 0)
                   Text(
                     'Failed: ${scopeRun.failedChildren}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFFE11D48)),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFFE11D48),
+                    ),
                   ),
                 if (scopeRun.maxConcurrency > 0)
                   Text(
                     'Concurrency: ${scopeRun.maxConcurrency}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF0369A1),
+                    ),
                   ),
               ],
             ),
@@ -482,8 +500,11 @@ class _SignalWaitBox extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.notifications_active,
-                    size: 14, color: Color(0xFFD97706)),
+                const Icon(
+                  Icons.notifications_active,
+                  size: 14,
+                  color: Color(0xFFD97706),
+                ),
                 const SizedBox(width: 6),
                 TrustageStatusBadge(status: wait.status),
                 const SizedBox(width: 6),
@@ -504,16 +525,25 @@ class _SignalWaitBox extends StatelessWidget {
                 if (wait.outputVar.isNotEmpty)
                   Text(
                     'Output → ${wait.outputVar}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF92400E),
+                    ),
                   ),
                 if (wait.hasTimeoutAt())
                   Text(
                     'Timeout: ${fmt.format(wait.timeoutAt.toDateTime())}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF92400E),
+                    ),
                   ),
                 Text(
                   'Attempts: ${wait.attempts}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF92400E),
+                  ),
                 ),
               ],
             ),

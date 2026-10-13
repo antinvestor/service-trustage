@@ -18,9 +18,9 @@ class QueuestoreClient {
       Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
 
   Map<String, String> get _jsonHeaders => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
 
   void _checkResponse(http.Response response) {
     if (response.statusCode >= 400) {
@@ -49,7 +49,8 @@ class QueuestoreClient {
     final response = await _client.get(_uri('/api/v1/queues/$id'));
     _checkResponse(response);
     return QueueDefinition.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<QueueDefinition> createQueue(QueueDefinition def) async {
@@ -60,11 +61,14 @@ class QueuestoreClient {
     );
     _checkResponse(response);
     return QueueDefinition.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<QueueDefinition> updateQueue(
-      String id, Map<String, dynamic> updates) async {
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
     final response = await _client.put(
       _uri('/api/v1/queues/$id'),
       headers: _jsonHeaders,
@@ -72,7 +76,8 @@ class QueuestoreClient {
     );
     _checkResponse(response);
     return QueueDefinition.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<void> deleteQueue(String id) async {
@@ -83,8 +88,7 @@ class QueuestoreClient {
   // -- Queue items --
 
   Future<List<QueueItem>> listItems(String queueId) async {
-    final response =
-        await _client.get(_uri('/api/v1/queues/$queueId/items'));
+    final response = await _client.get(_uri('/api/v1/queues/$queueId/items'));
     _checkResponse(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final items = body['items'] as List<dynamic>? ?? [];
@@ -97,7 +101,8 @@ class QueuestoreClient {
     final response = await _client.get(_uri('/api/v1/items/$id'));
     _checkResponse(response);
     return QueueItem.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<QueueItem> enqueue(String queueId, QueueItem item) async {
@@ -108,31 +113,28 @@ class QueuestoreClient {
     );
     _checkResponse(response);
     return QueueItem.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<Map<String, dynamic>> getPosition(String itemId) async {
-    final response =
-        await _client.get(_uri('/api/v1/items/$itemId/position'));
+    final response = await _client.get(_uri('/api/v1/items/$itemId/position'));
     _checkResponse(response);
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<void> cancelItem(String id) async {
-    final response =
-        await _client.post(_uri('/api/v1/items/$id/cancel'));
+    final response = await _client.post(_uri('/api/v1/items/$id/cancel'));
     _checkResponse(response);
   }
 
   Future<void> noShowItem(String id) async {
-    final response =
-        await _client.post(_uri('/api/v1/items/$id/no-show'));
+    final response = await _client.post(_uri('/api/v1/items/$id/no-show'));
     _checkResponse(response);
   }
 
   Future<void> requeueItem(String id) async {
-    final response =
-        await _client.post(_uri('/api/v1/items/$id/requeue'));
+    final response = await _client.post(_uri('/api/v1/items/$id/requeue'));
     _checkResponse(response);
   }
 
@@ -148,8 +150,9 @@ class QueuestoreClient {
   // -- Counters --
 
   Future<List<QueueCounter>> listCounters(String queueId) async {
-    final response =
-        await _client.get(_uri('/api/v1/queues/$queueId/counters'));
+    final response = await _client.get(
+      _uri('/api/v1/queues/$queueId/counters'),
+    );
     _checkResponse(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final items = body['items'] as List<dynamic>? ?? [];
@@ -159,7 +162,9 @@ class QueuestoreClient {
   }
 
   Future<QueueCounter> createCounter(
-      String queueId, QueueCounter counter) async {
+    String queueId,
+    QueueCounter counter,
+  ) async {
     final response = await _client.post(
       _uri('/api/v1/queues/$queueId/counters'),
       headers: _jsonHeaders,
@@ -167,7 +172,8 @@ class QueuestoreClient {
     );
     _checkResponse(response);
     return QueueCounter.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<void> openCounter(String id, {String? staffId}) async {
@@ -180,45 +186,47 @@ class QueuestoreClient {
   }
 
   Future<void> closeCounter(String id) async {
-    final response =
-        await _client.post(_uri('/api/v1/counters/$id/close'));
+    final response = await _client.post(_uri('/api/v1/counters/$id/close'));
     _checkResponse(response);
   }
 
   Future<void> pauseCounter(String id) async {
-    final response =
-        await _client.post(_uri('/api/v1/counters/$id/pause'));
+    final response = await _client.post(_uri('/api/v1/counters/$id/pause'));
     _checkResponse(response);
   }
 
   Future<QueueItem> callNext(String counterId) async {
-    final response =
-        await _client.post(_uri('/api/v1/counters/$counterId/call-next'));
+    final response = await _client.post(
+      _uri('/api/v1/counters/$counterId/call-next'),
+    );
     _checkResponse(response);
     return QueueItem.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<void> beginService(String counterId) async {
-    final response = await _client
-        .post(_uri('/api/v1/counters/$counterId/begin-service'));
+    final response = await _client.post(
+      _uri('/api/v1/counters/$counterId/begin-service'),
+    );
     _checkResponse(response);
   }
 
   Future<void> completeService(String counterId) async {
-    final response = await _client
-        .post(_uri('/api/v1/counters/$counterId/complete-service'));
+    final response = await _client.post(
+      _uri('/api/v1/counters/$counterId/complete-service'),
+    );
     _checkResponse(response);
   }
 
   // -- Stats --
 
   Future<QueueStats> getStats(String queueId) async {
-    final response =
-        await _client.get(_uri('/api/v1/queues/$queueId/stats'));
+    final response = await _client.get(_uri('/api/v1/queues/$queueId/stats'));
     _checkResponse(response);
     return QueueStats.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 }
 

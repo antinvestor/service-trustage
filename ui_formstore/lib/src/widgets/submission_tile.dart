@@ -6,11 +6,7 @@ import 'submission_status_badge.dart';
 
 /// Compact card for a [FormSubmission] in a list.
 class SubmissionTile extends StatelessWidget {
-  const SubmissionTile({
-    super.key,
-    required this.submission,
-    this.onTap,
-  });
+  const SubmissionTile({super.key, required this.submission, this.onTap});
 
   final FormSubmission submission;
   final VoidCallback? onTap;

@@ -85,36 +85,36 @@ class TrustageRouteModule extends RouteModule {
 
   @override
   Map<String, Set<String>> get routePermissions => {
-        '/trustage': {'trustage_read'},
-        '/trustage/runs': {'trustage_read'},
-        '/trustage/executions': {'trustage_read'},
-        '/trustage/workflows': {'trustage_read'},
-      };
+    '/trustage': {'trustage_read'},
+    '/trustage/runs': {'trustage_read'},
+    '/trustage/executions': {'trustage_read'},
+    '/trustage/workflows': {'trustage_read'},
+  };
 
   @override
   PermissionManifest get permissionManifest => const PermissionManifest(
-        namespace: 'service_trustage',
-        permissions: [
-          PermissionEntry(
-            key: 'trustage_read',
-            label: 'View Workflows & Runs',
-            scope: PermissionScope.service,
-          ),
-          PermissionEntry(
-            key: 'trustage_operate',
-            label: 'Retry, Resume, Send Signals',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'trustage_ingest',
-            label: 'Trigger Events',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'trustage_manage',
-            label: 'Create & Activate Workflows',
-            scope: PermissionScope.action,
-          ),
-        ],
-      );
+    namespace: 'service_trustage',
+    permissions: [
+      PermissionEntry(
+        key: 'trustage_read',
+        label: 'View Workflows & Runs',
+        scope: PermissionScope.service,
+      ),
+      PermissionEntry(
+        key: 'trustage_operate',
+        label: 'Retry, Resume, Send Signals',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'trustage_ingest',
+        label: 'Trigger Events',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'trustage_manage',
+        label: 'Create & Activate Workflows',
+        scope: PermissionScope.action,
+      ),
+    ],
+  );
 }

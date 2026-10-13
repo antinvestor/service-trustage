@@ -13,7 +13,13 @@ import 'trustage_transport_provider.dart';
 
 /// Parameters for listing instances.
 class InstanceQuery {
-  const InstanceQuery({this.workflowName, this.status, this.query, this.limit = 50, this.cursor});
+  const InstanceQuery({
+    this.workflowName,
+    this.status,
+    this.query,
+    this.limit = 50,
+    this.cursor,
+  });
   final String? workflowName;
   final rt.InstanceStatus? status;
   final String? query;
@@ -23,7 +29,13 @@ class InstanceQuery {
 
 /// Parameters for listing executions.
 class ExecutionQuery {
-  const ExecutionQuery({this.instanceId, this.status, this.query, this.limit = 50, this.cursor});
+  const ExecutionQuery({
+    this.instanceId,
+    this.status,
+    this.query,
+    this.limit = 50,
+    this.cursor,
+  });
   final String? instanceId;
   final rt.ExecutionStatus? status;
   final String? query;
@@ -33,7 +45,13 @@ class ExecutionQuery {
 
 /// Parameters for listing workflows.
 class WorkflowQuery {
-  const WorkflowQuery({this.name, this.status, this.query, this.limit = 50, this.cursor});
+  const WorkflowQuery({
+    this.name,
+    this.status,
+    this.query,
+    this.limit = 50,
+    this.cursor,
+  });
   final String? name;
   final wf.WorkflowStatus? status;
   final String? query;
@@ -47,41 +65,50 @@ class WorkflowQuery {
 
 /// Lists instances with optional filters.
 final instanceListProvider =
-    FutureProvider.family<rt.ListInstancesResponse, InstanceQuery>((ref, q) async {
-  final client = ref.watch(runtimeClientProvider);
-  final req = rt.ListInstancesRequest();
-  if (q.workflowName != null && q.workflowName!.isNotEmpty) {
-    req.workflowName = q.workflowName!;
-  }
-  if (q.status != null) req.status = q.status!;
-  final search = rt.SearchRequest();
-  if (q.query != null && q.query!.isNotEmpty) search.query = q.query!;
-  final cursor = rt.PageCursor()..limit = q.limit;
-  if (q.cursor != null && q.cursor!.isNotEmpty) cursor.page = q.cursor!;
-  search.cursor = cursor;
-  req.search = search;
-  return client.listInstances(req);
-});
+    FutureProvider.family<rt.ListInstancesResponse, InstanceQuery>((
+      ref,
+      q,
+    ) async {
+      final client = ref.watch(runtimeClientProvider);
+      final req = rt.ListInstancesRequest();
+      if (q.workflowName != null && q.workflowName!.isNotEmpty) {
+        req.workflowName = q.workflowName!;
+      }
+      if (q.status != null) req.status = q.status!;
+      final search = rt.SearchRequest();
+      if (q.query != null && q.query!.isNotEmpty) search.query = q.query!;
+      final cursor = rt.PageCursor()..limit = q.limit;
+      if (q.cursor != null && q.cursor!.isNotEmpty) cursor.page = q.cursor!;
+      search.cursor = cursor;
+      req.search = search;
+      return client.listInstances(req);
+    });
 
 /// Gets a full instance run with executions, timeline, outputs, scope runs, signals.
 final instanceRunProvider =
-    FutureProvider.family<rt.GetInstanceRunResponse, String>((ref, instanceId) async {
-  final client = ref.watch(runtimeClientProvider);
-  final req = rt.GetInstanceRunRequest()
-    ..instanceId = instanceId
-    ..includePayloads = true
-    ..executionLimit = 150
-    ..timelineLimit = 150;
-  return client.getInstanceRun(req);
-});
+    FutureProvider.family<rt.GetInstanceRunResponse, String>((
+      ref,
+      instanceId,
+    ) async {
+      final client = ref.watch(runtimeClientProvider);
+      final req = rt.GetInstanceRunRequest()
+        ..instanceId = instanceId
+        ..includePayloads = true
+        ..executionLimit = 150
+        ..timelineLimit = 150;
+      return client.getInstanceRun(req);
+    });
 
 /// Gets the audit timeline for an instance.
 final instanceTimelineProvider =
-    FutureProvider.family<ev.GetInstanceTimelineResponse, String>((ref, instanceId) async {
-  final client = ref.watch(eventClientProvider);
-  final req = ev.GetInstanceTimelineRequest()..instanceId = instanceId;
-  return client.getInstanceTimeline(req);
-});
+    FutureProvider.family<ev.GetInstanceTimelineResponse, String>((
+      ref,
+      instanceId,
+    ) async {
+      final client = ref.watch(eventClientProvider);
+      final req = ev.GetInstanceTimelineRequest()..instanceId = instanceId;
+      return client.getInstanceTimeline(req);
+    });
 
 // ---------------------------------------------------------------------------
 // Execution providers
@@ -89,31 +116,37 @@ final instanceTimelineProvider =
 
 /// Lists executions with optional filters.
 final executionListProvider =
-    FutureProvider.family<rt.ListExecutionsResponse, ExecutionQuery>((ref, q) async {
-  final client = ref.watch(runtimeClientProvider);
-  final req = rt.ListExecutionsRequest();
-  if (q.instanceId != null && q.instanceId!.isNotEmpty) {
-    req.instanceId = q.instanceId!;
-  }
-  if (q.status != null) req.status = q.status!;
-  final search = rt.SearchRequest();
-  if (q.query != null && q.query!.isNotEmpty) search.query = q.query!;
-  final cursor = rt.PageCursor()..limit = q.limit;
-  if (q.cursor != null && q.cursor!.isNotEmpty) cursor.page = q.cursor!;
-  search.cursor = cursor;
-  req.search = search;
-  return client.listExecutions(req);
-});
+    FutureProvider.family<rt.ListExecutionsResponse, ExecutionQuery>((
+      ref,
+      q,
+    ) async {
+      final client = ref.watch(runtimeClientProvider);
+      final req = rt.ListExecutionsRequest();
+      if (q.instanceId != null && q.instanceId!.isNotEmpty) {
+        req.instanceId = q.instanceId!;
+      }
+      if (q.status != null) req.status = q.status!;
+      final search = rt.SearchRequest();
+      if (q.query != null && q.query!.isNotEmpty) search.query = q.query!;
+      final cursor = rt.PageCursor()..limit = q.limit;
+      if (q.cursor != null && q.cursor!.isNotEmpty) cursor.page = q.cursor!;
+      search.cursor = cursor;
+      req.search = search;
+      return client.listExecutions(req);
+    });
 
 /// Gets a single execution with output.
 final executionDetailProvider =
-    FutureProvider.family<rt.GetExecutionResponse, String>((ref, executionId) async {
-  final client = ref.watch(runtimeClientProvider);
-  final req = rt.GetExecutionRequest()
-    ..executionId = executionId
-    ..includeOutput = true;
-  return client.getExecution(req);
-});
+    FutureProvider.family<rt.GetExecutionResponse, String>((
+      ref,
+      executionId,
+    ) async {
+      final client = ref.watch(runtimeClientProvider);
+      final req = rt.GetExecutionRequest()
+        ..executionId = executionId
+        ..includeOutput = true;
+      return client.getExecution(req);
+    });
 
 // ---------------------------------------------------------------------------
 // Workflow providers
@@ -121,19 +154,22 @@ final executionDetailProvider =
 
 /// Lists workflow definitions.
 final workflowListProvider =
-    FutureProvider.family<wf.ListWorkflowsResponse, WorkflowQuery>((ref, q) async {
-  final client = ref.watch(workflowClientProvider);
-  final req = wf.ListWorkflowsRequest();
-  if (q.name != null && q.name!.isNotEmpty) req.name = q.name!;
-  if (q.status != null) req.status = q.status!;
-  final search = wf.SearchRequest();
-  if (q.query != null && q.query!.isNotEmpty) search.query = q.query!;
-  final cursor = wf.PageCursor()..limit = q.limit;
-  if (q.cursor != null && q.cursor!.isNotEmpty) cursor.page = q.cursor!;
-  search.cursor = cursor;
-  req.search = search;
-  return client.listWorkflows(req);
-});
+    FutureProvider.family<wf.ListWorkflowsResponse, WorkflowQuery>((
+      ref,
+      q,
+    ) async {
+      final client = ref.watch(workflowClientProvider);
+      final req = wf.ListWorkflowsRequest();
+      if (q.name != null && q.name!.isNotEmpty) req.name = q.name!;
+      if (q.status != null) req.status = q.status!;
+      final search = wf.SearchRequest();
+      if (q.query != null && q.query!.isNotEmpty) search.query = q.query!;
+      final cursor = wf.PageCursor()..limit = q.limit;
+      if (q.cursor != null && q.cursor!.isNotEmpty) cursor.page = q.cursor!;
+      search.cursor = cursor;
+      req.search = search;
+      return client.listWorkflows(req);
+    });
 
 // ---------------------------------------------------------------------------
 // Action notifiers
@@ -193,14 +229,19 @@ class TrustageActionNotifier extends Notifier<AsyncValue<void>> {
   }
 
   /// Send a signal to a workflow instance.
-  Future<bool> sendSignal(String instanceId, String signalName, Map<String, dynamic>? payload) async {
+  Future<bool> sendSignal(
+    String instanceId,
+    String signalName,
+    Map<String, dynamic>? payload,
+  ) async {
     state = const AsyncValue.loading();
     try {
       final client = ref.read(signalClientProvider);
       final req = sig.SendSignalRequest()
         ..instanceId = instanceId
         ..signalName = signalName;
-      if (payload != null) req.payload = (sig.Struct()..mergeFromJsonMap(payload));
+      if (payload != null)
+        req.payload = (sig.Struct()..mergeFromJsonMap(payload));
       final resp = await client.sendSignal(req);
       state = const AsyncValue.data(null);
       _invalidateAll();
@@ -227,7 +268,8 @@ class TrustageActionNotifier extends Notifier<AsyncValue<void>> {
       if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
         req.idempotencyKey = idempotencyKey;
       }
-      if (payload != null) req.payload = (ev.Struct()..mergeFromJsonMap(payload));
+      if (payload != null)
+        req.payload = (ev.Struct()..mergeFromJsonMap(payload));
       final resp = await client.ingestEvent(req);
       state = const AsyncValue.data(null);
       _invalidateAll();
@@ -264,4 +306,5 @@ class TrustageActionNotifier extends Notifier<AsyncValue<void>> {
 
 final trustageActionProvider =
     NotifierProvider<TrustageActionNotifier, AsyncValue<void>>(
-        TrustageActionNotifier.new);
+      TrustageActionNotifier.new,
+    );

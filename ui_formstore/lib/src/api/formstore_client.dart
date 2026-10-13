@@ -16,9 +16,9 @@ class FormstoreClient {
       Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
 
   Map<String, String> get _jsonHeaders => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
 
   void _checkResponse(http.Response response) {
     if (response.statusCode >= 400) {
@@ -34,7 +34,9 @@ class FormstoreClient {
   Future<List<FormDefinition>> listFormDefinitions({bool? active}) async {
     final params = <String, String>{};
     if (active != null) params['active'] = active.toString();
-    final response = await _client.get(_uri('/api/v1/form-definitions', params));
+    final response = await _client.get(
+      _uri('/api/v1/form-definitions', params),
+    );
     _checkResponse(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final items = body['items'] as List<dynamic>? ?? [];
@@ -47,7 +49,8 @@ class FormstoreClient {
     final response = await _client.get(_uri('/api/v1/form-definitions/$id'));
     _checkResponse(response);
     return FormDefinition.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<FormDefinition> createFormDefinition(FormDefinition def) async {
@@ -58,11 +61,14 @@ class FormstoreClient {
     );
     _checkResponse(response);
     return FormDefinition.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<FormDefinition> updateFormDefinition(
-      String id, Map<String, dynamic> updates) async {
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
     final response = await _client.put(
       _uri('/api/v1/form-definitions/$id'),
       headers: _jsonHeaders,
@@ -70,24 +76,28 @@ class FormstoreClient {
     );
     _checkResponse(response);
     return FormDefinition.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<void> deleteFormDefinition(String id) async {
-    final response =
-        await _client.delete(_uri('/api/v1/form-definitions/$id'));
+    final response = await _client.delete(_uri('/api/v1/form-definitions/$id'));
     _checkResponse(response);
   }
 
   // -- Submissions --
 
-  Future<List<FormSubmission>> listSubmissions(String formId,
-      {int? limit, int? offset}) async {
+  Future<List<FormSubmission>> listSubmissions(
+    String formId, {
+    int? limit,
+    int? offset,
+  }) async {
     final params = <String, String>{};
     if (limit != null) params['limit'] = limit.toString();
     if (offset != null) params['offset'] = offset.toString();
-    final response = await _client
-        .get(_uri('/api/v1/forms/$formId/submissions', params));
+    final response = await _client.get(
+      _uri('/api/v1/forms/$formId/submissions', params),
+    );
     _checkResponse(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final items = body['items'] as List<dynamic>? ?? [];
@@ -100,11 +110,14 @@ class FormstoreClient {
     final response = await _client.get(_uri('/api/v1/submissions/$id'));
     _checkResponse(response);
     return FormSubmission.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<FormSubmission> createSubmission(
-      String formId, FormSubmission sub) async {
+    String formId,
+    FormSubmission sub,
+  ) async {
     final response = await _client.post(
       _uri('/api/v1/forms/$formId/submissions'),
       headers: _jsonHeaders,
@@ -112,11 +125,14 @@ class FormstoreClient {
     );
     _checkResponse(response);
     return FormSubmission.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<FormSubmission> updateSubmission(
-      String id, Map<String, dynamic> updates) async {
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
     final response = await _client.put(
       _uri('/api/v1/submissions/$id'),
       headers: _jsonHeaders,
@@ -124,7 +140,8 @@ class FormstoreClient {
     );
     _checkResponse(response);
     return FormSubmission.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   Future<void> deleteSubmission(String id) async {

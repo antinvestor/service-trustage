@@ -68,9 +68,11 @@ class TimelineEntryTile extends StatelessWidget {
                             entry.toState.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: Icon(Icons.arrow_forward,
-                                size: 12,
-                                color: theme.colorScheme.onSurfaceVariant),
+                            child: Icon(
+                              Icons.arrow_forward,
+                              size: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         if (entry.toState.isNotEmpty)
                           Text(

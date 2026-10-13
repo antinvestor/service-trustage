@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Displays a JSON map as a formatted key-value list inside a card.
 class JsonDataViewer extends StatelessWidget {
-  const JsonDataViewer({
-    super.key,
-    required this.data,
-    this.title,
-  });
+  const JsonDataViewer({super.key, required this.data, this.title});
 
   final Map<String, dynamic> data;
   final String? title;
@@ -34,30 +30,32 @@ class JsonDataViewer extends StatelessWidget {
               Text(title!, style: theme.textTheme.titleSmall),
               const SizedBox(height: 12),
             ],
-            ...data.entries.map((entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 140,
-                        child: Text(
-                          entry.key,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
+            ...data.entries.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 140,
+                      child: Text(
+                        entry.key,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                      Expanded(
-                        child: Text(
-                          _formatValue(entry.value),
-                          style: theme.textTheme.bodySmall,
-                        ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _formatValue(entry.value),
+                        style: theme.textTheme.bodySmall,
                       ),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

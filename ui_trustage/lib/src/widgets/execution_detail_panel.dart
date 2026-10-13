@@ -10,11 +10,7 @@ import 'trustage_status_badge.dart';
 
 /// Detail panel for a selected execution showing input/output payloads.
 class ExecutionDetailPanel extends StatelessWidget {
-  const ExecutionDetailPanel({
-    super.key,
-    required this.execution,
-    this.output,
-  });
+  const ExecutionDetailPanel({super.key, required this.execution, this.output});
 
   final rt.WorkflowExecution execution;
   final rt.StateOutput? output;
@@ -84,8 +80,7 @@ class ExecutionDetailPanel extends StatelessWidget {
               ),
               child: Text(
                 execution.errorMessage,
-                style: const TextStyle(
-                    fontSize: 12, color: Color(0xFFBE123C)),
+                style: const TextStyle(fontSize: 12, color: Color(0xFFBE123C)),
               ),
             ),
           ],
@@ -108,10 +103,7 @@ class ExecutionDetailPanel extends StatelessWidget {
             ),
           ] else if (execution.hasOutput()) ...[
             const SizedBox(height: 12),
-            JsonBlock(
-              label: 'Output',
-              value: _structToMap(execution.output),
-            ),
+            JsonBlock(label: 'Output', value: _structToMap(execution.output)),
           ],
         ],
       ),

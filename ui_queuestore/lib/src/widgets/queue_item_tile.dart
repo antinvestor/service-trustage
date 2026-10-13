@@ -6,11 +6,7 @@ import 'item_status_badge.dart';
 
 /// Compact card for a [QueueItem] in a list.
 class QueueItemTile extends StatelessWidget {
-  const QueueItemTile({
-    super.key,
-    required this.item,
-    this.onTap,
-  });
+  const QueueItemTile({super.key, required this.item, this.onTap});
 
   final QueueItem item;
   final VoidCallback? onTap;

@@ -35,10 +35,7 @@ class FormstoreRouteModule extends RouteModule {
               final def = state.extra is FormDefinition
                   ? state.extra as FormDefinition
                   : null;
-              return FormDetailScreen(
-                definitionId: id,
-                initialDefinition: def,
-              );
+              return FormDetailScreen(definitionId: id, initialDefinition: def);
             },
           ),
           GoRoute(
@@ -84,42 +81,42 @@ class FormstoreRouteModule extends RouteModule {
 
   @override
   Map<String, Set<String>> get routePermissions => {
-        '/formstore': {'formstore_read'},
-        '/formstore/create': {'formstore_create'},
-        '/formstore/detail': {'formstore_read'},
-        '/formstore/edit': {'formstore_update'},
-        '/formstore/submission': {'formstore_read'},
-      };
+    '/formstore': {'formstore_read'},
+    '/formstore/create': {'formstore_create'},
+    '/formstore/detail': {'formstore_read'},
+    '/formstore/edit': {'formstore_update'},
+    '/formstore/submission': {'formstore_read'},
+  };
 
   @override
   PermissionManifest get permissionManifest => const PermissionManifest(
-        namespace: 'service_formstore',
-        permissions: [
-          PermissionEntry(
-            key: 'formstore_read',
-            label: 'View Forms',
-            scope: PermissionScope.service,
-          ),
-          PermissionEntry(
-            key: 'formstore_create',
-            label: 'Create Forms',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'formstore_update',
-            label: 'Update Forms',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'formstore_delete',
-            label: 'Delete Forms',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'formstore_submit',
-            label: 'Submit Forms',
-            scope: PermissionScope.action,
-          ),
-        ],
-      );
+    namespace: 'service_formstore',
+    permissions: [
+      PermissionEntry(
+        key: 'formstore_read',
+        label: 'View Forms',
+        scope: PermissionScope.service,
+      ),
+      PermissionEntry(
+        key: 'formstore_create',
+        label: 'Create Forms',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'formstore_update',
+        label: 'Update Forms',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'formstore_delete',
+        label: 'Delete Forms',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'formstore_submit',
+        label: 'Submit Forms',
+        scope: PermissionScope.action,
+      ),
+    ],
+  );
 }

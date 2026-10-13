@@ -33,13 +33,15 @@ final formstoreClientProvider = Provider<FormstoreClient>((ref) {
 /// Lists form definitions. Optionally filter by [active] status.
 final formDefinitionListProvider =
     FutureProvider.family<List<FormDefinition>, bool?>((ref, active) async {
-  final client = ref.watch(formstoreClientProvider);
-  return client.listFormDefinitions(active: active);
-});
+      final client = ref.watch(formstoreClientProvider);
+      return client.listFormDefinitions(active: active);
+    });
 
 /// Gets a single form definition by ID.
-final formDefinitionProvider =
-    FutureProvider.family<FormDefinition, String>((ref, id) async {
+final formDefinitionProvider = FutureProvider.family<FormDefinition, String>((
+  ref,
+  id,
+) async {
   final client = ref.watch(formstoreClientProvider);
   return client.getFormDefinition(id);
 });
@@ -64,8 +66,7 @@ class FormDefinitionNotifier extends Notifier<AsyncValue<void>> {
     }
   }
 
-  Future<FormDefinition> update(
-      String id, Map<String, dynamic> updates) async {
+  Future<FormDefinition> update(String id, Map<String, dynamic> updates) async {
     state = const AsyncValue.loading();
     try {
       final result = await _client.updateFormDefinition(id, updates);
@@ -94,7 +95,8 @@ class FormDefinitionNotifier extends Notifier<AsyncValue<void>> {
 
 final formDefinitionNotifierProvider =
     NotifierProvider<FormDefinitionNotifier, AsyncValue<void>>(
-        FormDefinitionNotifier.new);
+      FormDefinitionNotifier.new,
+    );
 
 // ---------------------------------------------------------------------------
 // Submissions
@@ -103,13 +105,15 @@ final formDefinitionNotifierProvider =
 /// Lists submissions for a form.
 final submissionListProvider =
     FutureProvider.family<List<FormSubmission>, String>((ref, formId) async {
-  final client = ref.watch(formstoreClientProvider);
-  return client.listSubmissions(formId);
-});
+      final client = ref.watch(formstoreClientProvider);
+      return client.listSubmissions(formId);
+    });
 
 /// Gets a single submission by ID.
-final submissionProvider =
-    FutureProvider.family<FormSubmission, String>((ref, id) async {
+final submissionProvider = FutureProvider.family<FormSubmission, String>((
+  ref,
+  id,
+) async {
   final client = ref.watch(formstoreClientProvider);
   return client.getSubmission(id);
 });
@@ -134,8 +138,7 @@ class SubmissionNotifier extends Notifier<AsyncValue<void>> {
     }
   }
 
-  Future<FormSubmission> update(
-      String id, Map<String, dynamic> updates) async {
+  Future<FormSubmission> update(String id, Map<String, dynamic> updates) async {
     state = const AsyncValue.loading();
     try {
       final result = await _client.updateSubmission(id, updates);
@@ -164,4 +167,5 @@ class SubmissionNotifier extends Notifier<AsyncValue<void>> {
 
 final submissionNotifierProvider =
     NotifierProvider<SubmissionNotifier, AsyncValue<void>>(
-        SubmissionNotifier.new);
+      SubmissionNotifier.new,
+    );

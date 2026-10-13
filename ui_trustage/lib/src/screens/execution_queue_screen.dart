@@ -26,12 +26,14 @@ class _ExecutionQueueScreenState extends ConsumerState<ExecutionQueueScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final asyncExecs = ref.watch(executionListProvider(
-      ExecutionQuery(
-        query: _query.isEmpty ? null : _query,
-        status: _statusFilter,
+    final asyncExecs = ref.watch(
+      executionListProvider(
+        ExecutionQuery(
+          query: _query.isEmpty ? null : _query,
+          status: _statusFilter,
+        ),
       ),
-    ));
+    );
 
     return Column(
       children: [
@@ -42,9 +44,12 @@ class _ExecutionQueueScreenState extends ConsumerState<ExecutionQueueScreen> {
             children: [
               Icon(Icons.list_alt, size: 24, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
-              Text('Execution Queue',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                'Execution Queue',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.refresh, size: 20),
@@ -77,11 +82,17 @@ class _ExecutionQueueScreenState extends ConsumerState<ExecutionQueueScreen> {
                 items: [
                   const DropdownMenuItem(value: null, child: Text('All')),
                   ...rt.ExecutionStatus.values
-                      .where((s) => s != rt.ExecutionStatus.EXECUTION_STATUS_UNSPECIFIED)
-                      .map((s) => DropdownMenuItem(
-                            value: s,
-                            child: Text(humanizeStatus(s.name)),
-                          )),
+                      .where(
+                        (s) =>
+                            s !=
+                            rt.ExecutionStatus.EXECUTION_STATUS_UNSPECIFIED,
+                      )
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(humanizeStatus(s.name)),
+                        ),
+                      ),
                 ],
                 onChanged: (v) => setState(() => _statusFilter = v),
                 underline: const SizedBox.shrink(),
@@ -100,7 +111,10 @@ class _ExecutionQueueScreenState extends ConsumerState<ExecutionQueueScreen> {
                 return const Center(child: Text('No executions found.'));
               }
               return ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 8,
+                ),
                 itemCount: resp.items.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 4),
                 itemBuilder: (ctx, i) {
@@ -111,7 +125,8 @@ class _ExecutionQueueScreenState extends ConsumerState<ExecutionQueueScreen> {
                     onRetry: canRetry(exec.status.name)
                         ? () => _retry(exec.id)
                         : null,
-                    onTap: () => context.go('/trustage/runs/${exec.instanceId}'),
+                    onTap: () =>
+                        context.go('/trustage/runs/${exec.instanceId}'),
                   );
                 },
               );
@@ -125,17 +140,21 @@ class _ExecutionQueueScreenState extends ConsumerState<ExecutionQueueScreen> {
   Future<void> _retry(String executionId) async {
     setState(() => _retryingId = executionId);
     try {
-      await ref.read(trustageActionProvider.notifier).retryExecution(executionId);
+      await ref
+          .read(trustageActionProvider.notifier)
+          .retryExecution(executionId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Retry scheduled for ${shortId(executionId)}')),
+          SnackBar(
+            content: Text('Retry scheduled for ${shortId(executionId)}'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Retry failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Retry failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _retryingId = null);
@@ -180,8 +199,9 @@ class _ExecutionRow extends StatelessWidget {
                   children: [
                     Text(
                       execution.state,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (execution.traceId.isNotEmpty)
@@ -238,7 +258,8 @@ class _ExecutionRow extends StatelessWidget {
                                 width: 16,
                                 height: 16,
                                 child: CircularProgressIndicator(
-                                    strokeWidth: 2),
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.replay, size: 18),
                         onPressed: isRetrying ? null : onRetry,
