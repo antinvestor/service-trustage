@@ -18,9 +18,11 @@ class CommandDeckScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncInstances = ref.watch(
-        instanceListProvider(const InstanceQuery(limit: 50)));
+      instanceListProvider(const InstanceQuery(limit: 50)),
+    );
     final asyncExecutions = ref.watch(
-        executionListProvider(const ExecutionQuery(limit: 50)));
+      executionListProvider(const ExecutionQuery(limit: 50)),
+    );
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -30,9 +32,9 @@ class CommandDeckScreen extends ConsumerWidget {
           // Header
           Text(
             'Command Deck',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 20),
 
@@ -43,10 +45,16 @@ class CommandDeckScreen extends ConsumerWidget {
             data: (resp) {
               final instances = resp.items;
               final running = instances
-                  .where((i) => i.status == rt.InstanceStatus.INSTANCE_STATUS_RUNNING)
+                  .where(
+                    (i) =>
+                        i.status == rt.InstanceStatus.INSTANCE_STATUS_RUNNING,
+                  )
                   .length;
               final waiting = instances
-                  .where((i) => i.status == rt.InstanceStatus.INSTANCE_STATUS_SUSPENDED)
+                  .where(
+                    (i) =>
+                        i.status == rt.InstanceStatus.INSTANCE_STATUS_SUSPENDED,
+                  )
                   .length;
 
               return Wrap(
@@ -86,7 +94,11 @@ class CommandDeckScreen extends ConsumerWidget {
                     error: (_, _) => const SizedBox.shrink(),
                     data: (execResp) {
                       final needsAttention = execResp.items
-                          .where((e) => canRetry(e.status.name) || isWaiting(e.status.name))
+                          .where(
+                            (e) =>
+                                canRetry(e.status.name) ||
+                                isWaiting(e.status.name),
+                          )
                           .length;
                       return SizedBox(
                         width: 160,
@@ -118,7 +130,9 @@ class CommandDeckScreen extends ConsumerWidget {
             error: (_, _) => const SizedBox.shrink(),
             data: (execResp) {
               final hot = execResp.items
-                  .where((e) => canRetry(e.status.name) || isWaiting(e.status.name))
+                  .where(
+                    (e) => canRetry(e.status.name) || isWaiting(e.status.name),
+                  )
                   .take(6)
                   .toList();
 
@@ -129,12 +143,13 @@ class CommandDeckScreen extends ConsumerWidget {
                 title: 'Hot Executions',
                 child: Column(
                   children: hot
-                      .map((exec) => _HotExecutionTile(
-                            execution: exec,
-                            onTap: () => context.go(
-                              '/trustage/runs/${exec.instanceId}',
-                            ),
-                          ))
+                      .map(
+                        (exec) => _HotExecutionTile(
+                          execution: exec,
+                          onTap: () =>
+                              context.go('/trustage/runs/${exec.instanceId}'),
+                        ),
+                      )
                       .toList(),
                 ),
               );
@@ -181,8 +196,11 @@ class _HotExecutionTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right,
-                size: 16, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),

@@ -28,9 +28,7 @@ class SubmissionDetailScreen extends ConsumerWidget {
     final submission = asyncSub.value ?? initialSubmission;
 
     if (submission == null && asyncSub.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (submission == null) {
@@ -60,8 +58,7 @@ class SubmissionDetailScreen extends ConsumerWidget {
             if (submission.metadata != null &&
                 submission.metadata!.isNotEmpty) ...[
               const SizedBox(height: 16),
-              JsonDataViewer(
-                  data: submission.metadata!, title: 'Metadata'),
+              JsonDataViewer(data: submission.metadata!, title: 'Metadata'),
             ],
           ],
         ),
@@ -89,8 +86,7 @@ class SubmissionDetailScreen extends ConsumerWidget {
               MetadataRow(label: 'Submitter', value: sub.submitterId),
             MetadataRow(label: 'Status', value: sub.status.name),
             if (sub.fileCount > 0)
-              MetadataRow(
-                  label: 'Files', value: sub.fileCount.toString()),
+              MetadataRow(label: 'Files', value: sub.fileCount.toString()),
             if (sub.idempotencyKey.isNotEmpty)
               MetadataRow(label: 'Idempotency Key', value: sub.idempotencyKey),
             if (sub.createdAt != null)

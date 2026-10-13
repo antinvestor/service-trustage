@@ -18,7 +18,8 @@ class _EventTriggerFormState extends ConsumerState<EventTriggerForm> {
   final _sourceCtl = TextEditingController(text: 'ops-console');
   final _idempotencyCtl = TextEditingController();
   final _payloadCtl = TextEditingController(
-    text: '{\n  "order_id": "ORD-001",\n  "amount": 1500,\n  "currency": "KES"\n}',
+    text:
+        '{\n  "order_id": "ORD-001",\n  "amount": 1500,\n  "currency": "KES"\n}',
   );
   bool _busy = false;
   String? _statusMessage;

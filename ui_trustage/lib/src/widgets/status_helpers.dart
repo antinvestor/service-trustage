@@ -27,7 +27,9 @@ Color statusColor(String status) {
   if (s.contains('waiting') || s.contains('suspended')) {
     return const Color(0xFFD97706); // amber-600
   }
-  if (s.contains('running') || s.contains('dispatched') || s.contains('pending')) {
+  if (s.contains('running') ||
+      s.contains('dispatched') ||
+      s.contains('pending')) {
     return const Color(0xFF0284C7); // sky-600
   }
   if (s.contains('retry')) {
@@ -39,7 +41,9 @@ Color statusColor(String status) {
   if (s.contains('timed_out') || s.contains('timeout')) {
     return const Color(0xFF92400E); // amber-800
   }
-  if (s.contains('stale') || s.contains('cancelled') || s.contains('archived')) {
+  if (s.contains('stale') ||
+      s.contains('cancelled') ||
+      s.contains('archived')) {
     return const Color(0xFF57534E); // stone-600
   }
   return const Color(0xFF78716C); // stone-500

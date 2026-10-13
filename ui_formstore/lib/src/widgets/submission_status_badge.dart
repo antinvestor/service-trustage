@@ -16,10 +16,16 @@ class SubmissionStatusBadge extends StatelessWidget {
       value: status,
       mapper: (s) => switch (s) {
         SubmissionStatus.pending => ('Pending', Colors.orange, Icons.schedule),
-        SubmissionStatus.complete =>
-          ('Complete', Colors.green, Icons.check_circle_outline),
-        SubmissionStatus.archived =>
-          ('Archived', Colors.grey, Icons.archive_outlined),
+        SubmissionStatus.complete => (
+          'Complete',
+          Colors.green,
+          Icons.check_circle_outline,
+        ),
+        SubmissionStatus.archived => (
+          'Archived',
+          Colors.grey,
+          Icons.archive_outlined,
+        ),
       },
     );
   }

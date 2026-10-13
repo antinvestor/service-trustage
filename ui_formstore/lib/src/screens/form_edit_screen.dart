@@ -9,10 +9,7 @@ import '../providers/formstore_providers.dart';
 
 /// Create or edit a form definition.
 class FormEditScreen extends ConsumerStatefulWidget {
-  const FormEditScreen({
-    super.key,
-    this.definition,
-  });
+  const FormEditScreen({super.key, this.definition});
 
   final FormDefinition? definition;
 
@@ -199,9 +196,9 @@ class _FormEditScreenState extends ConsumerState<FormEditScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     }
   }

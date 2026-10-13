@@ -5,11 +5,7 @@ import '../models/form_definition.dart';
 
 /// Compact card for a [FormDefinition] in a list.
 class FormDefinitionTile extends StatelessWidget {
-  const FormDefinitionTile({
-    super.key,
-    required this.definition,
-    this.onTap,
-  });
+  const FormDefinitionTile({super.key, required this.definition, this.onTap});
 
   final FormDefinition definition;
   final VoidCallback? onTap;

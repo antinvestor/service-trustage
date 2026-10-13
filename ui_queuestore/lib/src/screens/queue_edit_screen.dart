@@ -32,10 +32,12 @@ class _QueueEditScreenState extends ConsumerState<QueueEditScreen> {
     final q = widget.queue;
     _nameCtl = TextEditingController(text: q?.name ?? '');
     _descCtl = TextEditingController(text: q?.description ?? '');
-    _priorityCtl =
-        TextEditingController(text: (q?.priorityLevels ?? 3).toString());
-    _capacityCtl =
-        TextEditingController(text: (q?.maxCapacity ?? 0).toString());
+    _priorityCtl = TextEditingController(
+      text: (q?.priorityLevels ?? 3).toString(),
+    );
+    _capacityCtl = TextEditingController(
+      text: (q?.maxCapacity ?? 0).toString(),
+    );
     _slaCtl = TextEditingController(text: (q?.slaMinutes ?? 30).toString());
   }
 
@@ -191,17 +193,17 @@ class _QueueEditScreenState extends ConsumerState<QueueEditScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text(_isEditing ? 'Queue updated' : 'Queue created')),
+            content: Text(_isEditing ? 'Queue updated' : 'Queue created'),
+          ),
         );
         context.go('/queuestore');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     }
   }

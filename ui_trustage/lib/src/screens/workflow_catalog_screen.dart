@@ -24,12 +24,14 @@ class _WorkflowCatalogScreenState extends ConsumerState<WorkflowCatalogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final asyncWorkflows = ref.watch(workflowListProvider(
-      WorkflowQuery(
-        query: _search.isEmpty ? null : _search,
-        status: wf.WorkflowStatus.WORKFLOW_STATUS_ACTIVE,
+    final asyncWorkflows = ref.watch(
+      workflowListProvider(
+        WorkflowQuery(
+          query: _search.isEmpty ? null : _search,
+          status: wf.WorkflowStatus.WORKFLOW_STATUS_ACTIVE,
+        ),
       ),
-    ));
+    );
 
     return asyncWorkflows.when(
       loading: () => EntityListPage<wf.WorkflowDefinition>(
@@ -87,8 +89,10 @@ class _WorkflowTile extends StatelessWidget {
                 color: theme.colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.schema_outlined,
-                  color: theme.colorScheme.onPrimaryContainer),
+              child: Icon(
+                Icons.schema_outlined,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -97,8 +101,9 @@ class _WorkflowTile extends StatelessWidget {
                 children: [
                   Text(
                     workflow.name,
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(

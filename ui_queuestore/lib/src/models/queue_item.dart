@@ -11,9 +11,9 @@ enum QueueItemStatus {
     return switch (value) {
       'no_show' => QueueItemStatus.noShow,
       _ => QueueItemStatus.values.firstWhere(
-          (s) => s.name == value,
-          orElse: () => QueueItemStatus.waiting,
-        ),
+        (s) => s.name == value,
+        orElse: () => QueueItemStatus.waiting,
+      ),
     };
   }
 

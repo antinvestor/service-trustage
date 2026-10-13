@@ -133,17 +133,17 @@ class _EnqueueScreenState extends ConsumerState<EnqueueScreen> {
           .enqueue(widget.queueId, item);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Added to queue')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Added to queue')));
         context.go('/queuestore/detail/${widget.queueId}');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Enqueue failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Enqueue failed: $e')));
       }
     }
   }

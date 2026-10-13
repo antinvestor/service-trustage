@@ -47,7 +47,8 @@ class QueueCounter {
       currentItemId: json['current_item_id'] as String? ?? '',
       servedBy: json['served_by'] as String? ?? '',
       totalServed: json['total_served'] as int? ?? 0,
-      categories: (json['categories'] as List<dynamic>?)
+      categories:
+          (json['categories'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -61,9 +62,6 @@ class QueueCounter {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      if (categories.isNotEmpty) 'categories': categories,
-    };
+    return {'name': name, if (categories.isNotEmpty) 'categories': categories};
   }
 }

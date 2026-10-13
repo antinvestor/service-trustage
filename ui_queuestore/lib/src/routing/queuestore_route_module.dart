@@ -36,10 +36,7 @@ class QueuestoreRouteModule extends RouteModule {
               final queue = state.extra is QueueDefinition
                   ? state.extra as QueueDefinition
                   : null;
-              return QueueDashboardScreen(
-                queueId: id,
-                initialQueue: queue,
-              );
+              return QueueDashboardScreen(queueId: id, initialQueue: queue);
             },
           ),
           GoRoute(
@@ -89,48 +86,48 @@ class QueuestoreRouteModule extends RouteModule {
 
   @override
   Map<String, Set<String>> get routePermissions => {
-        '/queuestore': {'queuestore_read'},
-        '/queuestore/create': {'queuestore_create'},
-        '/queuestore/detail': {'queuestore_read'},
-        '/queuestore/edit': {'queuestore_update'},
-        '/queuestore/enqueue': {'queuestore_enqueue'},
-        '/queuestore/item': {'queuestore_read'},
-      };
+    '/queuestore': {'queuestore_read'},
+    '/queuestore/create': {'queuestore_create'},
+    '/queuestore/detail': {'queuestore_read'},
+    '/queuestore/edit': {'queuestore_update'},
+    '/queuestore/enqueue': {'queuestore_enqueue'},
+    '/queuestore/item': {'queuestore_read'},
+  };
 
   @override
   PermissionManifest get permissionManifest => const PermissionManifest(
-        namespace: 'service_queuestore',
-        permissions: [
-          PermissionEntry(
-            key: 'queuestore_read',
-            label: 'View Queues',
-            scope: PermissionScope.service,
-          ),
-          PermissionEntry(
-            key: 'queuestore_create',
-            label: 'Create Queues',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'queuestore_update',
-            label: 'Update Queues',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'queuestore_delete',
-            label: 'Delete Queues',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'queuestore_enqueue',
-            label: 'Add Items to Queue',
-            scope: PermissionScope.action,
-          ),
-          PermissionEntry(
-            key: 'queuestore_counter',
-            label: 'Manage Counters',
-            scope: PermissionScope.action,
-          ),
-        ],
-      );
+    namespace: 'service_queuestore',
+    permissions: [
+      PermissionEntry(
+        key: 'queuestore_read',
+        label: 'View Queues',
+        scope: PermissionScope.service,
+      ),
+      PermissionEntry(
+        key: 'queuestore_create',
+        label: 'Create Queues',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'queuestore_update',
+        label: 'Update Queues',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'queuestore_delete',
+        label: 'Delete Queues',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'queuestore_enqueue',
+        label: 'Add Items to Queue',
+        scope: PermissionScope.action,
+      ),
+      PermissionEntry(
+        key: 'queuestore_counter',
+        label: 'Manage Counters',
+        scope: PermissionScope.action,
+      ),
+    ],
+  );
 }

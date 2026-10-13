@@ -10,11 +10,7 @@ import '../widgets/item_status_badge.dart';
 
 /// Detail screen for a single queue item with action buttons.
 class QueueItemScreen extends ConsumerStatefulWidget {
-  const QueueItemScreen({
-    super.key,
-    required this.itemId,
-    this.initialItem,
-  });
+  const QueueItemScreen({super.key, required this.itemId, this.initialItem});
 
   final String itemId;
   final QueueItem? initialItem;
@@ -33,9 +29,7 @@ class _QueueItemScreenState extends ConsumerState<QueueItemScreen> {
     final item = asyncItem.value ?? widget.initialItem;
 
     if (item == null && asyncItem.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (item == null) {
@@ -48,7 +42,10 @@ class _QueueItemScreenState extends ConsumerState<QueueItemScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-            item.ticketNo.isNotEmpty ? item.ticketNo : 'Item ${item.id.substring(0, 8)}'),
+          item.ticketNo.isNotEmpty
+              ? item.ticketNo
+              : 'Item ${item.id.substring(0, 8)}',
+        ),
         actions: [
           ItemStatusBadge(status: item.status),
           const SizedBox(width: 16),
@@ -125,12 +122,14 @@ class _QueueItemScreenState extends ConsumerState<QueueItemScreen> {
               MetadataRow(label: 'Called', value: fmt.format(item.calledAt!)),
             if (item.serviceStart != null)
               MetadataRow(
-                  label: 'Service Start',
-                  value: fmt.format(item.serviceStart!)),
+                label: 'Service Start',
+                value: fmt.format(item.serviceStart!),
+              ),
             if (item.serviceEnd != null)
               MetadataRow(
-                  label: 'Service End',
-                  value: fmt.format(item.serviceEnd!)),
+                label: 'Service End',
+                value: fmt.format(item.serviceEnd!),
+              ),
           ],
         ),
       ),
@@ -151,19 +150,25 @@ class _QueueItemScreenState extends ConsumerState<QueueItemScreen> {
           children: [
             if (item.status == QueueItemStatus.waiting) ...[
               FilledButton.icon(
-                onPressed: _isActing ? null : () => _act(() => notifier.cancel(item.id)),
+                onPressed: _isActing
+                    ? null
+                    : () => _act(() => notifier.cancel(item.id)),
                 icon: const Icon(Icons.cancel_outlined, size: 16),
                 label: const Text('Cancel'),
               ),
               OutlinedButton.icon(
-                onPressed: _isActing ? null : () => _act(() => notifier.noShow(item.id)),
+                onPressed: _isActing
+                    ? null
+                    : () => _act(() => notifier.noShow(item.id)),
                 icon: const Icon(Icons.person_off_outlined, size: 16),
                 label: const Text('No Show'),
               ),
             ],
             if (item.status == QueueItemStatus.noShow)
               FilledButton.tonal(
-                onPressed: _isActing ? null : () => _act(() => notifier.requeue(item.id)),
+                onPressed: _isActing
+                    ? null
+                    : () => _act(() => notifier.requeue(item.id)),
                 child: const Text('Requeue'),
               ),
           ],
@@ -185,9 +190,9 @@ class _QueueItemScreenState extends ConsumerState<QueueItemScreen> {
       ref.invalidate(queueItemProvider);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Action failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Action failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _isActing = false);
