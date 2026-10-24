@@ -19,8 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/pitabwire/frame/v2/queue"
-	"github.com/pitabwire/frame/v2/security"
+	"github.com/pitabwire/frame/v3/queue"
+	"github.com/pitabwire/frame/v3/security"
 	"github.com/pitabwire/util"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/scheduling"

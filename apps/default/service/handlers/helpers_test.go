@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	framecache "github.com/pitabwire/frame/v2/cache"
-	"github.com/pitabwire/frame/v2/security"
+	framecache "github.com/pitabwire/frame/v3/cache"
+	"github.com/pitabwire/frame/v3/security"
 	"github.com/stretchr/testify/require"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/business"

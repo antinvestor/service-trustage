@@ -15,7 +15,7 @@
 package business
 
 import (
-	"github.com/pitabwire/frame/v2/telemetry"
+	"github.com/pitabwire/frame/v3/telemetry"
 )
 
 //nolint:gochecknoglobals // metrics are process-wide singletons

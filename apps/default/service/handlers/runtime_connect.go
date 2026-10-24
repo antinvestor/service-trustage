@@ -17,10 +17,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -72,25 +71,25 @@ func NewRuntimeConnectServer(
 
 func (s *RuntimeConnectServer) ListInstances(
 	ctx context.Context,
-	req *connect.Request[runtimev1.ListInstancesRequest],
-) (*connect.Response[runtimev1.ListInstancesResponse], error) {
+	req *runtimev1.ListInstancesRequest,
+) (*runtimev1.ListInstancesResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	pageLimit := searchLimit(req.Msg.GetSearch(), defaultRuntimePageLimit)
+	pageLimit := searchLimit(req.GetSearch(), defaultRuntimePageLimit)
 	itemsPage, err := s.instanceRepo.ListPage(ctx, repository.WorkflowInstanceListFilter{
-		Status:            instanceStatusFilter(req.Msg.GetStatus()),
-		WorkflowName:      req.Msg.GetWorkflowName(),
-		Query:             searchQuery(req.Msg.GetSearch()),
-		IDQuery:           searchIDQuery(req.Msg.GetSearch()),
-		ParentInstanceID:  searchExtraString(req.Msg.GetSearch(), "parent_instance_id"),
-		ParentExecutionID: searchExtraString(req.Msg.GetSearch(), "parent_execution_id"),
-		Cursor:            searchPage(req.Msg.GetSearch()),
+		Status:            instanceStatusFilter(req.GetStatus()),
+		WorkflowName:      req.GetWorkflowName(),
+		Query:             searchQuery(req.GetSearch()),
+		IDQuery:           searchIDQuery(req.GetSearch()),
+		ParentInstanceID:  searchExtraString(req.GetSearch(), "parent_instance_id"),
+		ParentExecutionID: searchExtraString(req.GetSearch(), "parent_execution_id"),
+		Cursor:            searchPage(req.GetSearch()),
 		Limit:             pageLimit,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to list instances"))
+		return nil, connect.NewError(connect.CodeInternal, "failed to list instances").WithCause(err)
 	}
 
 	respItems := make([]*runtimev1.WorkflowInstance, 0, len(itemsPage.Items))
@@ -98,63 +97,63 @@ func (s *RuntimeConnectServer) ListInstances(
 		respItems = append(respItems, workflowInstanceToProto(item))
 	}
 
-	return connect.NewResponse(&runtimev1.ListInstancesResponse{
+	return &runtimev1.ListInstancesResponse{
 		Items:      respItems,
 		NextCursor: nextCursorProto(itemsPage.NextCursor, pageLimit),
-	}), nil
+	}, nil
 }
 
 func (s *RuntimeConnectServer) RetryInstance(
 	ctx context.Context,
-	req *connect.Request[runtimev1.RetryInstanceRequest],
-) (*connect.Response[runtimev1.RetryInstanceResponse], error) {
+	req *runtimev1.RetryInstanceRequest,
+) (*runtimev1.RetryInstanceResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetInstanceId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("instance_id is required"))
+	if req.GetInstanceId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "instance_id is required")
 	}
 
-	instance, err := s.instanceRepo.GetByID(ctx, req.Msg.GetInstanceId())
+	instance, err := s.instanceRepo.GetByID(ctx, req.GetInstanceId())
 	if err != nil {
 		return nil, connectLookupError(err, "instance not found")
 	}
 
-	exec, err := s.execRepo.GetLatestByInstance(ctx, req.Msg.GetInstanceId())
+	exec, err := s.execRepo.GetLatestByInstance(ctx, req.GetInstanceId())
 	if err != nil {
 		return nil, connectLookupError(err, "latest execution not found")
 	}
 
 	newExec, err := createRetryExecution(ctx, s.runtimeRepo, s.auditRepo, exec, instance)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	}
 
-	return connect.NewResponse(&runtimev1.RetryInstanceResponse{
+	return &runtimev1.RetryInstanceResponse{
 		Execution: workflowExecutionToProto(newExec, "", false),
-	}), nil
+	}, nil
 }
 
 func (s *RuntimeConnectServer) ListExecutions(
 	ctx context.Context,
-	req *connect.Request[runtimev1.ListExecutionsRequest],
-) (*connect.Response[runtimev1.ListExecutionsResponse], error) {
+	req *runtimev1.ListExecutionsRequest,
+) (*runtimev1.ListExecutionsResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	pageLimit := searchLimit(req.Msg.GetSearch(), defaultRuntimePageLimit)
+	pageLimit := searchLimit(req.GetSearch(), defaultRuntimePageLimit)
 	itemsPage, err := s.execRepo.ListPage(ctx, repository.WorkflowExecutionListFilter{
-		Status:     executionStatusFilter(req.Msg.GetStatus()),
-		InstanceID: req.Msg.GetInstanceId(),
-		Query:      searchQuery(req.Msg.GetSearch()),
-		IDQuery:    searchIDQuery(req.Msg.GetSearch()),
-		Cursor:     searchPage(req.Msg.GetSearch()),
+		Status:     executionStatusFilter(req.GetStatus()),
+		InstanceID: req.GetInstanceId(),
+		Query:      searchQuery(req.GetSearch()),
+		IDQuery:    searchIDQuery(req.GetSearch()),
+		Cursor:     searchPage(req.GetSearch()),
 		Limit:      pageLimit,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, err.Error()).WithCause(err)
 	}
 
 	respItems := make([]*runtimev1.WorkflowExecution, 0, len(itemsPage.Items))
@@ -162,58 +161,58 @@ func (s *RuntimeConnectServer) ListExecutions(
 		respItems = append(respItems, workflowExecutionToProto(item, "", false))
 	}
 
-	return connect.NewResponse(&runtimev1.ListExecutionsResponse{
+	return &runtimev1.ListExecutionsResponse{
 		Items:      respItems,
 		NextCursor: nextCursorProto(itemsPage.NextCursor, pageLimit),
-	}), nil
+	}, nil
 }
 
 func (s *RuntimeConnectServer) GetExecution(
 	ctx context.Context,
-	req *connect.Request[runtimev1.GetExecutionRequest],
-) (*connect.Response[runtimev1.GetExecutionResponse], error) {
+	req *runtimev1.GetExecutionRequest,
+) (*runtimev1.GetExecutionResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetExecutionId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("execution_id is required"))
+	if req.GetExecutionId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "execution_id is required")
 	}
 
-	exec, err := s.execRepo.GetByID(ctx, req.Msg.GetExecutionId())
+	exec, err := s.execRepo.GetByID(ctx, req.GetExecutionId())
 	if err != nil {
 		return nil, connectLookupError(err, "execution not found")
 	}
 
 	var outputPayload string
-	if req.Msg.GetIncludeOutput() {
+	if req.GetIncludeOutput() {
 		if output, outputErr := s.outputRepo.GetByExecution(
 			ctx,
-			req.Msg.GetExecutionId(),
+			req.GetExecutionId(),
 		); outputErr == nil &&
 			output != nil {
 			outputPayload = output.Payload
 		}
 	}
 
-	return connect.NewResponse(&runtimev1.GetExecutionResponse{
-		Execution: workflowExecutionToProto(exec, outputPayload, req.Msg.GetIncludeOutput()),
-	}), nil
+	return &runtimev1.GetExecutionResponse{
+		Execution: workflowExecutionToProto(exec, outputPayload, req.GetIncludeOutput()),
+	}, nil
 }
 
 func (s *RuntimeConnectServer) RetryExecution(
 	ctx context.Context,
-	req *connect.Request[runtimev1.RetryExecutionRequest],
-) (*connect.Response[runtimev1.RetryExecutionResponse], error) {
+	req *runtimev1.RetryExecutionRequest,
+) (*runtimev1.RetryExecutionResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetExecutionId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("execution_id is required"))
+	if req.GetExecutionId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "execution_id is required")
 	}
 
-	exec, err := s.execRepo.GetByID(ctx, req.Msg.GetExecutionId())
+	exec, err := s.execRepo.GetByID(ctx, req.GetExecutionId())
 	if err != nil {
 		return nil, connectLookupError(err, "execution not found")
 	}
@@ -225,36 +224,36 @@ func (s *RuntimeConnectServer) RetryExecution(
 
 	newExec, err := createRetryExecution(ctx, s.runtimeRepo, s.auditRepo, exec, instance)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	}
 
-	return connect.NewResponse(&runtimev1.RetryExecutionResponse{
+	return &runtimev1.RetryExecutionResponse{
 		Execution: workflowExecutionToProto(newExec, "", false),
-	}), nil
+	}, nil
 }
 
 func (s *RuntimeConnectServer) ResumeExecution(
 	ctx context.Context,
-	req *connect.Request[runtimev1.ResumeExecutionRequest],
-) (*connect.Response[runtimev1.ResumeExecutionResponse], error) {
+	req *runtimev1.ResumeExecutionRequest,
+) (*runtimev1.ResumeExecutionResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetExecutionId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("execution_id is required"))
+	if req.GetExecutionId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "execution_id is required")
 	}
 
-	exec, err := s.execRepo.GetByID(ctx, req.Msg.GetExecutionId())
+	exec, err := s.execRepo.GetByID(ctx, req.GetExecutionId())
 	if err != nil {
 		return nil, connectLookupError(err, "execution not found")
 	}
 
 	switch exec.Status {
 	case models.ExecStatusWaiting:
-		payloadBytes, payloadErr := rawJSONFromStruct(req.Msg.GetPayload())
+		payloadBytes, payloadErr := rawJSONFromStruct(req.GetPayload())
 		if payloadErr != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, payloadErr)
+			return nil, connect.NewError(connect.CodeInvalidArgument, payloadErr.Error()).WithCause(payloadErr)
 		}
 		if payloadBytes == nil {
 			payloadBytes = json.RawMessage(`{}`)
@@ -269,10 +268,10 @@ func (s *RuntimeConnectServer) ResumeExecution(
 			return nil, connectLookupError(getErr, "execution not found")
 		}
 
-		return connect.NewResponse(&runtimev1.ResumeExecutionResponse{
+		return &runtimev1.ResumeExecutionResponse{
 			Execution: workflowExecutionToProto(updatedExec, "", false),
 			Action:    "resumed_waiting_execution",
-		}), nil
+		}, nil
 	case models.ExecStatusPending,
 		models.ExecStatusDispatched,
 		models.ExecStatusRunning,
@@ -291,49 +290,49 @@ func (s *RuntimeConnectServer) ResumeExecution(
 
 		newExec, retryErr := createRetryExecution(ctx, s.runtimeRepo, s.auditRepo, exec, instance)
 		if retryErr != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, retryErr)
+			return nil, connect.NewError(connect.CodeFailedPrecondition, retryErr.Error()).WithCause(retryErr)
 		}
 
-		return connect.NewResponse(&runtimev1.ResumeExecutionResponse{
+		return &runtimev1.ResumeExecutionResponse{
 			Execution: workflowExecutionToProto(newExec, "", false),
 			Action:    "created_retry_execution",
-		}), nil
+		}, nil
 	default:
-		return nil, connect.NewError(
+		return nil, connect.Errorf(
 			connect.CodeFailedPrecondition,
-			fmt.Errorf("unsupported execution status %s", exec.Status),
+			"unsupported execution status %s", exec.Status,
 		)
 	}
 }
 
 func (s *RuntimeConnectServer) GetInstanceRun(
 	ctx context.Context,
-	req *connect.Request[runtimev1.GetInstanceRunRequest],
-) (*connect.Response[runtimev1.GetInstanceRunResponse], error) {
+	req *runtimev1.GetInstanceRunRequest,
+) (*runtimev1.GetInstanceRunResponse, error) {
 	if err := s.authorizeInstanceView(ctx); err != nil {
 		return nil, err
 	}
-	if req.Msg.GetInstanceId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("instance_id is required"))
+	if req.GetInstanceId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "instance_id is required")
 	}
 
-	runData, err := s.loadInstanceRunData(ctx, req.Msg)
+	runData, err := s.loadInstanceRunData(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return connect.NewResponse(&runtimev1.GetInstanceRunResponse{
+	return &runtimev1.GetInstanceRunResponse{
 		Instance:        workflowInstanceToProto(runData.instance),
 		LatestExecution: workflowExecutionToProto(runData.latestExec, "", false),
 		TraceId:         runData.latestExec.TraceID,
 		ResumeStrategy:  resumeStrategyForExecution(runData.latestExec),
-		Executions:      runData.executionProtos(req.Msg.GetIncludePayloads()),
-		Timeline:        runData.timelineProtos(req.Msg.GetIncludePayloads()),
-		Outputs:         runData.outputProtos(req.Msg.GetIncludePayloads()),
-		ScopeRuns:       runData.scopeProtos(req.Msg.GetIncludePayloads()),
+		Executions:      runData.executionProtos(req.GetIncludePayloads()),
+		Timeline:        runData.timelineProtos(req.GetIncludePayloads()),
+		Outputs:         runData.outputProtos(req.GetIncludePayloads()),
+		ScopeRuns:       runData.scopeProtos(req.GetIncludePayloads()),
 		SignalWaits:     runData.waitProtos(),
-		SignalMessages:  runData.messageProtos(req.Msg.GetIncludePayloads()),
-	}), nil
+		SignalMessages:  runData.messageProtos(req.GetIncludePayloads()),
+	}, nil
 }
 
 func (s *RuntimeConnectServer) authorizeInstanceView(ctx context.Context) error {
@@ -371,27 +370,27 @@ func (s *RuntimeConnectServer) loadInstanceRunData(
 	executionLimit := int(msg.GetExecutionLimit())
 	executions, err := s.execRepo.List(ctx, "", msg.GetInstanceId(), executionLimit)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 	timeline, err := s.auditRepo.ListByInstanceWithLimit(ctx, msg.GetInstanceId(), int(msg.GetTimelineLimit()))
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 	outputs, err := s.outputRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 	scopeRuns, err := s.scopeRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 	signalWaits, err := s.signalWaitRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 	signalMessages, err := s.signalMsgRepo.ListByInstance(ctx, msg.GetInstanceId(), executionLimit)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 
 	return &instanceRunData{

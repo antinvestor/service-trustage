@@ -18,7 +18,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/pitabwire/frame/v2/data"
+	"github.com/pitabwire/frame/v3/data"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"

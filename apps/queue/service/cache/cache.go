@@ -18,9 +18,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pitabwire/frame/v2/cache"
-	"github.com/pitabwire/frame/v2/cache/valkey"
-	"github.com/pitabwire/frame/v2/data"
+	"github.com/pitabwire/frame/v3/cache"
+	"github.com/pitabwire/frame/v3/cache/valkey"
+	"github.com/pitabwire/frame/v3/data"
 )
 
 // SetupCache creates a Valkey-backed cache when DSN is redis://.

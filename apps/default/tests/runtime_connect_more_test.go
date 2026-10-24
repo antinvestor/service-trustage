@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 
 	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
-	"connectrpc.com/connect"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
@@ -118,34 +117,34 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_ListExecutionsAndGetInsta
 
 	listResp, err := server.ListExecutions(
 		ctx,
-		connect.NewRequest(&runtimev1.ListExecutionsRequest{
+		&runtimev1.ListExecutionsRequest{
 			InstanceId: instance.ID,
 			Search: &commonv1.SearchRequest{
 				Cursor: &commonv1.PageCursor{Limit: 10},
 			},
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.Len(listResp.Msg.GetItems(), 2)
+	s.Len(listResp.GetItems(), 2)
 
 	runResp, err := server.GetInstanceRun(
 		ctx,
-		connect.NewRequest(&runtimev1.GetInstanceRunRequest{
+		&runtimev1.GetInstanceRunRequest{
 			InstanceId:      instance.ID,
 			ExecutionLimit:  10,
 			TimelineLimit:   10,
 			IncludePayloads: true,
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.Equal(instance.ID, runResp.Msg.GetInstance().GetId())
-	s.Len(runResp.Msg.GetExecutions(), 2)
-	s.Len(runResp.Msg.GetTimeline(), 1)
-	s.Len(runResp.Msg.GetOutputs(), 1)
-	s.Len(runResp.Msg.GetScopeRuns(), 1)
-	s.Len(runResp.Msg.GetSignalWaits(), 1)
-	s.Len(runResp.Msg.GetSignalMessages(), 1)
-	s.Equal("retry_execution", runResp.Msg.GetResumeStrategy())
+	s.Equal(instance.ID, runResp.GetInstance().GetId())
+	s.Len(runResp.GetExecutions(), 2)
+	s.Len(runResp.GetTimeline(), 1)
+	s.Len(runResp.GetOutputs(), 1)
+	s.Len(runResp.GetScopeRuns(), 1)
+	s.Len(runResp.GetSignalWaits(), 1)
+	s.Len(runResp.GetSignalMessages(), 1)
+	s.Equal("retry_execution", runResp.GetResumeStrategy())
 }
 
 func (s *DefaultServiceSuite) TestSignalConnectServer_StoresPendingSignal() {
@@ -163,14 +162,14 @@ func (s *DefaultServiceSuite) TestSignalConnectServer_StoresPendingSignal() {
 	server := handlers.NewSignalConnectServer(s.stateEngine())
 	resp, err := server.SendSignal(
 		ctx,
-		connect.NewRequest(&signalv1.SendSignalRequest{
+		&signalv1.SendSignalRequest{
 			InstanceId: instance.ID,
 			SignalName: "approved",
 			Payload:    mustStructFromMap(map[string]any{"ok": true}),
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.False(resp.Msg.GetDelivered())
+	s.False(resp.GetDelivered())
 
 	messages, err := s.signalMsgRepo.ListByInstance(ctx, instance.ID, 10)
 	s.Require().NoError(err)
@@ -247,13 +246,13 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_ResumeExecution() {
 
 	waitingResp, err := server.ResumeExecution(
 		ctx,
-		connect.NewRequest(&runtimev1.ResumeExecutionRequest{
+		&runtimev1.ResumeExecutionRequest{
 			ExecutionId: waitingExec.ID,
 			Payload:     mustStructFromMap(map[string]any{}),
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.Equal("resumed_waiting_execution", waitingResp.Msg.GetAction())
+	s.Equal("resumed_waiting_execution", waitingResp.GetAction())
 
 	resumedExec, err := s.execRepo.GetLatestByInstance(ctx, instance.ID)
 	s.Require().NoError(err)
@@ -262,11 +261,11 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_ResumeExecution() {
 
 	retryResp, err := server.ResumeExecution(
 		ctx,
-		connect.NewRequest(&runtimev1.ResumeExecutionRequest{
+		&runtimev1.ResumeExecutionRequest{
 			ExecutionId: failedExec.ID,
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.Equal("created_retry_execution", retryResp.Msg.GetAction())
-	s.Equal(runtimev1.ExecutionStatus_EXECUTION_STATUS_PENDING, retryResp.Msg.GetExecution().GetStatus())
+	s.Equal("created_retry_execution", retryResp.GetAction())
+	s.Equal(runtimev1.ExecutionStatus_EXECUTION_STATUS_PENDING, retryResp.GetExecution().GetStatus())
 }

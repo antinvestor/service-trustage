@@ -19,13 +19,15 @@ import (
 	"net/http"
 	"strings"
 
-	"buf.build/gen/go/antinvestor/files/connectrpc/go/files/v1/filesv1connect"
-	"github.com/pitabwire/frame/v2"
-	frameclient "github.com/pitabwire/frame/v2/client"
-	"github.com/pitabwire/frame/v2/config"
-	"github.com/pitabwire/frame/v2/datastore"
-	"github.com/pitabwire/frame/v2/security/authorizer"
-	securityhttp "github.com/pitabwire/frame/v2/security/interceptors/httptor"
+	"buf.build/gen/go/antinvestor/files/connectrpc/go/v2/files/v1/filesv1connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+	"github.com/pitabwire/frame/v3"
+	frameclient "github.com/pitabwire/frame/v3/client"
+	"github.com/pitabwire/frame/v3/config"
+	"github.com/pitabwire/frame/v3/datastore"
+	"github.com/pitabwire/frame/v3/security/authorizer"
+	securityhttp "github.com/pitabwire/frame/v3/security/interceptors/httptor"
 	"github.com/pitabwire/util"
 
 	appconfig "github.com/antinvestor/service-trustage/apps/formstore/config"
@@ -131,7 +133,9 @@ func main() {
 			httpClient = mtlsClient
 			fileServiceURL = fileServiceEndpoint(cfg)
 		}
-		filesClient := filesv1connect.NewFilesServiceClient(httpClient, fileServiceURL)
+		filesClient := filesv1connect.NewFilesServiceClient(
+			connect.NewClient(connecthttp.NewTransport(httpClient, fileServiceURL)),
+		)
 		uploadFn := business.NewFileUploadFunc(filesClient)
 		uploader = business.NewFileUploader(uploadFn)
 		log.Info("file uploader enabled", "file_service_url", fileServiceURL)

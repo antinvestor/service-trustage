@@ -19,279 +19,316 @@
 package runtimev1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/antinvestor/service-trustage/gen/go/runtime/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// RuntimeServiceName is the fully-qualified name of the RuntimeService service.
 	RuntimeServiceName = "runtime.v1.RuntimeService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// RuntimeServiceListInstancesProcedure is the fully-qualified name of the RuntimeService's
-	// ListInstances RPC.
+	// RuntimeServiceListInstancesProcedure is the procedure name of the RuntimeService's ListInstances
+	// RPC.
 	RuntimeServiceListInstancesProcedure = "/runtime.v1.RuntimeService/ListInstances"
-	// RuntimeServiceRetryInstanceProcedure is the fully-qualified name of the RuntimeService's
-	// RetryInstance RPC.
+	// RuntimeServiceRetryInstanceProcedure is the procedure name of the RuntimeService's RetryInstance
+	// RPC.
 	RuntimeServiceRetryInstanceProcedure = "/runtime.v1.RuntimeService/RetryInstance"
-	// RuntimeServiceListExecutionsProcedure is the fully-qualified name of the RuntimeService's
+	// RuntimeServiceListExecutionsProcedure is the procedure name of the RuntimeService's
 	// ListExecutions RPC.
 	RuntimeServiceListExecutionsProcedure = "/runtime.v1.RuntimeService/ListExecutions"
-	// RuntimeServiceGetExecutionProcedure is the fully-qualified name of the RuntimeService's
-	// GetExecution RPC.
+	// RuntimeServiceGetExecutionProcedure is the procedure name of the RuntimeService's GetExecution
+	// RPC.
 	RuntimeServiceGetExecutionProcedure = "/runtime.v1.RuntimeService/GetExecution"
-	// RuntimeServiceRetryExecutionProcedure is the fully-qualified name of the RuntimeService's
+	// RuntimeServiceRetryExecutionProcedure is the procedure name of the RuntimeService's
 	// RetryExecution RPC.
 	RuntimeServiceRetryExecutionProcedure = "/runtime.v1.RuntimeService/RetryExecution"
-	// RuntimeServiceResumeExecutionProcedure is the fully-qualified name of the RuntimeService's
+	// RuntimeServiceResumeExecutionProcedure is the procedure name of the RuntimeService's
 	// ResumeExecution RPC.
 	RuntimeServiceResumeExecutionProcedure = "/runtime.v1.RuntimeService/ResumeExecution"
-	// RuntimeServiceGetInstanceRunProcedure is the fully-qualified name of the RuntimeService's
+	// RuntimeServiceGetInstanceRunProcedure is the procedure name of the RuntimeService's
 	// GetInstanceRun RPC.
 	RuntimeServiceGetInstanceRunProcedure = "/runtime.v1.RuntimeService/GetInstanceRun"
 )
 
+var (
+	runtimeServiceListInstancesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("ListInstances"),
+			Procedure:  RuntimeServiceListInstancesProcedure,
+		}
+	})
+	runtimeServiceRetryInstanceSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("RetryInstance"),
+			Procedure:  RuntimeServiceRetryInstanceProcedure,
+		}
+	})
+	runtimeServiceListExecutionsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("ListExecutions"),
+			Procedure:  RuntimeServiceListExecutionsProcedure,
+		}
+	})
+	runtimeServiceGetExecutionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("GetExecution"),
+			Procedure:  RuntimeServiceGetExecutionProcedure,
+		}
+	})
+	runtimeServiceRetryExecutionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("RetryExecution"),
+			Procedure:  RuntimeServiceRetryExecutionProcedure,
+		}
+	})
+	runtimeServiceResumeExecutionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("ResumeExecution"),
+			Procedure:  RuntimeServiceResumeExecutionProcedure,
+		}
+	})
+	runtimeServiceGetInstanceRunSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods().ByName("GetInstanceRun"),
+			Procedure:  RuntimeServiceGetInstanceRunProcedure,
+		}
+	})
+)
+
 // RuntimeServiceClient is a client for the runtime.v1.RuntimeService service.
 type RuntimeServiceClient interface {
-	ListInstances(context.Context, *connect.Request[v1.ListInstancesRequest]) (*connect.Response[v1.ListInstancesResponse], error)
-	RetryInstance(context.Context, *connect.Request[v1.RetryInstanceRequest]) (*connect.Response[v1.RetryInstanceResponse], error)
-	ListExecutions(context.Context, *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ListExecutionsResponse], error)
-	GetExecution(context.Context, *connect.Request[v1.GetExecutionRequest]) (*connect.Response[v1.GetExecutionResponse], error)
-	RetryExecution(context.Context, *connect.Request[v1.RetryExecutionRequest]) (*connect.Response[v1.RetryExecutionResponse], error)
-	ResumeExecution(context.Context, *connect.Request[v1.ResumeExecutionRequest]) (*connect.Response[v1.ResumeExecutionResponse], error)
-	GetInstanceRun(context.Context, *connect.Request[v1.GetInstanceRunRequest]) (*connect.Response[v1.GetInstanceRunResponse], error)
+	ListInstances(context.Context, *v1.ListInstancesRequest) (*v1.ListInstancesResponse, error)
+	RetryInstance(context.Context, *v1.RetryInstanceRequest) (*v1.RetryInstanceResponse, error)
+	ListExecutions(context.Context, *v1.ListExecutionsRequest) (*v1.ListExecutionsResponse, error)
+	GetExecution(context.Context, *v1.GetExecutionRequest) (*v1.GetExecutionResponse, error)
+	RetryExecution(context.Context, *v1.RetryExecutionRequest) (*v1.RetryExecutionResponse, error)
+	ResumeExecution(context.Context, *v1.ResumeExecutionRequest) (*v1.ResumeExecutionResponse, error)
+	GetInstanceRun(context.Context, *v1.GetInstanceRunRequest) (*v1.GetInstanceRunResponse, error)
 }
 
-// NewRuntimeServiceClient constructs a client for the runtime.v1.RuntimeService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) RuntimeServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	runtimeServiceMethods := v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods()
-	return &runtimeServiceClient{
-		listInstances: connect.NewClient[v1.ListInstancesRequest, v1.ListInstancesResponse](
-			httpClient,
-			baseURL+RuntimeServiceListInstancesProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("ListInstances")),
-			connect.WithClientOptions(opts...),
-		),
-		retryInstance: connect.NewClient[v1.RetryInstanceRequest, v1.RetryInstanceResponse](
-			httpClient,
-			baseURL+RuntimeServiceRetryInstanceProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("RetryInstance")),
-			connect.WithClientOptions(opts...),
-		),
-		listExecutions: connect.NewClient[v1.ListExecutionsRequest, v1.ListExecutionsResponse](
-			httpClient,
-			baseURL+RuntimeServiceListExecutionsProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("ListExecutions")),
-			connect.WithClientOptions(opts...),
-		),
-		getExecution: connect.NewClient[v1.GetExecutionRequest, v1.GetExecutionResponse](
-			httpClient,
-			baseURL+RuntimeServiceGetExecutionProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("GetExecution")),
-			connect.WithClientOptions(opts...),
-		),
-		retryExecution: connect.NewClient[v1.RetryExecutionRequest, v1.RetryExecutionResponse](
-			httpClient,
-			baseURL+RuntimeServiceRetryExecutionProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("RetryExecution")),
-			connect.WithClientOptions(opts...),
-		),
-		resumeExecution: connect.NewClient[v1.ResumeExecutionRequest, v1.ResumeExecutionResponse](
-			httpClient,
-			baseURL+RuntimeServiceResumeExecutionProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("ResumeExecution")),
-			connect.WithClientOptions(opts...),
-		),
-		getInstanceRun: connect.NewClient[v1.GetInstanceRunRequest, v1.GetInstanceRunResponse](
-			httpClient,
-			baseURL+RuntimeServiceGetInstanceRunProcedure,
-			connect.WithSchema(runtimeServiceMethods.ByName("GetInstanceRun")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// runtimeServiceClient implements RuntimeServiceClient.
-type runtimeServiceClient struct {
-	listInstances   *connect.Client[v1.ListInstancesRequest, v1.ListInstancesResponse]
-	retryInstance   *connect.Client[v1.RetryInstanceRequest, v1.RetryInstanceResponse]
-	listExecutions  *connect.Client[v1.ListExecutionsRequest, v1.ListExecutionsResponse]
-	getExecution    *connect.Client[v1.GetExecutionRequest, v1.GetExecutionResponse]
-	retryExecution  *connect.Client[v1.RetryExecutionRequest, v1.RetryExecutionResponse]
-	resumeExecution *connect.Client[v1.ResumeExecutionRequest, v1.ResumeExecutionResponse]
-	getInstanceRun  *connect.Client[v1.GetInstanceRunRequest, v1.GetInstanceRunResponse]
-}
-
-// ListInstances calls runtime.v1.RuntimeService.ListInstances.
-func (c *runtimeServiceClient) ListInstances(ctx context.Context, req *connect.Request[v1.ListInstancesRequest]) (*connect.Response[v1.ListInstancesResponse], error) {
-	return c.listInstances.CallUnary(ctx, req)
-}
-
-// RetryInstance calls runtime.v1.RuntimeService.RetryInstance.
-func (c *runtimeServiceClient) RetryInstance(ctx context.Context, req *connect.Request[v1.RetryInstanceRequest]) (*connect.Response[v1.RetryInstanceResponse], error) {
-	return c.retryInstance.CallUnary(ctx, req)
-}
-
-// ListExecutions calls runtime.v1.RuntimeService.ListExecutions.
-func (c *runtimeServiceClient) ListExecutions(ctx context.Context, req *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ListExecutionsResponse], error) {
-	return c.listExecutions.CallUnary(ctx, req)
-}
-
-// GetExecution calls runtime.v1.RuntimeService.GetExecution.
-func (c *runtimeServiceClient) GetExecution(ctx context.Context, req *connect.Request[v1.GetExecutionRequest]) (*connect.Response[v1.GetExecutionResponse], error) {
-	return c.getExecution.CallUnary(ctx, req)
-}
-
-// RetryExecution calls runtime.v1.RuntimeService.RetryExecution.
-func (c *runtimeServiceClient) RetryExecution(ctx context.Context, req *connect.Request[v1.RetryExecutionRequest]) (*connect.Response[v1.RetryExecutionResponse], error) {
-	return c.retryExecution.CallUnary(ctx, req)
-}
-
-// ResumeExecution calls runtime.v1.RuntimeService.ResumeExecution.
-func (c *runtimeServiceClient) ResumeExecution(ctx context.Context, req *connect.Request[v1.ResumeExecutionRequest]) (*connect.Response[v1.ResumeExecutionResponse], error) {
-	return c.resumeExecution.CallUnary(ctx, req)
-}
-
-// GetInstanceRun calls runtime.v1.RuntimeService.GetInstanceRun.
-func (c *runtimeServiceClient) GetInstanceRun(ctx context.Context, req *connect.Request[v1.GetInstanceRunRequest]) (*connect.Response[v1.GetInstanceRunResponse], error) {
-	return c.getInstanceRun.CallUnary(ctx, req)
+// NewRuntimeServiceClient constructs a client for the runtime.v1.RuntimeService service. Multiple
+// service clients may share a single connect.Client.
+func NewRuntimeServiceClient(client *connect.Client) RuntimeServiceClient {
+	return &runtimeServiceClient{client: client}
 }
 
 // RuntimeServiceHandler is an implementation of the runtime.v1.RuntimeService service.
 type RuntimeServiceHandler interface {
-	ListInstances(context.Context, *connect.Request[v1.ListInstancesRequest]) (*connect.Response[v1.ListInstancesResponse], error)
-	RetryInstance(context.Context, *connect.Request[v1.RetryInstanceRequest]) (*connect.Response[v1.RetryInstanceResponse], error)
-	ListExecutions(context.Context, *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ListExecutionsResponse], error)
-	GetExecution(context.Context, *connect.Request[v1.GetExecutionRequest]) (*connect.Response[v1.GetExecutionResponse], error)
-	RetryExecution(context.Context, *connect.Request[v1.RetryExecutionRequest]) (*connect.Response[v1.RetryExecutionResponse], error)
-	ResumeExecution(context.Context, *connect.Request[v1.ResumeExecutionRequest]) (*connect.Response[v1.ResumeExecutionResponse], error)
-	GetInstanceRun(context.Context, *connect.Request[v1.GetInstanceRunRequest]) (*connect.Response[v1.GetInstanceRunResponse], error)
+	ListInstances(context.Context, *v1.ListInstancesRequest) (*v1.ListInstancesResponse, error)
+	RetryInstance(context.Context, *v1.RetryInstanceRequest) (*v1.RetryInstanceResponse, error)
+	ListExecutions(context.Context, *v1.ListExecutionsRequest) (*v1.ListExecutionsResponse, error)
+	GetExecution(context.Context, *v1.GetExecutionRequest) (*v1.GetExecutionResponse, error)
+	RetryExecution(context.Context, *v1.RetryExecutionRequest) (*v1.RetryExecutionResponse, error)
+	ResumeExecution(context.Context, *v1.ResumeExecutionRequest) (*v1.ResumeExecutionResponse, error)
+	GetInstanceRun(context.Context, *v1.GetInstanceRunRequest) (*v1.GetInstanceRunResponse, error)
 }
 
-// NewRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewRuntimeServiceHandler(svc RuntimeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	runtimeServiceMethods := v1.File_v1_runtime_proto.Services().ByName("RuntimeService").Methods()
-	runtimeServiceListInstancesHandler := connect.NewUnaryHandler(
-		RuntimeServiceListInstancesProcedure,
-		svc.ListInstances,
-		connect.WithSchema(runtimeServiceMethods.ByName("ListInstances")),
-		connect.WithHandlerOptions(opts...),
+// RegisterRuntimeServiceHandler registers svc as the runtime.v1.RuntimeService implementation on
+// server.
+func RegisterRuntimeServiceHandler(server *connect.Server, svc RuntimeServiceHandler) {
+	adapter := runtimeServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: runtimeServiceListInstancesSpec(), Handler: adapter.listInstances},
+		connect.Method{Spec: runtimeServiceRetryInstanceSpec(), Handler: adapter.retryInstance},
+		connect.Method{Spec: runtimeServiceListExecutionsSpec(), Handler: adapter.listExecutions},
+		connect.Method{Spec: runtimeServiceGetExecutionSpec(), Handler: adapter.getExecution},
+		connect.Method{Spec: runtimeServiceRetryExecutionSpec(), Handler: adapter.retryExecution},
+		connect.Method{Spec: runtimeServiceResumeExecutionSpec(), Handler: adapter.resumeExecution},
+		connect.Method{Spec: runtimeServiceGetInstanceRunSpec(), Handler: adapter.getInstanceRun},
 	)
-	runtimeServiceRetryInstanceHandler := connect.NewUnaryHandler(
-		RuntimeServiceRetryInstanceProcedure,
-		svc.RetryInstance,
-		connect.WithSchema(runtimeServiceMethods.ByName("RetryInstance")),
-		connect.WithHandlerOptions(opts...),
-	)
-	runtimeServiceListExecutionsHandler := connect.NewUnaryHandler(
-		RuntimeServiceListExecutionsProcedure,
-		svc.ListExecutions,
-		connect.WithSchema(runtimeServiceMethods.ByName("ListExecutions")),
-		connect.WithHandlerOptions(opts...),
-	)
-	runtimeServiceGetExecutionHandler := connect.NewUnaryHandler(
-		RuntimeServiceGetExecutionProcedure,
-		svc.GetExecution,
-		connect.WithSchema(runtimeServiceMethods.ByName("GetExecution")),
-		connect.WithHandlerOptions(opts...),
-	)
-	runtimeServiceRetryExecutionHandler := connect.NewUnaryHandler(
-		RuntimeServiceRetryExecutionProcedure,
-		svc.RetryExecution,
-		connect.WithSchema(runtimeServiceMethods.ByName("RetryExecution")),
-		connect.WithHandlerOptions(opts...),
-	)
-	runtimeServiceResumeExecutionHandler := connect.NewUnaryHandler(
-		RuntimeServiceResumeExecutionProcedure,
-		svc.ResumeExecution,
-		connect.WithSchema(runtimeServiceMethods.ByName("ResumeExecution")),
-		connect.WithHandlerOptions(opts...),
-	)
-	runtimeServiceGetInstanceRunHandler := connect.NewUnaryHandler(
-		RuntimeServiceGetInstanceRunProcedure,
-		svc.GetInstanceRun,
-		connect.WithSchema(runtimeServiceMethods.ByName("GetInstanceRun")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/runtime.v1.RuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case RuntimeServiceListInstancesProcedure:
-			runtimeServiceListInstancesHandler.ServeHTTP(w, r)
-		case RuntimeServiceRetryInstanceProcedure:
-			runtimeServiceRetryInstanceHandler.ServeHTTP(w, r)
-		case RuntimeServiceListExecutionsProcedure:
-			runtimeServiceListExecutionsHandler.ServeHTTP(w, r)
-		case RuntimeServiceGetExecutionProcedure:
-			runtimeServiceGetExecutionHandler.ServeHTTP(w, r)
-		case RuntimeServiceRetryExecutionProcedure:
-			runtimeServiceRetryExecutionHandler.ServeHTTP(w, r)
-		case RuntimeServiceResumeExecutionProcedure:
-			runtimeServiceResumeExecutionHandler.ServeHTTP(w, r)
-		case RuntimeServiceGetInstanceRunProcedure:
-			runtimeServiceGetInstanceRunHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedRuntimeServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedRuntimeServiceHandler struct{}
 
-func (UnimplementedRuntimeServiceHandler) ListInstances(context.Context, *connect.Request[v1.ListInstancesRequest]) (*connect.Response[v1.ListInstancesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.ListInstances is not implemented"))
+func (UnimplementedRuntimeServiceHandler) ListInstances(context.Context, *v1.ListInstancesRequest) (*v1.ListInstancesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.ListInstances is not implemented")
 }
 
-func (UnimplementedRuntimeServiceHandler) RetryInstance(context.Context, *connect.Request[v1.RetryInstanceRequest]) (*connect.Response[v1.RetryInstanceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.RetryInstance is not implemented"))
+func (UnimplementedRuntimeServiceHandler) RetryInstance(context.Context, *v1.RetryInstanceRequest) (*v1.RetryInstanceResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.RetryInstance is not implemented")
 }
 
-func (UnimplementedRuntimeServiceHandler) ListExecutions(context.Context, *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ListExecutionsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.ListExecutions is not implemented"))
+func (UnimplementedRuntimeServiceHandler) ListExecutions(context.Context, *v1.ListExecutionsRequest) (*v1.ListExecutionsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.ListExecutions is not implemented")
 }
 
-func (UnimplementedRuntimeServiceHandler) GetExecution(context.Context, *connect.Request[v1.GetExecutionRequest]) (*connect.Response[v1.GetExecutionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.GetExecution is not implemented"))
+func (UnimplementedRuntimeServiceHandler) GetExecution(context.Context, *v1.GetExecutionRequest) (*v1.GetExecutionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.GetExecution is not implemented")
 }
 
-func (UnimplementedRuntimeServiceHandler) RetryExecution(context.Context, *connect.Request[v1.RetryExecutionRequest]) (*connect.Response[v1.RetryExecutionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.RetryExecution is not implemented"))
+func (UnimplementedRuntimeServiceHandler) RetryExecution(context.Context, *v1.RetryExecutionRequest) (*v1.RetryExecutionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.RetryExecution is not implemented")
 }
 
-func (UnimplementedRuntimeServiceHandler) ResumeExecution(context.Context, *connect.Request[v1.ResumeExecutionRequest]) (*connect.Response[v1.ResumeExecutionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.ResumeExecution is not implemented"))
+func (UnimplementedRuntimeServiceHandler) ResumeExecution(context.Context, *v1.ResumeExecutionRequest) (*v1.ResumeExecutionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.ResumeExecution is not implemented")
 }
 
-func (UnimplementedRuntimeServiceHandler) GetInstanceRun(context.Context, *connect.Request[v1.GetInstanceRunRequest]) (*connect.Response[v1.GetInstanceRunResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("runtime.v1.RuntimeService.GetInstanceRun is not implemented"))
+func (UnimplementedRuntimeServiceHandler) GetInstanceRun(context.Context, *v1.GetInstanceRunRequest) (*v1.GetInstanceRunResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "runtime.v1.RuntimeService.GetInstanceRun is not implemented")
+}
+
+type runtimeServiceClient struct {
+	client *connect.Client
+}
+
+func (c *runtimeServiceClient) ListInstances(ctx context.Context, req *v1.ListInstancesRequest) (*v1.ListInstancesResponse, error) {
+	var res v1.ListInstancesResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceListInstancesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *runtimeServiceClient) RetryInstance(ctx context.Context, req *v1.RetryInstanceRequest) (*v1.RetryInstanceResponse, error) {
+	var res v1.RetryInstanceResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceRetryInstanceSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *runtimeServiceClient) ListExecutions(ctx context.Context, req *v1.ListExecutionsRequest) (*v1.ListExecutionsResponse, error) {
+	var res v1.ListExecutionsResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceListExecutionsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *runtimeServiceClient) GetExecution(ctx context.Context, req *v1.GetExecutionRequest) (*v1.GetExecutionResponse, error) {
+	var res v1.GetExecutionResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceGetExecutionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *runtimeServiceClient) RetryExecution(ctx context.Context, req *v1.RetryExecutionRequest) (*v1.RetryExecutionResponse, error) {
+	var res v1.RetryExecutionResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceRetryExecutionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *runtimeServiceClient) ResumeExecution(ctx context.Context, req *v1.ResumeExecutionRequest) (*v1.ResumeExecutionResponse, error) {
+	var res v1.ResumeExecutionResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceResumeExecutionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *runtimeServiceClient) GetInstanceRun(ctx context.Context, req *v1.GetInstanceRunRequest) (*v1.GetInstanceRunResponse, error) {
+	var res v1.GetInstanceRunResponse
+	if err := c.client.CallUnary(ctx, runtimeServiceGetInstanceRunSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type runtimeServiceHandler struct{ svc RuntimeServiceHandler }
+
+func (h runtimeServiceHandler) listInstances(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListInstancesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListInstances(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h runtimeServiceHandler) retryInstance(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RetryInstanceRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RetryInstance(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h runtimeServiceHandler) listExecutions(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListExecutionsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListExecutions(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h runtimeServiceHandler) getExecution(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetExecutionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetExecution(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h runtimeServiceHandler) retryExecution(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RetryExecutionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RetryExecution(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h runtimeServiceHandler) resumeExecution(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ResumeExecutionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ResumeExecution(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h runtimeServiceHandler) getInstanceRun(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetInstanceRunRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetInstanceRun(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

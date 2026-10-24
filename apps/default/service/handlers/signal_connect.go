@@ -17,10 +17,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	signalv1 "github.com/antinvestor/service-trustage/gen/go/signal/v1"
@@ -43,30 +42,31 @@ func NewSignalConnectServer(engine business.StateEngine) *SignalConnectServer {
 
 func (s *SignalConnectServer) SendSignal(
 	ctx context.Context,
-	req *connect.Request[signalv1.SendSignalRequest],
-) (*connect.Response[signalv1.SendSignalResponse], error) {
+	req *signalv1.SendSignalRequest,
+) (*signalv1.SendSignalResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetInstanceId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("instance_id is required"))
+	if req.GetInstanceId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "instance_id is required")
 	}
-	if req.Msg.GetSignalName() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("signal_name is required"))
+	if req.GetSignalName() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "signal_name is required")
 	}
 
-	payloadBytes, err := json.Marshal(req.Msg.GetPayload().AsMap())
+	payloadBytes, err := json.Marshal(req.GetPayload().AsMap())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("marshal signal payload: %w", err))
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("marshal signal payload: %w", err).Error()).
+			WithCause(err)
 	}
 
-	delivered, err := s.engine.SendSignal(ctx, req.Msg.GetInstanceId(), req.Msg.GetSignalName(), payloadBytes)
+	delivered, err := s.engine.SendSignal(ctx, req.GetInstanceId(), req.GetSignalName(), payloadBytes)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 
-	return connect.NewResponse(&signalv1.SendSignalResponse{
+	return &signalv1.SendSignalResponse{
 		Delivered: delivered,
-	}), nil
+	}, nil
 }

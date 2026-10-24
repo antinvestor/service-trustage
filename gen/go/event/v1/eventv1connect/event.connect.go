@@ -19,134 +19,129 @@
 package eventv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/antinvestor/service-trustage/gen/go/event/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// EventServiceName is the fully-qualified name of the EventService service.
 	EventServiceName = "event.v1.EventService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// EventServiceIngestEventProcedure is the fully-qualified name of the EventService's IngestEvent
-	// RPC.
+	// EventServiceIngestEventProcedure is the procedure name of the EventService's IngestEvent RPC.
 	EventServiceIngestEventProcedure = "/event.v1.EventService/IngestEvent"
-	// EventServiceGetInstanceTimelineProcedure is the fully-qualified name of the EventService's
+	// EventServiceGetInstanceTimelineProcedure is the procedure name of the EventService's
 	// GetInstanceTimeline RPC.
 	EventServiceGetInstanceTimelineProcedure = "/event.v1.EventService/GetInstanceTimeline"
 )
 
+var (
+	eventServiceIngestEventSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_event_proto.Services().ByName("EventService").Methods().ByName("IngestEvent"),
+			Procedure:  EventServiceIngestEventProcedure,
+		}
+	})
+	eventServiceGetInstanceTimelineSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_event_proto.Services().ByName("EventService").Methods().ByName("GetInstanceTimeline"),
+			Procedure:  EventServiceGetInstanceTimelineProcedure,
+		}
+	})
+)
+
 // EventServiceClient is a client for the event.v1.EventService service.
 type EventServiceClient interface {
-	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
-	GetInstanceTimeline(context.Context, *connect.Request[v1.GetInstanceTimelineRequest]) (*connect.Response[v1.GetInstanceTimelineResponse], error)
+	IngestEvent(context.Context, *v1.IngestEventRequest) (*v1.IngestEventResponse, error)
+	GetInstanceTimeline(context.Context, *v1.GetInstanceTimelineRequest) (*v1.GetInstanceTimelineResponse, error)
 }
 
-// NewEventServiceClient constructs a client for the event.v1.EventService service. By default, it
-// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
-// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
-// connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewEventServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) EventServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	eventServiceMethods := v1.File_v1_event_proto.Services().ByName("EventService").Methods()
-	return &eventServiceClient{
-		ingestEvent: connect.NewClient[v1.IngestEventRequest, v1.IngestEventResponse](
-			httpClient,
-			baseURL+EventServiceIngestEventProcedure,
-			connect.WithSchema(eventServiceMethods.ByName("IngestEvent")),
-			connect.WithClientOptions(opts...),
-		),
-		getInstanceTimeline: connect.NewClient[v1.GetInstanceTimelineRequest, v1.GetInstanceTimelineResponse](
-			httpClient,
-			baseURL+EventServiceGetInstanceTimelineProcedure,
-			connect.WithSchema(eventServiceMethods.ByName("GetInstanceTimeline")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// eventServiceClient implements EventServiceClient.
-type eventServiceClient struct {
-	ingestEvent         *connect.Client[v1.IngestEventRequest, v1.IngestEventResponse]
-	getInstanceTimeline *connect.Client[v1.GetInstanceTimelineRequest, v1.GetInstanceTimelineResponse]
-}
-
-// IngestEvent calls event.v1.EventService.IngestEvent.
-func (c *eventServiceClient) IngestEvent(ctx context.Context, req *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error) {
-	return c.ingestEvent.CallUnary(ctx, req)
-}
-
-// GetInstanceTimeline calls event.v1.EventService.GetInstanceTimeline.
-func (c *eventServiceClient) GetInstanceTimeline(ctx context.Context, req *connect.Request[v1.GetInstanceTimelineRequest]) (*connect.Response[v1.GetInstanceTimelineResponse], error) {
-	return c.getInstanceTimeline.CallUnary(ctx, req)
+// NewEventServiceClient constructs a client for the event.v1.EventService service. Multiple service
+// clients may share a single connect.Client.
+func NewEventServiceClient(client *connect.Client) EventServiceClient {
+	return &eventServiceClient{client: client}
 }
 
 // EventServiceHandler is an implementation of the event.v1.EventService service.
 type EventServiceHandler interface {
-	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
-	GetInstanceTimeline(context.Context, *connect.Request[v1.GetInstanceTimelineRequest]) (*connect.Response[v1.GetInstanceTimelineResponse], error)
+	IngestEvent(context.Context, *v1.IngestEventRequest) (*v1.IngestEventResponse, error)
+	GetInstanceTimeline(context.Context, *v1.GetInstanceTimelineRequest) (*v1.GetInstanceTimelineResponse, error)
 }
 
-// NewEventServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewEventServiceHandler(svc EventServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	eventServiceMethods := v1.File_v1_event_proto.Services().ByName("EventService").Methods()
-	eventServiceIngestEventHandler := connect.NewUnaryHandler(
-		EventServiceIngestEventProcedure,
-		svc.IngestEvent,
-		connect.WithSchema(eventServiceMethods.ByName("IngestEvent")),
-		connect.WithHandlerOptions(opts...),
+// RegisterEventServiceHandler registers svc as the event.v1.EventService implementation on server.
+func RegisterEventServiceHandler(server *connect.Server, svc EventServiceHandler) {
+	adapter := eventServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: eventServiceIngestEventSpec(), Handler: adapter.ingestEvent},
+		connect.Method{Spec: eventServiceGetInstanceTimelineSpec(), Handler: adapter.getInstanceTimeline},
 	)
-	eventServiceGetInstanceTimelineHandler := connect.NewUnaryHandler(
-		EventServiceGetInstanceTimelineProcedure,
-		svc.GetInstanceTimeline,
-		connect.WithSchema(eventServiceMethods.ByName("GetInstanceTimeline")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/event.v1.EventService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case EventServiceIngestEventProcedure:
-			eventServiceIngestEventHandler.ServeHTTP(w, r)
-		case EventServiceGetInstanceTimelineProcedure:
-			eventServiceGetInstanceTimelineHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedEventServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedEventServiceHandler struct{}
 
-func (UnimplementedEventServiceHandler) IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("event.v1.EventService.IngestEvent is not implemented"))
+func (UnimplementedEventServiceHandler) IngestEvent(context.Context, *v1.IngestEventRequest) (*v1.IngestEventResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "event.v1.EventService.IngestEvent is not implemented")
 }
 
-func (UnimplementedEventServiceHandler) GetInstanceTimeline(context.Context, *connect.Request[v1.GetInstanceTimelineRequest]) (*connect.Response[v1.GetInstanceTimelineResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("event.v1.EventService.GetInstanceTimeline is not implemented"))
+func (UnimplementedEventServiceHandler) GetInstanceTimeline(context.Context, *v1.GetInstanceTimelineRequest) (*v1.GetInstanceTimelineResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "event.v1.EventService.GetInstanceTimeline is not implemented")
+}
+
+type eventServiceClient struct {
+	client *connect.Client
+}
+
+func (c *eventServiceClient) IngestEvent(ctx context.Context, req *v1.IngestEventRequest) (*v1.IngestEventResponse, error) {
+	var res v1.IngestEventResponse
+	if err := c.client.CallUnary(ctx, eventServiceIngestEventSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *eventServiceClient) GetInstanceTimeline(ctx context.Context, req *v1.GetInstanceTimelineRequest) (*v1.GetInstanceTimelineResponse, error) {
+	var res v1.GetInstanceTimelineResponse
+	if err := c.client.CallUnary(ctx, eventServiceGetInstanceTimelineSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type eventServiceHandler struct{ svc EventServiceHandler }
+
+func (h eventServiceHandler) ingestEvent(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.IngestEventRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.IngestEvent(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h eventServiceHandler) getInstanceTimeline(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetInstanceTimelineRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetInstanceTimeline(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

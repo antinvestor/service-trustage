@@ -22,7 +22,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/pitabwire/frame/v2/cache"
+	"github.com/pitabwire/frame/v3/cache"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 )

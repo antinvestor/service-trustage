@@ -21,13 +21,12 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/v2/cache"
-	"github.com/pitabwire/frame/v2/datastore/pool"
-	"github.com/pitabwire/frame/v2/frametests"
-	"github.com/pitabwire/frame/v2/frametests/definition"
-	"github.com/pitabwire/frame/v2/frametests/deps/testpostgres"
-	"github.com/pitabwire/frame/v2/security"
+	"github.com/pitabwire/frame/v3/cache"
+	"github.com/pitabwire/frame/v3/datastore/pool"
+	"github.com/pitabwire/frame/v3/frametests"
+	"github.com/pitabwire/frame/v3/frametests/definition"
+	"github.com/pitabwire/frame/v3/frametests/deps/testpostgres"
+	"github.com/pitabwire/frame/v3/security"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -266,6 +265,6 @@ func mustStructFromMap(payload map[string]any) *structpb.Struct {
 	return value
 }
 
-func connectReq[T any](msg *T) *connect.Request[T] {
-	return connect.NewRequest(msg)
+func connectReq[T any](msg *T) *T {
+	return msg
 }

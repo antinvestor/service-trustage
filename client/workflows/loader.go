@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/pitabwire/util"
 
 	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
@@ -20,17 +20,14 @@ import (
 // the loader needs; that client satisfies it.
 type WorkflowClient interface {
 	ListWorkflows(
-		context.Context,
-		*connect.Request[workflowv1.ListWorkflowsRequest],
-	) (*connect.Response[workflowv1.ListWorkflowsResponse], error)
+		context.Context, *workflowv1.ListWorkflowsRequest,
+	) (*workflowv1.ListWorkflowsResponse, error)
 	CreateWorkflow(
-		context.Context,
-		*connect.Request[workflowv1.CreateWorkflowRequest],
-	) (*connect.Response[workflowv1.CreateWorkflowResponse], error)
+		context.Context, *workflowv1.CreateWorkflowRequest,
+	) (*workflowv1.CreateWorkflowResponse, error)
 	ActivateWorkflow(
-		context.Context,
-		*connect.Request[workflowv1.ActivateWorkflowRequest],
-	) (*connect.Response[workflowv1.ActivateWorkflowResponse], error)
+		context.Context, *workflowv1.ActivateWorkflowRequest,
+	) (*workflowv1.ActivateWorkflowResponse, error)
 }
 
 const (
@@ -114,9 +111,9 @@ func syncOne(ctx context.Context, client WorkflowClient, label string, raw []byt
 		return "", err
 	}
 
-	createResp, err := client.CreateWorkflow(ctx, connect.NewRequest(&workflowv1.CreateWorkflowRequest{
+	createResp, err := client.CreateWorkflow(ctx, &workflowv1.CreateWorkflowRequest{
 		Dsl: dslStruct,
-	}))
+	})
 	if err != nil {
 		if isAlreadyExists(err) {
 			return syncSkipped, nil
@@ -124,14 +121,14 @@ func syncOne(ctx context.Context, client WorkflowClient, label string, raw []byt
 		return "", fmt.Errorf("create workflow %s: %w", name, err)
 	}
 
-	wf := createResp.Msg.GetWorkflow()
+	wf := createResp.GetWorkflow()
 	if wf.GetStatus() == workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE {
 		return syncUnchanged, nil
 	}
 
-	_, err = client.ActivateWorkflow(ctx, connect.NewRequest(&workflowv1.ActivateWorkflowRequest{
+	_, err = client.ActivateWorkflow(ctx, &workflowv1.ActivateWorkflowRequest{
 		Id: wf.GetId(),
-	}))
+	})
 	if err != nil {
 		return "", fmt.Errorf("activate workflow %s (id=%s): %w", name, wf.GetId(), err)
 	}
@@ -142,6 +139,9 @@ func syncOne(ctx context.Context, client WorkflowClient, label string, raw []byt
 func isAlreadyExists(err error) bool {
 	if err == nil {
 		return false
+	}
+	if connect.CodeOf(err) == connect.CodeAlreadyExists {
+		return true
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "already exists") ||

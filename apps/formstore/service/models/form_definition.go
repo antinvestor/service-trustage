@@ -14,7 +14,7 @@
 
 package models
 
-import "github.com/pitabwire/frame/v2/data"
+import "github.com/pitabwire/frame/v3/data"
 
 // FormDefinition is an optional schema definition per form type.
 type FormDefinition struct {

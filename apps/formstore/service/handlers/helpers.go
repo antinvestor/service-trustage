@@ -19,8 +19,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pitabwire/frame/v2/security"
-	"github.com/pitabwire/frame/v2/security/authorizer"
+	"github.com/pitabwire/frame/v3/security"
+	"github.com/pitabwire/frame/v3/security/authorizer"
 	"github.com/pitabwire/util"
 
 	"github.com/antinvestor/service-trustage/apps/formstore/service/business"

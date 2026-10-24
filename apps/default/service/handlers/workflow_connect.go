@@ -16,9 +16,8 @@ package handlers
 
 import (
 	"context"
-	"errors"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/business"
 	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
@@ -45,19 +44,19 @@ func NewWorkflowConnectServer(
 
 func (s *WorkflowConnectServer) CreateWorkflow(
 	ctx context.Context,
-	req *connect.Request[workflowv1.CreateWorkflowRequest],
-) (*connect.Response[workflowv1.CreateWorkflowResponse], error) {
+	req *workflowv1.CreateWorkflowRequest,
+) (*workflowv1.CreateWorkflowResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetDsl() == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("dsl is required"))
+	if req.GetDsl() == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "dsl is required")
 	}
 
-	dslBlob, err := rawJSONFromStruct(req.Msg.GetDsl())
+	dslBlob, err := rawJSONFromStruct(req.GetDsl())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
 
 	def, err := s.workflowBiz.CreateWorkflow(ctx, dslBlob)
@@ -65,53 +64,53 @@ func (s *WorkflowConnectServer) CreateWorkflow(
 		return nil, connectErrorForBusiness(err)
 	}
 
-	return connect.NewResponse(&workflowv1.CreateWorkflowResponse{
+	return &workflowv1.CreateWorkflowResponse{
 		Workflow: workflowDefinitionToProto(def),
-	}), nil
+	}, nil
 }
 
 func (s *WorkflowConnectServer) GetWorkflow(
 	ctx context.Context,
-	req *connect.Request[workflowv1.GetWorkflowRequest],
-) (*connect.Response[workflowv1.GetWorkflowResponse], error) {
+	req *workflowv1.GetWorkflowRequest,
+) (*workflowv1.GetWorkflowResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+	if req.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "id is required")
 	}
 
-	def, schedules, err := s.workflowBiz.GetWorkflowWithSchedules(ctx, req.Msg.GetId())
+	def, schedules, err := s.workflowBiz.GetWorkflowWithSchedules(ctx, req.GetId())
 	if err != nil {
 		return nil, connectErrorForBusiness(err)
 	}
 
-	return connect.NewResponse(&workflowv1.GetWorkflowResponse{
+	return &workflowv1.GetWorkflowResponse{
 		Workflow:  workflowDefinitionToProto(def),
 		Schedules: scheduleDefinitionsToProto(schedules),
-	}), nil
+	}, nil
 }
 
 func (s *WorkflowConnectServer) ListWorkflows(
 	ctx context.Context,
-	req *connect.Request[workflowv1.ListWorkflowsRequest],
-) (*connect.Response[workflowv1.ListWorkflowsResponse], error) {
+	req *workflowv1.ListWorkflowsRequest,
+) (*workflowv1.ListWorkflowsResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	_, err := workflowStatusFilter(req.Msg.GetStatus())
+	_, err := workflowStatusFilter(req.GetStatus())
 	if err != nil {
 		return nil, err
 	}
 
-	pageLimit := searchLimit(req.Msg.GetSearch(), defaultWorkflowPageLimit)
+	pageLimit := searchLimit(req.GetSearch(), defaultWorkflowPageLimit)
 	page, err := s.workflowBiz.SearchWorkflows(ctx, business.WorkflowListFilter{
-		Name:    req.Msg.GetName(),
-		Query:   searchQuery(req.Msg.GetSearch()),
-		IDQuery: searchIDQuery(req.Msg.GetSearch()),
-		Cursor:  searchPage(req.Msg.GetSearch()),
+		Name:    req.GetName(),
+		Query:   searchQuery(req.GetSearch()),
+		IDQuery: searchIDQuery(req.GetSearch()),
+		Cursor:  searchPage(req.GetSearch()),
 		Limit:   pageLimit,
 	})
 	if err != nil {
@@ -123,60 +122,60 @@ func (s *WorkflowConnectServer) ListWorkflows(
 		items = append(items, workflowDefinitionToProto(def))
 	}
 
-	return connect.NewResponse(&workflowv1.ListWorkflowsResponse{
+	return &workflowv1.ListWorkflowsResponse{
 		Items:      items,
 		NextCursor: nextCursorProto(page.NextCursor, pageLimit),
-	}), nil
+	}, nil
 }
 
 func (s *WorkflowConnectServer) ActivateWorkflow(
 	ctx context.Context,
-	req *connect.Request[workflowv1.ActivateWorkflowRequest],
-) (*connect.Response[workflowv1.ActivateWorkflowResponse], error) {
+	req *workflowv1.ActivateWorkflowRequest,
+) (*workflowv1.ActivateWorkflowResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+	if req.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "id is required")
 	}
 
-	if err := s.workflowBiz.ActivateWorkflow(ctx, req.Msg.GetId()); err != nil {
+	if err := s.workflowBiz.ActivateWorkflow(ctx, req.GetId()); err != nil {
 		return nil, connectErrorForBusiness(err)
 	}
 
-	def, err := s.workflowBiz.GetWorkflow(ctx, req.Msg.GetId())
+	def, err := s.workflowBiz.GetWorkflow(ctx, req.GetId())
 	if err != nil {
 		return nil, connectErrorForBusiness(err)
 	}
 
-	return connect.NewResponse(&workflowv1.ActivateWorkflowResponse{
+	return &workflowv1.ActivateWorkflowResponse{
 		Workflow: workflowDefinitionToProto(def),
-	}), nil
+	}, nil
 }
 
 func (s *WorkflowConnectServer) ArchiveWorkflow(
 	ctx context.Context,
-	req *connect.Request[workflowv1.ArchiveWorkflowRequest],
-) (*connect.Response[workflowv1.ArchiveWorkflowResponse], error) {
+	req *workflowv1.ArchiveWorkflowRequest,
+) (*workflowv1.ArchiveWorkflowResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("id is required"))
+	if req.GetId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "id is required")
 	}
 
-	if err := s.workflowBiz.ArchiveWorkflow(ctx, req.Msg.GetId()); err != nil {
+	if err := s.workflowBiz.ArchiveWorkflow(ctx, req.GetId()); err != nil {
 		return nil, connectErrorForBusiness(err)
 	}
 
-	def, err := s.workflowBiz.GetWorkflow(ctx, req.Msg.GetId())
+	def, err := s.workflowBiz.GetWorkflow(ctx, req.GetId())
 	if err != nil {
 		return nil, connectErrorForBusiness(err)
 	}
 
-	return connect.NewResponse(&workflowv1.ArchiveWorkflowResponse{
+	return &workflowv1.ArchiveWorkflowResponse{
 		Workflow: workflowDefinitionToProto(def),
-	}), nil
+	}, nil
 }

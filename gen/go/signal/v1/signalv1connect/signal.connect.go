@@ -19,105 +19,93 @@
 package signalv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/antinvestor/service-trustage/gen/go/signal/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// SignalServiceName is the fully-qualified name of the SignalService service.
 	SignalServiceName = "signal.v1.SignalService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// SignalServiceSendSignalProcedure is the fully-qualified name of the SignalService's SendSignal
-	// RPC.
+	// SignalServiceSendSignalProcedure is the procedure name of the SignalService's SendSignal RPC.
 	SignalServiceSendSignalProcedure = "/signal.v1.SignalService/SendSignal"
+)
+
+var (
+	signalServiceSendSignalSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_v1_signal_proto.Services().ByName("SignalService").Methods().ByName("SendSignal"),
+			Procedure:  SignalServiceSendSignalProcedure,
+		}
+	})
 )
 
 // SignalServiceClient is a client for the signal.v1.SignalService service.
 type SignalServiceClient interface {
-	SendSignal(context.Context, *connect.Request[v1.SendSignalRequest]) (*connect.Response[v1.SendSignalResponse], error)
+	SendSignal(context.Context, *v1.SendSignalRequest) (*v1.SendSignalResponse, error)
 }
 
-// NewSignalServiceClient constructs a client for the signal.v1.SignalService service. By default,
-// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
-// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
-// or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewSignalServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SignalServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	signalServiceMethods := v1.File_v1_signal_proto.Services().ByName("SignalService").Methods()
-	return &signalServiceClient{
-		sendSignal: connect.NewClient[v1.SendSignalRequest, v1.SendSignalResponse](
-			httpClient,
-			baseURL+SignalServiceSendSignalProcedure,
-			connect.WithSchema(signalServiceMethods.ByName("SendSignal")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// signalServiceClient implements SignalServiceClient.
-type signalServiceClient struct {
-	sendSignal *connect.Client[v1.SendSignalRequest, v1.SendSignalResponse]
-}
-
-// SendSignal calls signal.v1.SignalService.SendSignal.
-func (c *signalServiceClient) SendSignal(ctx context.Context, req *connect.Request[v1.SendSignalRequest]) (*connect.Response[v1.SendSignalResponse], error) {
-	return c.sendSignal.CallUnary(ctx, req)
+// NewSignalServiceClient constructs a client for the signal.v1.SignalService service. Multiple
+// service clients may share a single connect.Client.
+func NewSignalServiceClient(client *connect.Client) SignalServiceClient {
+	return &signalServiceClient{client: client}
 }
 
 // SignalServiceHandler is an implementation of the signal.v1.SignalService service.
 type SignalServiceHandler interface {
-	SendSignal(context.Context, *connect.Request[v1.SendSignalRequest]) (*connect.Response[v1.SendSignalResponse], error)
+	SendSignal(context.Context, *v1.SendSignalRequest) (*v1.SendSignalResponse, error)
 }
 
-// NewSignalServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewSignalServiceHandler(svc SignalServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	signalServiceMethods := v1.File_v1_signal_proto.Services().ByName("SignalService").Methods()
-	signalServiceSendSignalHandler := connect.NewUnaryHandler(
-		SignalServiceSendSignalProcedure,
-		svc.SendSignal,
-		connect.WithSchema(signalServiceMethods.ByName("SendSignal")),
-		connect.WithHandlerOptions(opts...),
+// RegisterSignalServiceHandler registers svc as the signal.v1.SignalService implementation on
+// server.
+func RegisterSignalServiceHandler(server *connect.Server, svc SignalServiceHandler) {
+	adapter := signalServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: signalServiceSendSignalSpec(), Handler: adapter.sendSignal},
 	)
-	return "/signal.v1.SignalService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case SignalServiceSendSignalProcedure:
-			signalServiceSendSignalHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedSignalServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSignalServiceHandler struct{}
 
-func (UnimplementedSignalServiceHandler) SendSignal(context.Context, *connect.Request[v1.SendSignalRequest]) (*connect.Response[v1.SendSignalResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("signal.v1.SignalService.SendSignal is not implemented"))
+func (UnimplementedSignalServiceHandler) SendSignal(context.Context, *v1.SendSignalRequest) (*v1.SendSignalResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "signal.v1.SignalService.SendSignal is not implemented")
+}
+
+type signalServiceClient struct {
+	client *connect.Client
+}
+
+func (c *signalServiceClient) SendSignal(ctx context.Context, req *v1.SendSignalRequest) (*v1.SendSignalResponse, error) {
+	var res v1.SendSignalResponse
+	if err := c.client.CallUnary(ctx, signalServiceSendSignalSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type signalServiceHandler struct{ svc SignalServiceHandler }
+
+func (h signalServiceHandler) sendSignal(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SendSignalRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SendSignal(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }
