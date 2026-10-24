@@ -180,7 +180,7 @@ class QueuestoreClient {
     final response = await _client.post(
       _uri('/api/v1/counters/$id/open'),
       headers: _jsonHeaders,
-      body: jsonEncode({if (staffId != null) 'staff_id': staffId}),
+      body: jsonEncode({'staff_id': ?staffId}),
     );
     _checkResponse(response);
   }

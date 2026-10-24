@@ -66,7 +66,7 @@ class TrustagePanel extends StatelessWidget {
                           ],
                         ),
                       ),
-                    if (actions != null) ...actions!,
+                    ...?actions,
                   ],
                 ),
               ),
