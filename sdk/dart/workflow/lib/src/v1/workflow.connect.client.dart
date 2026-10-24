@@ -7,7 +7,7 @@ import "package:connectrpc/connect.dart" as connect;
 import "workflow.pb.dart" as v1workflow;
 import "workflow.connect.spec.dart" as specs;
 
-extension type WorkflowServiceClient (connect.Transport _transport) {
+extension type WorkflowServiceClient(connect.Transport _transport) {
   Future<v1workflow.CreateWorkflowResponse> createWorkflow(
     v1workflow.CreateWorkflowRequest input, {
     connect.Headers? headers,

@@ -14,7 +14,7 @@
 
 package models
 
-import "github.com/pitabwire/frame/v2/data"
+import "github.com/pitabwire/frame/v3/data"
 
 // WorkflowRetryPolicy configures retry behavior for a specific state.
 type WorkflowRetryPolicy struct {

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"
 	eventv1 "github.com/antinvestor/service-trustage/gen/go/event/v1"
@@ -39,7 +39,7 @@ func (s *HandlerSuite) TestWorkflowConnectServer_LifecycleAndAuth() {
 		connectReq(&workflowv1.CreateWorkflowRequest{Dsl: mustStructFromJSON(s.sampleDSL())}),
 	)
 	s.Require().NoError(err)
-	workflowID := createResp.Msg.GetWorkflow().GetId()
+	workflowID := createResp.GetWorkflow().GetId()
 	s.NotEmpty(workflowID)
 
 	_, err = server.GetWorkflow(ctx, connectReq(&workflowv1.GetWorkflowRequest{Id: workflowID}))
@@ -47,7 +47,7 @@ func (s *HandlerSuite) TestWorkflowConnectServer_LifecycleAndAuth() {
 
 	activateResp, err := server.ActivateWorkflow(ctx, connectReq(&workflowv1.ActivateWorkflowRequest{Id: workflowID}))
 	s.Require().NoError(err)
-	s.Equal(workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE, activateResp.Msg.GetWorkflow().GetStatus())
+	s.Equal(workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE, activateResp.GetWorkflow().GetStatus())
 
 	_, err = server.ListWorkflows(ctx, connectReq(&workflowv1.ListWorkflowsRequest{
 		Status: workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE,
@@ -75,12 +75,12 @@ func (s *HandlerSuite) TestEventConnectServer_IngestAndTimeline() {
 
 	firstResp, err := server.IngestEvent(ctx, req)
 	s.Require().NoError(err)
-	s.False(firstResp.Msg.GetIdempotent())
-	s.NotEmpty(firstResp.Msg.GetEvent().GetEventId())
+	s.False(firstResp.GetIdempotent())
+	s.NotEmpty(firstResp.GetEvent().GetEventId())
 
 	secondResp, err := server.IngestEvent(ctx, req)
 	s.Require().NoError(err)
-	s.True(secondResp.Msg.GetIdempotent())
+	s.True(secondResp.GetIdempotent())
 
 	s.Require().NoError(s.auditRepo.Append(ctx, &models.WorkflowAuditEvent{
 		InstanceID: "inst-connect",
@@ -93,7 +93,7 @@ func (s *HandlerSuite) TestEventConnectServer_IngestAndTimeline() {
 		connectReq(&eventv1.GetInstanceTimelineRequest{InstanceId: "inst-connect"}),
 	)
 	s.Require().NoError(err)
-	s.Len(timelineResp.Msg.GetItems(), 1)
+	s.Len(timelineResp.GetItems(), 1)
 }
 
 func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
@@ -212,7 +212,7 @@ func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
 		InstanceId: instance.ID,
 	}))
 	s.Require().NoError(err)
-	s.Equal(int32(3), retryInstanceResp.Msg.GetExecution().GetAttempt())
+	s.Equal(int32(3), retryInstanceResp.GetExecution().GetAttempt())
 	_, err = runtimeServer.GetInstanceRun(ctx, connectReq(&runtimev1.GetInstanceRunRequest{
 		InstanceId:      instance.ID,
 		ExecutionLimit:  10,
@@ -266,14 +266,14 @@ func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
 		Payload:     mustStructFromMap(map[string]any{}),
 	}))
 	s.Require().NoError(err)
-	s.Equal("resumed_waiting_execution", resumeResp.Msg.GetAction())
+	s.Equal("resumed_waiting_execution", resumeResp.GetAction())
 
 	retryResumeResp, err := runtimeServer.ResumeExecution(ctx, connectReq(&runtimev1.ResumeExecutionRequest{
 		ExecutionId: failedExec.ID,
 	}))
 	s.Require().NoError(err)
-	s.Equal("created_retry_execution", retryResumeResp.Msg.GetAction())
-	s.Equal(int32(3), retryResumeResp.Msg.GetExecution().GetAttempt())
+	s.Equal("created_retry_execution", retryResumeResp.GetAction())
+	s.Equal(int32(3), retryResumeResp.GetExecution().GetAttempt())
 
 	pendingSignalInstance := &models.WorkflowInstance{
 		WorkflowName:    "pending-signal-wf",
@@ -292,7 +292,7 @@ func (s *HandlerSuite) TestRuntimeAndSignalConnectServer_Flows() {
 		Payload:    mustStructFromMap(map[string]any{"ok": true}),
 	}))
 	s.Require().NoError(err)
-	s.False(signalResp.Msg.GetDelivered())
+	s.False(signalResp.GetDelivered())
 
 	messages, err := s.signalMsgRepo.ListByInstance(ctx, pendingSignalInstance.ID, 10)
 	s.Require().NoError(err)

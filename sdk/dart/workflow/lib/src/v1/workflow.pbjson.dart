@@ -1,21 +1,26 @@
+// This is a generated file - do not edit.
 //
-//  Generated code. Do not modify.
-//  source: v1/workflow.proto
-//
-// @dart = 2.12
+// Generated from v1/workflow.proto.
+
+// @dart = 3.3
 
 // ignore_for_file: annotate_overrides, camel_case_types, comment_references
-// ignore_for_file: constant_identifier_names, library_prefixes
-// ignore_for_file: non_constant_identifier_names, prefer_final_fields
-// ignore_for_file: unnecessary_import, unnecessary_this, unused_import
+// ignore_for_file: constant_identifier_names
+// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
+// ignore_for_file: unused_import
 
 import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-import '../common/v1/common.pbjson.dart' as $7;
-import '../google/protobuf/struct.pbjson.dart' as $6;
-import '../google/protobuf/timestamp.pbjson.dart' as $2;
+import 'package:protobuf/well_known_types/google/protobuf/struct.pbjson.dart'
+    as $0;
+import 'package:protobuf/well_known_types/google/protobuf/timestamp.pbjson.dart'
+    as $1;
+
+import '../common/v1/common.pbjson.dart' as $2;
 
 @$core.Deprecated('Use workflowStatusDescriptor instead')
 const WorkflowStatus$json = {
@@ -41,12 +46,40 @@ const WorkflowDefinition$json = {
     {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
     {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
     {'1': 'version', '3': 3, '4': 1, '5': 5, '10': 'version'},
-    {'1': 'status', '3': 4, '4': 1, '5': 14, '6': '.workflow.v1.WorkflowStatus', '10': 'status'},
-    {'1': 'dsl', '3': 5, '4': 1, '5': 11, '6': '.google.protobuf.Struct', '10': 'dsl'},
+    {
+      '1': 'status',
+      '3': 4,
+      '4': 1,
+      '5': 14,
+      '6': '.workflow.v1.WorkflowStatus',
+      '10': 'status'
+    },
+    {
+      '1': 'dsl',
+      '3': 5,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Struct',
+      '10': 'dsl'
+    },
     {'1': 'input_schema_hash', '3': 6, '4': 1, '5': 9, '10': 'inputSchemaHash'},
     {'1': 'timeout_seconds', '3': 7, '4': 1, '5': 3, '10': 'timeoutSeconds'},
-    {'1': 'created_at', '3': 8, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
-    {'1': 'updated_at', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'updatedAt'},
+    {
+      '1': 'created_at',
+      '3': 8,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'createdAt'
+    },
+    {
+      '1': 'updated_at',
+      '3': 9,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'updatedAt'
+    },
   ],
 };
 
@@ -64,7 +97,14 @@ final $typed_data.Uint8List workflowDefinitionDescriptor = $convert.base64Decode
 const CreateWorkflowRequest$json = {
   '1': 'CreateWorkflowRequest',
   '2': [
-    {'1': 'dsl', '3': 1, '4': 1, '5': 11, '6': '.google.protobuf.Struct', '10': 'dsl'},
+    {
+      '1': 'dsl',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Struct',
+      '10': 'dsl'
+    },
   ],
 };
 
@@ -77,14 +117,22 @@ final $typed_data.Uint8List createWorkflowRequestDescriptor = $convert.base64Dec
 const CreateWorkflowResponse$json = {
   '1': 'CreateWorkflowResponse',
   '2': [
-    {'1': 'workflow', '3': 1, '4': 1, '5': 11, '6': '.workflow.v1.WorkflowDefinition', '10': 'workflow'},
+    {
+      '1': 'workflow',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.workflow.v1.WorkflowDefinition',
+      '10': 'workflow'
+    },
   ],
 };
 
 /// Descriptor for `CreateWorkflowResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List createWorkflowResponseDescriptor = $convert.base64Decode(
-    'ChZDcmVhdGVXb3JrZmxvd1Jlc3BvbnNlEjsKCHdvcmtmbG93GAEgASgLMh8ud29ya2Zsb3cudj'
-    'EuV29ya2Zsb3dEZWZpbml0aW9uUgh3b3JrZmxvdw==');
+final $typed_data.Uint8List createWorkflowResponseDescriptor =
+    $convert.base64Decode(
+        'ChZDcmVhdGVXb3JrZmxvd1Jlc3BvbnNlEjsKCHdvcmtmbG93GAEgASgLMh8ud29ya2Zsb3cudj'
+        'EuV29ya2Zsb3dEZWZpbml0aW9uUgh3b3JrZmxvdw==');
 
 @$core.Deprecated('Use scheduleDefinitionDescriptor instead')
 const ScheduleDefinition$json = {
@@ -96,11 +144,39 @@ const ScheduleDefinition$json = {
     {'1': 'workflow_name', '3': 4, '4': 1, '5': 9, '10': 'workflowName'},
     {'1': 'workflow_version', '3': 5, '4': 1, '5': 5, '10': 'workflowVersion'},
     {'1': 'active', '3': 6, '4': 1, '5': 8, '10': 'active'},
-    {'1': 'next_fire_at', '3': 7, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'nextFireAt'},
-    {'1': 'last_fired_at', '3': 8, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'lastFiredAt'},
+    {
+      '1': 'next_fire_at',
+      '3': 7,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'nextFireAt'
+    },
+    {
+      '1': 'last_fired_at',
+      '3': 8,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'lastFiredAt'
+    },
     {'1': 'jitter_seconds', '3': 9, '4': 1, '5': 5, '10': 'jitterSeconds'},
-    {'1': 'created_at', '3': 10, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
-    {'1': 'updated_at', '3': 11, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'updatedAt'},
+    {
+      '1': 'created_at',
+      '3': 10,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'createdAt'
+    },
+    {
+      '1': 'updated_at',
+      '3': 11,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'updatedAt'
+    },
     {'1': 'timezone', '3': 12, '4': 1, '5': 9, '10': 'timezone'},
   ],
 };
@@ -127,15 +203,29 @@ const GetWorkflowRequest$json = {
 };
 
 /// Descriptor for `GetWorkflowRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List getWorkflowRequestDescriptor = $convert.base64Decode(
-    'ChJHZXRXb3JrZmxvd1JlcXVlc3QSDgoCaWQYASABKAlSAmlk');
+final $typed_data.Uint8List getWorkflowRequestDescriptor =
+    $convert.base64Decode('ChJHZXRXb3JrZmxvd1JlcXVlc3QSDgoCaWQYASABKAlSAmlk');
 
 @$core.Deprecated('Use getWorkflowResponseDescriptor instead')
 const GetWorkflowResponse$json = {
   '1': 'GetWorkflowResponse',
   '2': [
-    {'1': 'workflow', '3': 1, '4': 1, '5': 11, '6': '.workflow.v1.WorkflowDefinition', '10': 'workflow'},
-    {'1': 'schedules', '3': 2, '4': 3, '5': 11, '6': '.workflow.v1.ScheduleDefinition', '10': 'schedules'},
+    {
+      '1': 'workflow',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.workflow.v1.WorkflowDefinition',
+      '10': 'workflow'
+    },
+    {
+      '1': 'schedules',
+      '3': 2,
+      '4': 3,
+      '5': 11,
+      '6': '.workflow.v1.ScheduleDefinition',
+      '10': 'schedules'
+    },
   ],
 };
 
@@ -150,8 +240,22 @@ const ListWorkflowsRequest$json = {
   '1': 'ListWorkflowsRequest',
   '2': [
     {'1': 'name', '3': 1, '4': 1, '5': 9, '10': 'name'},
-    {'1': 'status', '3': 2, '4': 1, '5': 14, '6': '.workflow.v1.WorkflowStatus', '10': 'status'},
-    {'1': 'search', '3': 3, '4': 1, '5': 11, '6': '.common.v1.SearchRequest', '10': 'search'},
+    {
+      '1': 'status',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.workflow.v1.WorkflowStatus',
+      '10': 'status'
+    },
+    {
+      '1': 'search',
+      '3': 3,
+      '4': 1,
+      '5': 11,
+      '6': '.common.v1.SearchRequest',
+      '10': 'search'
+    },
   ],
 };
 
@@ -165,8 +269,22 @@ final $typed_data.Uint8List listWorkflowsRequestDescriptor = $convert.base64Deco
 const ListWorkflowsResponse$json = {
   '1': 'ListWorkflowsResponse',
   '2': [
-    {'1': 'items', '3': 1, '4': 3, '5': 11, '6': '.workflow.v1.WorkflowDefinition', '10': 'items'},
-    {'1': 'next_cursor', '3': 2, '4': 1, '5': 11, '6': '.common.v1.PageCursor', '10': 'nextCursor'},
+    {
+      '1': 'items',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.workflow.v1.WorkflowDefinition',
+      '10': 'items'
+    },
+    {
+      '1': 'next_cursor',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.common.v1.PageCursor',
+      '10': 'nextCursor'
+    },
   ],
 };
 
@@ -185,21 +303,29 @@ const ActivateWorkflowRequest$json = {
 };
 
 /// Descriptor for `ActivateWorkflowRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List activateWorkflowRequestDescriptor = $convert.base64Decode(
-    'ChdBY3RpdmF0ZVdvcmtmbG93UmVxdWVzdBIOCgJpZBgBIAEoCVICaWQ=');
+final $typed_data.Uint8List activateWorkflowRequestDescriptor = $convert
+    .base64Decode('ChdBY3RpdmF0ZVdvcmtmbG93UmVxdWVzdBIOCgJpZBgBIAEoCVICaWQ=');
 
 @$core.Deprecated('Use activateWorkflowResponseDescriptor instead')
 const ActivateWorkflowResponse$json = {
   '1': 'ActivateWorkflowResponse',
   '2': [
-    {'1': 'workflow', '3': 1, '4': 1, '5': 11, '6': '.workflow.v1.WorkflowDefinition', '10': 'workflow'},
+    {
+      '1': 'workflow',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.workflow.v1.WorkflowDefinition',
+      '10': 'workflow'
+    },
   ],
 };
 
 /// Descriptor for `ActivateWorkflowResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List activateWorkflowResponseDescriptor = $convert.base64Decode(
-    'ChhBY3RpdmF0ZVdvcmtmbG93UmVzcG9uc2USOwoId29ya2Zsb3cYASABKAsyHy53b3JrZmxvdy'
-    '52MS5Xb3JrZmxvd0RlZmluaXRpb25SCHdvcmtmbG93');
+final $typed_data.Uint8List activateWorkflowResponseDescriptor =
+    $convert.base64Decode(
+        'ChhBY3RpdmF0ZVdvcmtmbG93UmVzcG9uc2USOwoId29ya2Zsb3cYASABKAsyHy53b3JrZmxvdy'
+        '52MS5Xb3JrZmxvd0RlZmluaXRpb25SCHdvcmtmbG93');
 
 @$core.Deprecated('Use archiveWorkflowRequestDescriptor instead')
 const ArchiveWorkflowRequest$json = {
@@ -210,50 +336,84 @@ const ArchiveWorkflowRequest$json = {
 };
 
 /// Descriptor for `ArchiveWorkflowRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List archiveWorkflowRequestDescriptor = $convert.base64Decode(
-    'ChZBcmNoaXZlV29ya2Zsb3dSZXF1ZXN0Eg4KAmlkGAEgASgJUgJpZA==');
+final $typed_data.Uint8List archiveWorkflowRequestDescriptor = $convert
+    .base64Decode('ChZBcmNoaXZlV29ya2Zsb3dSZXF1ZXN0Eg4KAmlkGAEgASgJUgJpZA==');
 
 @$core.Deprecated('Use archiveWorkflowResponseDescriptor instead')
 const ArchiveWorkflowResponse$json = {
   '1': 'ArchiveWorkflowResponse',
   '2': [
-    {'1': 'workflow', '3': 1, '4': 1, '5': 11, '6': '.workflow.v1.WorkflowDefinition', '10': 'workflow'},
+    {
+      '1': 'workflow',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.workflow.v1.WorkflowDefinition',
+      '10': 'workflow'
+    },
   ],
 };
 
 /// Descriptor for `ArchiveWorkflowResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List archiveWorkflowResponseDescriptor = $convert.base64Decode(
-    'ChdBcmNoaXZlV29ya2Zsb3dSZXNwb25zZRI7Cgh3b3JrZmxvdxgBIAEoCzIfLndvcmtmbG93Ln'
-    'YxLldvcmtmbG93RGVmaW5pdGlvblIId29ya2Zsb3c=');
+final $typed_data.Uint8List archiveWorkflowResponseDescriptor =
+    $convert.base64Decode(
+        'ChdBcmNoaXZlV29ya2Zsb3dSZXNwb25zZRI7Cgh3b3JrZmxvdxgBIAEoCzIfLndvcmtmbG93Ln'
+        'YxLldvcmtmbG93RGVmaW5pdGlvblIId29ya2Zsb3c=');
 
 const $core.Map<$core.String, $core.dynamic> WorkflowServiceBase$json = {
   '1': 'WorkflowService',
   '2': [
-    {'1': 'CreateWorkflow', '2': '.workflow.v1.CreateWorkflowRequest', '3': '.workflow.v1.CreateWorkflowResponse', '4': {}},
-    {'1': 'GetWorkflow', '2': '.workflow.v1.GetWorkflowRequest', '3': '.workflow.v1.GetWorkflowResponse', '4': {}},
-    {'1': 'ListWorkflows', '2': '.workflow.v1.ListWorkflowsRequest', '3': '.workflow.v1.ListWorkflowsResponse', '4': {}},
-    {'1': 'ActivateWorkflow', '2': '.workflow.v1.ActivateWorkflowRequest', '3': '.workflow.v1.ActivateWorkflowResponse', '4': {}},
-    {'1': 'ArchiveWorkflow', '2': '.workflow.v1.ArchiveWorkflowRequest', '3': '.workflow.v1.ArchiveWorkflowResponse', '4': {}},
+    {
+      '1': 'CreateWorkflow',
+      '2': '.workflow.v1.CreateWorkflowRequest',
+      '3': '.workflow.v1.CreateWorkflowResponse',
+      '4': {}
+    },
+    {
+      '1': 'GetWorkflow',
+      '2': '.workflow.v1.GetWorkflowRequest',
+      '3': '.workflow.v1.GetWorkflowResponse',
+      '4': {}
+    },
+    {
+      '1': 'ListWorkflows',
+      '2': '.workflow.v1.ListWorkflowsRequest',
+      '3': '.workflow.v1.ListWorkflowsResponse',
+      '4': {}
+    },
+    {
+      '1': 'ActivateWorkflow',
+      '2': '.workflow.v1.ActivateWorkflowRequest',
+      '3': '.workflow.v1.ActivateWorkflowResponse',
+      '4': {}
+    },
+    {
+      '1': 'ArchiveWorkflow',
+      '2': '.workflow.v1.ArchiveWorkflowRequest',
+      '3': '.workflow.v1.ArchiveWorkflowResponse',
+      '4': {}
+    },
   ],
   '3': {},
 };
 
 @$core.Deprecated('Use workflowServiceDescriptor instead')
-const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> WorkflowServiceBase$messageJson = {
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    WorkflowServiceBase$messageJson = {
   '.workflow.v1.CreateWorkflowRequest': CreateWorkflowRequest$json,
-  '.google.protobuf.Struct': $6.Struct$json,
-  '.google.protobuf.Struct.FieldsEntry': $6.Struct_FieldsEntry$json,
-  '.google.protobuf.Value': $6.Value$json,
-  '.google.protobuf.ListValue': $6.ListValue$json,
+  '.google.protobuf.Struct': $0.Struct$json,
+  '.google.protobuf.Struct.FieldsEntry': $0.Struct_FieldsEntry$json,
+  '.google.protobuf.Value': $0.Value$json,
+  '.google.protobuf.ListValue': $0.ListValue$json,
   '.workflow.v1.CreateWorkflowResponse': CreateWorkflowResponse$json,
   '.workflow.v1.WorkflowDefinition': WorkflowDefinition$json,
-  '.google.protobuf.Timestamp': $2.Timestamp$json,
+  '.google.protobuf.Timestamp': $1.Timestamp$json,
   '.workflow.v1.GetWorkflowRequest': GetWorkflowRequest$json,
   '.workflow.v1.GetWorkflowResponse': GetWorkflowResponse$json,
   '.workflow.v1.ScheduleDefinition': ScheduleDefinition$json,
   '.workflow.v1.ListWorkflowsRequest': ListWorkflowsRequest$json,
-  '.common.v1.SearchRequest': $7.SearchRequest$json,
-  '.common.v1.PageCursor': $7.PageCursor$json,
+  '.common.v1.SearchRequest': $2.SearchRequest$json,
+  '.common.v1.PageCursor': $2.PageCursor$json,
   '.workflow.v1.ListWorkflowsResponse': ListWorkflowsResponse$json,
   '.workflow.v1.ActivateWorkflowRequest': ActivateWorkflowRequest$json,
   '.workflow.v1.ActivateWorkflowResponse': ActivateWorkflowResponse$json,
@@ -288,4 +448,3 @@ final $typed_data.Uint8List workflowServiceDescriptor = $convert.base64Decode(
     'EgxldmVudF9pbmdlc3QSDXdvcmtmbG93X3ZpZXcSD3dvcmtmbG93X21hbmFnZRINaW5zdGFuY2'
     'VfdmlldxIOaW5zdGFuY2VfcmV0cnkSDmV4ZWN1dGlvbl92aWV3Eg9leGVjdXRpb25fcmV0cnkS'
     'EGV4ZWN1dGlvbl9yZXN1bWUSC3NpZ25hbF9zZW5k');
-

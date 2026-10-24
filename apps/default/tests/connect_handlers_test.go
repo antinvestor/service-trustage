@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 
 	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/handlers"
@@ -59,42 +59,42 @@ func (s *DefaultServiceSuite) TestWorkflowConnectServer_Lifecycle() {
 
 	createResp, err := server.CreateWorkflow(
 		ctx,
-		connect.NewRequest(&workflowv1.CreateWorkflowRequest{Dsl: mustStructFromJSON(s.sampleDSL())}),
+		&workflowv1.CreateWorkflowRequest{Dsl: mustStructFromJSON(s.sampleDSL())},
 	)
 	s.Require().NoError(err)
-	s.Require().NotNil(createResp.Msg.GetWorkflow())
+	s.Require().NotNil(createResp.GetWorkflow())
 
-	workflowID := createResp.Msg.GetWorkflow().GetId()
+	workflowID := createResp.GetWorkflow().GetId()
 	s.NotEmpty(workflowID)
 
 	getResp, err := server.GetWorkflow(
 		ctx,
-		connect.NewRequest(&workflowv1.GetWorkflowRequest{Id: workflowID}),
+		&workflowv1.GetWorkflowRequest{Id: workflowID},
 	)
 	s.Require().NoError(err)
-	s.Equal(workflowID, getResp.Msg.GetWorkflow().GetId())
+	s.Equal(workflowID, getResp.GetWorkflow().GetId())
 
 	activateResp, err := server.ActivateWorkflow(
 		ctx,
-		connect.NewRequest(&workflowv1.ActivateWorkflowRequest{Id: workflowID}),
+		&workflowv1.ActivateWorkflowRequest{Id: workflowID},
 	)
 	s.Require().NoError(err)
 	s.Equal(
 		workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE,
-		activateResp.Msg.GetWorkflow().GetStatus(),
+		activateResp.GetWorkflow().GetStatus(),
 	)
 
 	listResp, err := server.ListWorkflows(
 		ctx,
-		connect.NewRequest(&workflowv1.ListWorkflowsRequest{
+		&workflowv1.ListWorkflowsRequest{
 			Status: workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE,
 			Search: &commonv1.SearchRequest{
 				Cursor: &commonv1.PageCursor{Limit: 10},
 			},
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.NotEmpty(listResp.Msg.GetItems())
+	s.NotEmpty(listResp.GetItems())
 }
 
 func (s *DefaultServiceSuite) TestWorkflowConnectServer_AcceptsParallelRuntimeSteps() {
@@ -126,10 +126,10 @@ func (s *DefaultServiceSuite) TestWorkflowConnectServer_AcceptsParallelRuntimeSt
 
 	resp, err := server.CreateWorkflow(
 		ctx,
-		connect.NewRequest(&workflowv1.CreateWorkflowRequest{Dsl: mustStructFromJSON(unsupportedDSL)}),
+		&workflowv1.CreateWorkflowRequest{Dsl: mustStructFromJSON(unsupportedDSL)},
 	)
 	s.Require().NoError(err)
-	s.NotEmpty(resp.Msg.GetWorkflow().GetId())
+	s.NotEmpty(resp.GetWorkflow().GetId())
 }
 
 func (s *DefaultServiceSuite) TestWorkflowConnectServer_RequiresAuth() {
@@ -137,7 +137,7 @@ func (s *DefaultServiceSuite) TestWorkflowConnectServer_RequiresAuth() {
 
 	_, err := server.ListWorkflows(
 		context.Background(),
-		connect.NewRequest(&workflowv1.ListWorkflowsRequest{}),
+		&workflowv1.ListWorkflowsRequest{},
 	)
 	s.Require().Error(err)
 	s.Equal(connect.CodeUnauthenticated, connect.CodeOf(err))
@@ -152,7 +152,7 @@ func (s *DefaultServiceSuite) TestEventConnectServer_IngestAndIdempotency() {
 		nil,
 	)
 
-	req := connect.NewRequest(&eventv1.IngestEventRequest{
+	req := &eventv1.IngestEventRequest{
 		EventType:      "order.created",
 		Source:         "shop-api",
 		IdempotencyKey: "event-key-1",
@@ -160,17 +160,17 @@ func (s *DefaultServiceSuite) TestEventConnectServer_IngestAndIdempotency() {
 			"order_id": "ord-1",
 			"amount":   1200,
 		}),
-	})
+	}
 
 	firstResp, err := server.IngestEvent(ctx, req)
 	s.Require().NoError(err)
-	s.False(firstResp.Msg.GetIdempotent())
-	s.NotEmpty(firstResp.Msg.GetEvent().GetEventId())
+	s.False(firstResp.GetIdempotent())
+	s.NotEmpty(firstResp.GetEvent().GetEventId())
 
 	secondResp, err := server.IngestEvent(ctx, req)
 	s.Require().NoError(err)
-	s.True(secondResp.Msg.GetIdempotent())
-	s.Equal(firstResp.Msg.GetEvent().GetEventId(), secondResp.Msg.GetEvent().GetEventId())
+	s.True(secondResp.GetIdempotent())
+	s.Equal(firstResp.GetEvent().GetEventId(), secondResp.GetEvent().GetEventId())
 }
 
 func (s *DefaultServiceSuite) TestEventConnectServer_Timeline() {
@@ -190,11 +190,11 @@ func (s *DefaultServiceSuite) TestEventConnectServer_Timeline() {
 
 	resp, err := server.GetInstanceTimeline(
 		ctx,
-		connect.NewRequest(&eventv1.GetInstanceTimelineRequest{InstanceId: "inst-connect"}),
+		&eventv1.GetInstanceTimelineRequest{InstanceId: "inst-connect"},
 	)
 	s.Require().NoError(err)
-	s.Len(resp.Msg.GetItems(), 1)
-	s.Equal("state.started", resp.Msg.GetItems()[0].GetEventType())
+	s.Len(resp.GetItems(), 1)
+	s.Equal("state.started", resp.GetItems()[0].GetEventType())
 }
 
 func (s *DefaultServiceSuite) TestRuntimeConnectServer_Lifecycle() {
@@ -239,38 +239,38 @@ func (s *DefaultServiceSuite) TestRuntimeConnectServer_Lifecycle() {
 
 	listInstancesResp, err := server.ListInstances(
 		ctx,
-		connect.NewRequest(&runtimev1.ListInstancesRequest{
+		&runtimev1.ListInstancesRequest{
 			Status: runtimev1.InstanceStatus_INSTANCE_STATUS_FAILED,
 			Search: &commonv1.SearchRequest{
 				Cursor: &commonv1.PageCursor{Limit: 10},
 			},
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.NotEmpty(listInstancesResp.Msg.GetItems())
+	s.NotEmpty(listInstancesResp.GetItems())
 
 	getExecutionResp, err := server.GetExecution(
 		ctx,
-		connect.NewRequest(&runtimev1.GetExecutionRequest{
+		&runtimev1.GetExecutionRequest{
 			ExecutionId:   exec.ID,
 			IncludeOutput: true,
-		}),
+		},
 	)
 	s.Require().NoError(err)
-	s.Equal(exec.ID, getExecutionResp.Msg.GetExecution().GetId())
-	s.NotNil(getExecutionResp.Msg.GetExecution().GetOutput())
+	s.Equal(exec.ID, getExecutionResp.GetExecution().GetId())
+	s.NotNil(getExecutionResp.GetExecution().GetOutput())
 
 	retryInstanceResp, err := server.RetryInstance(
 		ctx,
-		connect.NewRequest(&runtimev1.RetryInstanceRequest{InstanceId: instance.ID}),
+		&runtimev1.RetryInstanceRequest{InstanceId: instance.ID},
 	)
 	s.Require().NoError(err)
-	s.NotEmpty(retryInstanceResp.Msg.GetExecution().GetId())
+	s.NotEmpty(retryInstanceResp.GetExecution().GetId())
 
 	retryExecutionResp, err := server.RetryExecution(
 		ctx,
-		connect.NewRequest(&runtimev1.RetryExecutionRequest{ExecutionId: exec.ID}),
+		&runtimev1.RetryExecutionRequest{ExecutionId: exec.ID},
 	)
 	s.Require().NoError(err)
-	s.NotEmpty(retryExecutionResp.Msg.GetExecution().GetId())
+	s.NotEmpty(retryExecutionResp.GetExecution().GetId())
 }

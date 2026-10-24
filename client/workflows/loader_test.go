@@ -9,7 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	workflowv1 "github.com/antinvestor/service-trustage/gen/go/workflow/v1"
 	"github.com/antinvestor/service-trustage/gen/go/workflow/v1/workflowv1connect"
@@ -30,21 +30,21 @@ type mockWorkflowClient struct {
 
 func (m *mockWorkflowClient) ListWorkflows(
 	_ context.Context,
-	_ *connect.Request[workflowv1.ListWorkflowsRequest],
-) (*connect.Response[workflowv1.ListWorkflowsResponse], error) {
+	_ *workflowv1.ListWorkflowsRequest,
+) (*workflowv1.ListWorkflowsResponse, error) {
 	m.listed++
-	return connect.NewResponse(&workflowv1.ListWorkflowsResponse{}), nil
+	return &workflowv1.ListWorkflowsResponse{}, nil
 }
 
 func (m *mockWorkflowClient) CreateWorkflow(
 	_ context.Context,
-	req *connect.Request[workflowv1.CreateWorkflowRequest],
-) (*connect.Response[workflowv1.CreateWorkflowResponse], error) {
+	req *workflowv1.CreateWorkflowRequest,
+) (*workflowv1.CreateWorkflowResponse, error) {
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
 
-	name := req.Msg.GetDsl().GetFields()["name"].GetStringValue()
+	name := req.GetDsl().GetFields()["name"].GetStringValue()
 	m.created = append(m.created, name)
 
 	status := workflowv1.WorkflowStatus_WORKFLOW_STATUS_DRAFT
@@ -52,17 +52,17 @@ func (m *mockWorkflowClient) CreateWorkflow(
 		status = workflowv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE
 	}
 
-	return connect.NewResponse(&workflowv1.CreateWorkflowResponse{
+	return &workflowv1.CreateWorkflowResponse{
 		Workflow: &workflowv1.WorkflowDefinition{Id: "id-" + name, Name: name, Status: status},
-	}), nil
+	}, nil
 }
 
 func (m *mockWorkflowClient) ActivateWorkflow(
 	_ context.Context,
-	req *connect.Request[workflowv1.ActivateWorkflowRequest],
-) (*connect.Response[workflowv1.ActivateWorkflowResponse], error) {
-	m.activated = append(m.activated, req.Msg.GetId())
-	return connect.NewResponse(&workflowv1.ActivateWorkflowResponse{}), nil
+	req *workflowv1.ActivateWorkflowRequest,
+) (*workflowv1.ActivateWorkflowResponse, error) {
+	m.activated = append(m.activated, req.GetId())
+	return &workflowv1.ActivateWorkflowResponse{}, nil
 }
 
 func dslDoc(name string) string {
@@ -158,6 +158,25 @@ func TestSyncFromFS_ReportsFailingFile(t *testing.T) {
 	err = SyncFromFS(context.Background(), &mockWorkflowClient{createErr: errors.New("boom")}, fsys)
 	if err == nil {
 		t.Fatal("expected the create error to propagate")
+	}
+}
+
+func TestSyncFromFS_AlreadyExistsIsSkipped(t *testing.T) {
+	fsys := fstest.MapFS{"ok.json": {Data: []byte(dslDoc("test.ok"))}}
+
+	for name, createErr := range map[string]error{
+		"connect code":     connect.NewError(connect.CodeAlreadyExists, "conflict"),
+		"message fallback": errors.New("unique constraint violated"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock := &mockWorkflowClient{createErr: createErr}
+			if err := SyncFromFS(context.Background(), mock, fsys); err != nil {
+				t.Fatalf("SyncFromFS: %v", err)
+			}
+			if len(mock.activated) != 0 {
+				t.Errorf("activated = %v, want none", mock.activated)
+			}
+		})
 	}
 }
 

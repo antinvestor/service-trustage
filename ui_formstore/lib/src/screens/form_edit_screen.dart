@@ -173,7 +173,7 @@ class _FormEditScreenState extends ConsumerState<FormEditScreen> {
           'name': _nameCtl.text,
           'description': _descCtl.text,
           'active': _active,
-          if (schema != null) 'json_schema': schema,
+          'json_schema': ?schema,
         });
       } else {
         final def = FormDefinition(

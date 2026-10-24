@@ -1,19 +1,22 @@
+// This is a generated file - do not edit.
 //
-//  Generated code. Do not modify.
-//  source: v1/signal.proto
-//
-// @dart = 2.12
+// Generated from v1/signal.proto.
+
+// @dart = 3.3
 
 // ignore_for_file: annotate_overrides, camel_case_types, comment_references
-// ignore_for_file: constant_identifier_names, library_prefixes
-// ignore_for_file: non_constant_identifier_names, prefer_final_fields
-// ignore_for_file: unnecessary_import, unnecessary_this, unused_import
+// ignore_for_file: constant_identifier_names
+// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
+// ignore_for_file: unused_import
 
 import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-import '../google/protobuf/struct.pbjson.dart' as $2;
+import 'package:protobuf/well_known_types/google/protobuf/struct.pbjson.dart'
+    as $0;
 
 @$core.Deprecated('Use sendSignalRequestDescriptor instead')
 const SendSignalRequest$json = {
@@ -21,7 +24,14 @@ const SendSignalRequest$json = {
   '2': [
     {'1': 'instance_id', '3': 1, '4': 1, '5': 9, '10': 'instanceId'},
     {'1': 'signal_name', '3': 2, '4': 1, '5': 9, '10': 'signalName'},
-    {'1': 'payload', '3': 3, '4': 1, '5': 11, '6': '.google.protobuf.Struct', '10': 'payload'},
+    {
+      '1': 'payload',
+      '3': 3,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Struct',
+      '10': 'payload'
+    },
   ],
 };
 
@@ -40,24 +50,31 @@ const SendSignalResponse$json = {
 };
 
 /// Descriptor for `SendSignalResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sendSignalResponseDescriptor = $convert.base64Decode(
-    'ChJTZW5kU2lnbmFsUmVzcG9uc2USHAoJZGVsaXZlcmVkGAEgASgIUglkZWxpdmVyZWQ=');
+final $typed_data.Uint8List sendSignalResponseDescriptor =
+    $convert.base64Decode(
+        'ChJTZW5kU2lnbmFsUmVzcG9uc2USHAoJZGVsaXZlcmVkGAEgASgIUglkZWxpdmVyZWQ=');
 
 const $core.Map<$core.String, $core.dynamic> SignalServiceBase$json = {
   '1': 'SignalService',
   '2': [
-    {'1': 'SendSignal', '2': '.signal.v1.SendSignalRequest', '3': '.signal.v1.SendSignalResponse', '4': {}},
+    {
+      '1': 'SendSignal',
+      '2': '.signal.v1.SendSignalRequest',
+      '3': '.signal.v1.SendSignalResponse',
+      '4': {}
+    },
   ],
   '3': {},
 };
 
 @$core.Deprecated('Use signalServiceDescriptor instead')
-const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> SignalServiceBase$messageJson = {
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    SignalServiceBase$messageJson = {
   '.signal.v1.SendSignalRequest': SendSignalRequest$json,
-  '.google.protobuf.Struct': $2.Struct$json,
-  '.google.protobuf.Struct.FieldsEntry': $2.Struct_FieldsEntry$json,
-  '.google.protobuf.Value': $2.Value$json,
-  '.google.protobuf.ListValue': $2.ListValue$json,
+  '.google.protobuf.Struct': $0.Struct$json,
+  '.google.protobuf.Struct.FieldsEntry': $0.Struct_FieldsEntry$json,
+  '.google.protobuf.Value': $0.Value$json,
+  '.google.protobuf.ListValue': $0.ListValue$json,
   '.signal.v1.SendSignalResponse': SendSignalResponse$json,
 };
 
@@ -80,4 +97,3 @@ final $typed_data.Uint8List signalServiceDescriptor = $convert.base64Decode(
     'ZXcSD3dvcmtmbG93X21hbmFnZRINaW5zdGFuY2VfdmlldxIOaW5zdGFuY2VfcmV0cnkSDmV4ZW'
     'N1dGlvbl92aWV3Eg9leGVjdXRpb25fcmV0cnkSEGV4ZWN1dGlvbl9yZXN1bWUSC3NpZ25hbF9z'
     'ZW5k');
-

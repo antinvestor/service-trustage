@@ -7,7 +7,7 @@ import "package:connectrpc/connect.dart" as connect;
 import "runtime.pb.dart" as v1runtime;
 import "runtime.connect.spec.dart" as specs;
 
-extension type RuntimeServiceClient (connect.Transport _transport) {
+extension type RuntimeServiceClient(connect.Transport _transport) {
   Future<v1runtime.ListInstancesResponse> listInstances(
     v1runtime.ListInstancesRequest input, {
     connect.Headers? headers,

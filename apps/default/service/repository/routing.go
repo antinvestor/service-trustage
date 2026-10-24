@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pitabwire/frame/v2/data"
+	"github.com/pitabwire/frame/v3/data"
 )
 
 // WorkflowRoutingTarget identifies the workflow version whose trigger

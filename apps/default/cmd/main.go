@@ -23,17 +23,18 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
-	"github.com/antinvestor/common/v2/permissions"
-	"github.com/pitabwire/frame/v2"
-	"github.com/pitabwire/frame/v2/config"
-	"github.com/pitabwire/frame/v2/datastore"
-	"github.com/pitabwire/frame/v2/datastore/pool"
-	"github.com/pitabwire/frame/v2/security"
-	"github.com/pitabwire/frame/v2/security/authorizer"
-	connectInterceptors "github.com/pitabwire/frame/v2/security/interceptors/connect"
-	securityhttp "github.com/pitabwire/frame/v2/security/interceptors/httptor"
-	"github.com/pitabwire/frame/v2/setup"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+	"github.com/antinvestor/common/v3/permissions"
+	"github.com/pitabwire/frame/v3"
+	"github.com/pitabwire/frame/v3/config"
+	"github.com/pitabwire/frame/v3/datastore"
+	"github.com/pitabwire/frame/v3/datastore/pool"
+	"github.com/pitabwire/frame/v3/security"
+	"github.com/pitabwire/frame/v3/security/authorizer"
+	connectInterceptors "github.com/pitabwire/frame/v3/security/interceptors/connect"
+	securityhttp "github.com/pitabwire/frame/v3/security/interceptors/httptor"
+	"github.com/pitabwire/frame/v3/setup"
 	"github.com/pitabwire/util"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -378,27 +379,17 @@ func main() { //nolint:funlen,gocyclo,gocognit,cyclop // main wires roles, queue
 		)
 		signalServer := handlers.NewSignalConnectServer(engine)
 
-		workflowPath, workflowHandler := workflowv1connect.NewWorkflowServiceHandler(
-			workflowServer, connect.WithInterceptors(defaultInterceptorList...),
-		)
-		eventPath, eventHandler := eventv1connect.NewEventServiceHandler(
-			eventServer, connect.WithInterceptors(defaultInterceptorList...),
-		)
-		runtimePath, runtimeHandler := runtimev1connect.NewRuntimeServiceHandler(
-			runtimeServer, connect.WithInterceptors(defaultInterceptorList...),
-		)
-		signalPath, signalHandler := signalv1connect.NewSignalServiceHandler(
-			signalServer, connect.WithInterceptors(defaultInterceptorList...),
-		)
+		connectServer := connect.NewServer(defaultInterceptorList...)
+		workflowv1connect.RegisterWorkflowServiceHandler(connectServer, workflowServer)
+		eventv1connect.RegisterEventServiceHandler(connectServer, eventServer)
+		runtimev1connect.RegisterRuntimeServiceHandler(connectServer, runtimeServer)
+		signalv1connect.RegisterSignalServiceHandler(connectServer, signalServer)
 
 		protectedMux := http.NewServeMux()
 		protectedMux.HandleFunc("POST /api/v1/forms/{form_id}/submit", formHandler.SubmitForm)
 		protectedMux.HandleFunc("POST /api/v1/webhooks/{webhook_id}", webhookReceiveHandler.ReceiveWebhook)
 
-		publicMux.Handle(workflowPath, workflowHandler)
-		publicMux.Handle(eventPath, eventHandler)
-		publicMux.Handle(runtimePath, runtimeHandler)
-		publicMux.Handle(signalPath, signalHandler)
+		connecthttp.Mount(publicMux, connectServer)
 		publicMux.Handle("/openapi/workflow.yaml", handlers.EmbeddedSpecHandler(workflowv1spec.APISpecFile))
 		publicMux.Handle("/openapi/event.yaml", handlers.EmbeddedSpecHandler(eventv1spec.APISpecFile))
 		publicMux.Handle("/openapi/runtime.yaml", handlers.EmbeddedSpecHandler(runtimev1spec.APISpecFile))

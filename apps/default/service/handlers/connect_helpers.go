@@ -24,8 +24,8 @@ import (
 	"time"
 
 	commonv1 "buf.build/gen/go/antinvestor/common/protocolbuffers/go/common/v1"
-	"connectrpc.com/connect"
-	"github.com/pitabwire/frame/v2/security"
+	"connectrpc.com/connect/v2"
+	"github.com/pitabwire/frame/v3/security"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,7 +42,7 @@ var errDuplicateRecord = errors.New("duplicate record")
 
 func requireConnectAuth(ctx context.Context) error {
 	if security.ClaimsFromContext(ctx) == nil {
-		return connect.NewError(connect.CodeUnauthenticated, ErrMissingAuth)
+		return connect.NewError(connect.CodeUnauthenticated, ErrMissingAuth.Error()).WithCause(ErrMissingAuth)
 	}
 
 	return nil
@@ -58,19 +58,19 @@ func connectErrorForBusiness(err error) error {
 		errors.Is(err, business.ErrSchemaNotFound),
 		errors.Is(err, business.ErrTriggerNotFound),
 		errors.Is(err, gorm.ErrRecordNotFound):
-		return connect.NewError(connect.CodeNotFound, err)
+		return connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, business.ErrInputContractViolation),
 		errors.Is(err, business.ErrOutputContractViolation),
 		errors.Is(err, business.ErrDSLValidationFailed),
 		errors.Is(err, business.ErrInvalidWorkflowStatus):
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, business.ErrStaleExecution),
 		errors.Is(err, business.ErrInvalidToken):
-		return connect.NewError(connect.CodeAborted, err)
+		return connect.NewError(connect.CodeAborted, err.Error()).WithCause(err)
 	case errors.Is(err, business.ErrWorkflowAlreadyActive):
-		return connect.NewError(connect.CodeAlreadyExists, err)
+		return connect.NewError(connect.CodeAlreadyExists, err.Error()).WithCause(err)
 	default:
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 }
 
@@ -79,9 +79,9 @@ func connectLookupError(err error, notFoundMessage string) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		return connect.NewError(connect.CodeNotFound, errors.New(notFoundMessage))
+		return connect.NewError(connect.CodeNotFound, notFoundMessage).WithCause(err)
 	default:
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 }
 
@@ -263,9 +263,9 @@ func workflowStatusFilter(status workflowv1.WorkflowStatus) (string, error) {
 	case workflowv1.WorkflowStatus_WORKFLOW_STATUS_ARCHIVED:
 		return string(models.WorkflowStatusArchived), nil
 	default:
-		return "", connect.NewError(
+		return "", connect.Errorf(
 			connect.CodeInvalidArgument,
-			fmt.Errorf("unsupported workflow status filter %s", status.String()),
+			"unsupported workflow status filter %s", status.String(),
 		)
 	}
 }

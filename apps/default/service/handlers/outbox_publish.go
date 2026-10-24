@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/pitabwire/frame/v2/queue"
+	"github.com/pitabwire/frame/v3/queue"
 	"github.com/pitabwire/util"
 
 	"github.com/antinvestor/service-trustage/apps/default/service/models"

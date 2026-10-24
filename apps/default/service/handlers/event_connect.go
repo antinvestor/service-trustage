@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/pitabwire/util"
 	"gorm.io/gorm"
 
@@ -64,15 +64,15 @@ func NewEventConnectServer(
 
 func (s *EventConnectServer) IngestEvent(
 	ctx context.Context,
-	req *connect.Request[eventv1.IngestEventRequest],
-) (*connect.Response[eventv1.IngestEventResponse], error) {
+	req *eventv1.IngestEventRequest,
+) (*eventv1.IngestEventResponse, error) {
 	log := util.Log(ctx)
 
 	if err := s.validateIngestEventRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
-	idempotentResponse, found, err := s.lookupExistingEventResponse(ctx, req.Msg.GetIdempotencyKey())
+	idempotentResponse, found, err := s.lookupExistingEventResponse(ctx, req.GetIdempotencyKey())
 	if err != nil {
 		return nil, err
 	}
@@ -80,15 +80,17 @@ func (s *EventConnectServer) IngestEvent(
 		return idempotentResponse, nil
 	}
 
-	eventLog, payload, err := buildEventLogFromRequest(req.Msg)
+	eventLog, payload, err := buildEventLogFromRequest(req)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("marshal event payload: %w", err))
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("marshal event payload: %w", err).Error()).
+			WithCause(err)
 	}
 
 	duplicateResponse, duplicated, createErr := s.storeEventWithDuplicateRecovery(ctx, eventLog)
 	if createErr != nil {
 		log.WithError(createErr).Error("failed to store event", "event_type", eventLog.EventType)
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", createErr))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", createErr).Error()).
+			WithCause(createErr)
 	}
 	if duplicated {
 		return duplicateResponse, nil
@@ -98,7 +100,7 @@ func (s *EventConnectServer) IngestEvent(
 		s.outbox.PublishAfterCreate(ctx, eventLog)
 	}
 
-	return connect.NewResponse(&eventv1.IngestEventResponse{
+	return &eventv1.IngestEventResponse{
 		Event: eventRecordToProto(
 			eventLog.ID,
 			eventLog.EventType,
@@ -106,21 +108,21 @@ func (s *EventConnectServer) IngestEvent(
 			eventLog.IdempotencyKey,
 			payload,
 		),
-	}), nil
+	}, nil
 }
 
 func (s *EventConnectServer) validateIngestEventRequest(
 	ctx context.Context,
-	req *connect.Request[eventv1.IngestEventRequest],
+	req *eventv1.IngestEventRequest,
 ) error {
 	if err := requireConnectAuth(ctx); err != nil {
 		return err
 	}
 	if s.rateLimiter != nil && !s.rateLimiter.Allow(ctx) {
-		return connect.NewError(connect.CodeResourceExhausted, errors.New("rate limit exceeded"))
+		return connect.NewError(connect.CodeResourceExhausted, "rate limit exceeded")
 	}
-	if req.Msg.GetEventType() == "" {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("event_type is required"))
+	if req.GetEventType() == "" {
+		return connect.NewError(connect.CodeInvalidArgument, "event_type is required")
 	}
 
 	return nil
@@ -146,14 +148,15 @@ func buildEventLogFromRequest(
 func (s *EventConnectServer) lookupExistingEventResponse(
 	ctx context.Context,
 	idempotencyKey string,
-) (*connect.Response[eventv1.IngestEventResponse], bool, error) {
+) (*eventv1.IngestEventResponse, bool, error) {
 	if idempotencyKey == "" {
 		return nil, false, nil
 	}
 
 	existing, err := s.eventRepo.FindByIdempotencyKey(ctx, idempotencyKey)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, false, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, false, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).
+			WithCause(err)
 	}
 	if existing == nil {
 		return nil, false, nil
@@ -165,7 +168,7 @@ func (s *EventConnectServer) lookupExistingEventResponse(
 func (s *EventConnectServer) storeEventWithDuplicateRecovery(
 	ctx context.Context,
 	eventLog *models.EventLog,
-) (*connect.Response[eventv1.IngestEventResponse], bool, error) {
+) (*eventv1.IngestEventResponse, bool, error) {
 	if createErr := s.eventRepo.Create(ctx, eventLog); createErr != nil {
 		if eventLog.IdempotencyKey != "" && isDuplicateRecordError(createErr) {
 			existing, lookupErr := s.eventRepo.FindByIdempotencyKey(ctx, eventLog.IdempotencyKey)
@@ -182,11 +185,11 @@ func (s *EventConnectServer) storeEventWithDuplicateRecovery(
 
 func duplicateEventResponse(
 	existing *models.EventLog,
-) *connect.Response[eventv1.IngestEventResponse] {
+) *eventv1.IngestEventResponse {
 	var payload map[string]any
 	_ = json.Unmarshal([]byte(existing.Payload), &payload)
 
-	return connect.NewResponse(&eventv1.IngestEventResponse{
+	return &eventv1.IngestEventResponse{
 		Event: eventRecordToProto(
 			existing.ID,
 			existing.EventType,
@@ -195,24 +198,24 @@ func duplicateEventResponse(
 			payload,
 		),
 		Idempotent: true,
-	})
+	}
 }
 
 func (s *EventConnectServer) GetInstanceTimeline(
 	ctx context.Context,
-	req *connect.Request[eventv1.GetInstanceTimelineRequest],
-) (*connect.Response[eventv1.GetInstanceTimelineResponse], error) {
+	req *eventv1.GetInstanceTimelineRequest,
+) (*eventv1.GetInstanceTimelineResponse, error) {
 	if err := requireConnectAuth(ctx); err != nil {
 		return nil, err
 	}
 
-	if req.Msg.GetInstanceId() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("instance_id is required"))
+	if req.GetInstanceId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "instance_id is required")
 	}
 
-	auditEvents, err := s.auditRepo.ListByInstance(ctx, req.Msg.GetInstanceId())
+	auditEvents, err := s.auditRepo.ListByInstance(ctx, req.GetInstanceId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err))
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("trustage: %w", err).Error()).WithCause(err)
 	}
 
 	items := make([]*eventv1.TimelineEntry, 0, len(auditEvents))
@@ -220,7 +223,7 @@ func (s *EventConnectServer) GetInstanceTimeline(
 		items = append(items, timelineEntryToProto(auditEvent))
 	}
 
-	return connect.NewResponse(&eventv1.GetInstanceTimelineResponse{
+	return &eventv1.GetInstanceTimelineResponse{
 		Items: items,
-	}), nil
+	}, nil
 }

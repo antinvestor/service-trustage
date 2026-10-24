@@ -14,7 +14,7 @@
 
 package config
 
-import "github.com/pitabwire/frame/v2/config"
+import "github.com/pitabwire/frame/v3/config"
 
 // Config holds all configuration for the Form Store service.
 type Config struct {

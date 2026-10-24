@@ -7,7 +7,7 @@ import "package:connectrpc/connect.dart" as connect;
 import "event.pb.dart" as v1event;
 import "event.connect.spec.dart" as specs;
 
-extension type EventServiceClient (connect.Transport _transport) {
+extension type EventServiceClient(connect.Transport _transport) {
   Future<v1event.IngestEventResponse> ingestEvent(
     v1event.IngestEventRequest input, {
     connect.Headers? headers,

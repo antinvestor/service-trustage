@@ -1,20 +1,24 @@
+// This is a generated file - do not edit.
 //
-//  Generated code. Do not modify.
-//  source: v1/event.proto
-//
-// @dart = 2.12
+// Generated from v1/event.proto.
+
+// @dart = 3.3
 
 // ignore_for_file: annotate_overrides, camel_case_types, comment_references
-// ignore_for_file: constant_identifier_names, library_prefixes
-// ignore_for_file: non_constant_identifier_names, prefer_final_fields
-// ignore_for_file: unnecessary_import, unnecessary_this, unused_import
+// ignore_for_file: constant_identifier_names
+// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
+// ignore_for_file: unused_import
 
 import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-import '../google/protobuf/struct.pbjson.dart' as $2;
-import '../google/protobuf/timestamp.pbjson.dart' as $3;
+import 'package:protobuf/well_known_types/google/protobuf/struct.pbjson.dart'
+    as $0;
+import 'package:protobuf/well_known_types/google/protobuf/timestamp.pbjson.dart'
+    as $1;
 
 @$core.Deprecated('Use eventRecordDescriptor instead')
 const EventRecord$json = {
@@ -24,7 +28,14 @@ const EventRecord$json = {
     {'1': 'event_type', '3': 2, '4': 1, '5': 9, '10': 'eventType'},
     {'1': 'source', '3': 3, '4': 1, '5': 9, '10': 'source'},
     {'1': 'idempotency_key', '3': 4, '4': 1, '5': 9, '10': 'idempotencyKey'},
-    {'1': 'payload', '3': 5, '4': 1, '5': 11, '6': '.google.protobuf.Struct', '10': 'payload'},
+    {
+      '1': 'payload',
+      '3': 5,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Struct',
+      '10': 'payload'
+    },
   ],
 };
 
@@ -42,7 +53,14 @@ const IngestEventRequest$json = {
     {'1': 'event_type', '3': 1, '4': 1, '5': 9, '10': 'eventType'},
     {'1': 'source', '3': 2, '4': 1, '5': 9, '10': 'source'},
     {'1': 'idempotency_key', '3': 3, '4': 1, '5': 9, '10': 'idempotencyKey'},
-    {'1': 'payload', '3': 4, '4': 1, '5': 11, '6': '.google.protobuf.Struct', '10': 'payload'},
+    {
+      '1': 'payload',
+      '3': 4,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Struct',
+      '10': 'payload'
+    },
   ],
 };
 
@@ -57,7 +75,14 @@ final $typed_data.Uint8List ingestEventRequestDescriptor = $convert.base64Decode
 const IngestEventResponse$json = {
   '1': 'IngestEventResponse',
   '2': [
-    {'1': 'event', '3': 1, '4': 1, '5': 11, '6': '.event.v1.EventRecord', '10': 'event'},
+    {
+      '1': 'event',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.event.v1.EventRecord',
+      '10': 'event'
+    },
     {'1': 'idempotent', '3': 2, '4': 1, '5': 8, '10': 'idempotent'},
   ],
 };
@@ -76,9 +101,10 @@ const GetInstanceTimelineRequest$json = {
 };
 
 /// Descriptor for `GetInstanceTimelineRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List getInstanceTimelineRequestDescriptor = $convert.base64Decode(
-    'ChpHZXRJbnN0YW5jZVRpbWVsaW5lUmVxdWVzdBIfCgtpbnN0YW5jZV9pZBgBIAEoCVIKaW5zdG'
-    'FuY2VJZA==');
+final $typed_data.Uint8List getInstanceTimelineRequestDescriptor =
+    $convert.base64Decode(
+        'ChpHZXRJbnN0YW5jZVRpbWVsaW5lUmVxdWVzdBIfCgtpbnN0YW5jZV9pZBgBIAEoCVIKaW5zdG'
+        'FuY2VJZA==');
 
 @$core.Deprecated('Use timelineEntryDescriptor instead')
 const TimelineEntry$json = {
@@ -90,8 +116,22 @@ const TimelineEntry$json = {
     {'1': 'to_state', '3': 4, '4': 1, '5': 9, '10': 'toState'},
     {'1': 'execution_id', '3': 5, '4': 1, '5': 9, '10': 'executionId'},
     {'1': 'trace_id', '3': 6, '4': 1, '5': 9, '10': 'traceId'},
-    {'1': 'payload', '3': 7, '4': 1, '5': 11, '6': '.google.protobuf.Struct', '10': 'payload'},
-    {'1': 'created_at', '3': 8, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
+    {
+      '1': 'payload',
+      '3': 7,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Struct',
+      '10': 'payload'
+    },
+    {
+      '1': 'created_at',
+      '3': 8,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Timestamp',
+      '10': 'createdAt'
+    },
   ],
 };
 
@@ -108,37 +148,56 @@ final $typed_data.Uint8List timelineEntryDescriptor = $convert.base64Decode(
 const GetInstanceTimelineResponse$json = {
   '1': 'GetInstanceTimelineResponse',
   '2': [
-    {'1': 'items', '3': 1, '4': 3, '5': 11, '6': '.event.v1.TimelineEntry', '10': 'items'},
+    {
+      '1': 'items',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.event.v1.TimelineEntry',
+      '10': 'items'
+    },
   ],
 };
 
 /// Descriptor for `GetInstanceTimelineResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List getInstanceTimelineResponseDescriptor = $convert.base64Decode(
-    'ChtHZXRJbnN0YW5jZVRpbWVsaW5lUmVzcG9uc2USLQoFaXRlbXMYASADKAsyFy5ldmVudC52MS'
-    '5UaW1lbGluZUVudHJ5UgVpdGVtcw==');
+final $typed_data.Uint8List getInstanceTimelineResponseDescriptor =
+    $convert.base64Decode(
+        'ChtHZXRJbnN0YW5jZVRpbWVsaW5lUmVzcG9uc2USLQoFaXRlbXMYASADKAsyFy5ldmVudC52MS'
+        '5UaW1lbGluZUVudHJ5UgVpdGVtcw==');
 
 const $core.Map<$core.String, $core.dynamic> EventServiceBase$json = {
   '1': 'EventService',
   '2': [
-    {'1': 'IngestEvent', '2': '.event.v1.IngestEventRequest', '3': '.event.v1.IngestEventResponse', '4': {}},
-    {'1': 'GetInstanceTimeline', '2': '.event.v1.GetInstanceTimelineRequest', '3': '.event.v1.GetInstanceTimelineResponse', '4': {}},
+    {
+      '1': 'IngestEvent',
+      '2': '.event.v1.IngestEventRequest',
+      '3': '.event.v1.IngestEventResponse',
+      '4': {}
+    },
+    {
+      '1': 'GetInstanceTimeline',
+      '2': '.event.v1.GetInstanceTimelineRequest',
+      '3': '.event.v1.GetInstanceTimelineResponse',
+      '4': {}
+    },
   ],
   '3': {},
 };
 
 @$core.Deprecated('Use eventServiceDescriptor instead')
-const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>> EventServiceBase$messageJson = {
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    EventServiceBase$messageJson = {
   '.event.v1.IngestEventRequest': IngestEventRequest$json,
-  '.google.protobuf.Struct': $2.Struct$json,
-  '.google.protobuf.Struct.FieldsEntry': $2.Struct_FieldsEntry$json,
-  '.google.protobuf.Value': $2.Value$json,
-  '.google.protobuf.ListValue': $2.ListValue$json,
+  '.google.protobuf.Struct': $0.Struct$json,
+  '.google.protobuf.Struct.FieldsEntry': $0.Struct_FieldsEntry$json,
+  '.google.protobuf.Value': $0.Value$json,
+  '.google.protobuf.ListValue': $0.ListValue$json,
   '.event.v1.IngestEventResponse': IngestEventResponse$json,
   '.event.v1.EventRecord': EventRecord$json,
   '.event.v1.GetInstanceTimelineRequest': GetInstanceTimelineRequest$json,
   '.event.v1.GetInstanceTimelineResponse': GetInstanceTimelineResponse$json,
   '.event.v1.TimelineEntry': TimelineEntry$json,
-  '.google.protobuf.Timestamp': $3.Timestamp$json,
+  '.google.protobuf.Timestamp': $1.Timestamp$json,
 };
 
 /// Descriptor for `EventService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
@@ -162,4 +221,3 @@ final $typed_data.Uint8List eventServiceDescriptor = $convert.base64Decode(
     'd29ya2Zsb3dfdmlldxIPd29ya2Zsb3dfbWFuYWdlEg1pbnN0YW5jZV92aWV3Eg5pbnN0YW5jZV'
     '9yZXRyeRIOZXhlY3V0aW9uX3ZpZXcSD2V4ZWN1dGlvbl9yZXRyeRIQZXhlY3V0aW9uX3Jlc3Vt'
     'ZRILc2lnbmFsX3NlbmQ=');
-

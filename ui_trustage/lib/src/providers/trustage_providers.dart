@@ -240,8 +240,9 @@ class TrustageActionNotifier extends Notifier<AsyncValue<void>> {
       final req = sig.SendSignalRequest()
         ..instanceId = instanceId
         ..signalName = signalName;
-      if (payload != null)
-        req.payload = (sig.Struct()..mergeFromJsonMap(payload));
+      if (payload != null) {
+        req.payload = (sig.Struct()..mergeFromProto3Json(payload));
+      }
       final resp = await client.sendSignal(req);
       state = const AsyncValue.data(null);
       _invalidateAll();
@@ -268,8 +269,9 @@ class TrustageActionNotifier extends Notifier<AsyncValue<void>> {
       if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
         req.idempotencyKey = idempotencyKey;
       }
-      if (payload != null)
-        req.payload = (ev.Struct()..mergeFromJsonMap(payload));
+      if (payload != null) {
+        req.payload = (ev.Struct()..mergeFromProto3Json(payload));
+      }
       final resp = await client.ingestEvent(req);
       state = const AsyncValue.data(null);
       _invalidateAll();

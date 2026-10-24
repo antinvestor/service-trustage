@@ -7,7 +7,7 @@ import "package:connectrpc/connect.dart" as connect;
 import "signal.pb.dart" as v1signal;
 import "signal.connect.spec.dart" as specs;
 
-extension type SignalServiceClient (connect.Transport _transport) {
+extension type SignalServiceClient(connect.Transport _transport) {
   Future<v1signal.SendSignalResponse> sendSignal(
     v1signal.SendSignalRequest input, {
     connect.Headers? headers,

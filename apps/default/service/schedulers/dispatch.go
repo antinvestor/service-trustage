@@ -18,7 +18,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/pitabwire/frame/v2/queue"
+	"github.com/pitabwire/frame/v3/queue"
 	"github.com/pitabwire/util"
 	"go.opentelemetry.io/otel/attribute"
 

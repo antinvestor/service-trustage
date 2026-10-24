@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"buf.build/gen/go/antinvestor/files/connectrpc/go/files/v1/filesv1connect"
+	"buf.build/gen/go/antinvestor/files/connectrpc/go/v2/files/v1/filesv1connect"
 	filesv1 "buf.build/gen/go/antinvestor/files/protocolbuffers/go/files/v1"
 )
 
@@ -32,7 +32,10 @@ func NewFileUploadFunc(
 ) func(filename, contentType string, data []byte) (string, error) {
 	return func(filename, contentType string, data []byte) (string, error) {
 		ctx := context.Background()
-		stream := client.UploadContent(ctx)
+		stream, openErr := client.UploadContent(ctx)
+		if openErr != nil {
+			return "", fmt.Errorf("open upload stream: %w", openErr)
+		}
 
 		// Send metadata as the first message.
 		totalSize := int64(len(data))
@@ -70,6 +73,6 @@ func NewFileUploadFunc(
 			return "", fmt.Errorf("close upload stream: %w", err)
 		}
 
-		return resp.Msg.GetContentUri(), nil
+		return resp.GetContentUri(), nil
 	}
 }

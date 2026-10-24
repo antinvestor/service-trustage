@@ -14,7 +14,7 @@
 
 package models
 
-import "github.com/pitabwire/frame/v2/data"
+import "github.com/pitabwire/frame/v3/data"
 
 // WorkflowStateMapping stores data mapping expressions between states.
 type WorkflowStateMapping struct {
