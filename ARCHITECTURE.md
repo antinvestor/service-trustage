@@ -1345,9 +1345,11 @@ Call-step inputs and `signal_send` resolve `{{ metadata.instance_id }}`,
 through frame's HTTP client (workload token). The base URL comes from the
 step's optional `endpoint` input, which a workflow uses to name its own
 service, e.g. `http://service-loans.fintech.svc:80`. Trustage keeps no list of
-services. Because the call carries trustage's token, `endpoint` must be a bare
-http(s) base URL on a trusted in-cluster host (`TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES`,
-default `.svc` and `.svc.cluster.local`), with no credentials, path or query.
+services. Because the call carries trustage's token, `endpoint` must be an
+http(s) base URL on a trusted host (`TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES`,
+default `.svc` and `.svc.cluster.local`; an operator adds its own gateway host),
+with no credentials, query or fragment. It may carry a plain path prefix for a
+service behind a gateway, e.g. `https://api.example.org/loans`.
 `TRUSTAGE_CONNECT_ROUTES` (`<service-or-package-prefix>=<base URL>,...`,
 longest prefix wins) remains an operator override and wins over `endpoint`.
 A step with neither fails without retry.
