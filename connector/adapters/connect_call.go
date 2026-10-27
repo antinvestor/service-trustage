@@ -39,6 +39,10 @@ const (
 var (
 	connectServicePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$`)
 	connectRPCPattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// connectPathPrefixPattern is an endpoint's path prefix: plain unreserved
+	// segments only, so nothing decoded from it can become a query, fragment
+	// or another path.
+	connectPathPrefixPattern = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)*$`)
 )
 
 // ConnectRoute maps a fully-qualified service name prefix to the base URL
@@ -218,7 +222,8 @@ func connectEndpoint(raw string) (string, error) {
 
 	prefix := strings.TrimSuffix(parsed.Path, "/")
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
-		parsed.RawPath != "" || (prefix != "" && path.Clean(prefix) != prefix) {
+		parsed.RawPath != "" || !connectPathPrefixPattern.MatchString(prefix) ||
+		(prefix != "" && path.Clean(prefix) != prefix) {
 		return "", fmt.Errorf("endpoint %q must be a base URL with at most a plain path prefix", raw)
 	}
 
