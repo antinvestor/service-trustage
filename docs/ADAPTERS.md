@@ -427,10 +427,13 @@ Makes a Connect unary call with the JSON codec to a platform service.
 
 A workflow names its own service's base URL in `endpoint`; Trustage keeps no
 list of services. The call carries Trustage's workload token, so `endpoint`
-must be a bare `http(s)` base URL (no credentials, path, query or fragment)
-on a trusted in-cluster host: `TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES`, default
-`.svc` and `.svc.cluster.local`. Anything else fails the step as
-`INVALID_INPUT`.
+must be an `http(s)` base URL (no credentials, query or fragment) on a trusted
+host: `TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES`, default `.svc` and
+`.svc.cluster.local`. Setting the variable replaces the defaults, so an
+operator whose services sit behind a gateway lists them too, e.g.
+`.svc,.svc.cluster.local,api.example.org`. The URL may carry a plain path
+prefix (`https://api.example.org/loans`); `..`, empty or percent-encoded path
+segments are refused. Anything else fails the step as `INVALID_INPUT`.
 
 #### Operator override — `TRUSTAGE_CONNECT_ROUTES`
 

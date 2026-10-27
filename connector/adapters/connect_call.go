@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -38,6 +39,10 @@ const (
 var (
 	connectServicePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$`)
 	connectRPCPattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// connectPathPrefixPattern is an endpoint's path prefix: plain unreserved
+	// segments only, so nothing decoded from it can become a query, fragment
+	// or another path.
+	connectPathPrefixPattern = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)*$`)
 )
 
 // ConnectRoute maps a fully-qualified service name prefix to the base URL
@@ -138,7 +143,7 @@ func (a *ConnectCallAdapter) InputSchema() json.RawMessage {
 			"service": {"type": "string", "description": "Fully-qualified service, e.g. finance.v1.FinanceService"},
 			"rpc": {"type": "string", "description": "Method name, e.g. GetProposal"},
 			"request": {"type": "object", "description": "Request message in proto JSON"},
-			"endpoint": {"type": "string", "format": "uri", "description": "Base URL of the service, e.g. http://service-loans.fintech.svc:80; an in-cluster host only. An operator route for the service takes precedence."}
+			"endpoint": {"type": "string", "format": "uri", "description": "Base URL of the service, e.g. http://service-loans.fintech.svc:80 or https://api.example.org/loans; a host trustage trusts (TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES) only. An operator route for the service takes precedence."}
 		}
 	}`)
 }
@@ -201,9 +206,10 @@ func connectCallInput(req *connector.ExecuteRequest) (*connectCall, error) {
 }
 
 // connectEndpoint checks a workflow-supplied service base URL. The call
-// carries trustage's own service token, so only an in-cluster host it
-// already trusts is accepted: a workflow can name its service, never point
-// the token anywhere else.
+// carries trustage's own service token, so only a host it already trusts
+// (TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES) is accepted: a workflow can name its
+// service, never point the token anywhere else. The URL may carry a path
+// prefix, as a service behind a gateway does (https://api.example.org/loans).
 func connectEndpoint(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -214,16 +220,18 @@ func connectEndpoint(raw string) (string, error) {
 		return "", fmt.Errorf("endpoint %q must be an absolute http(s) URL", raw)
 	}
 
-	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
-		(parsed.Path != "" && parsed.Path != "/") {
-		return "", fmt.Errorf("endpoint %q must be a bare base URL", raw)
+	prefix := strings.TrimSuffix(parsed.Path, "/")
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
+		parsed.RawPath != "" || !connectPathPrefixPattern.MatchString(prefix) ||
+		(prefix != "" && path.Clean(prefix) != prefix) {
+		return "", fmt.Errorf("endpoint %q must be a base URL with at most a plain path prefix", raw)
 	}
 
 	if !isTrustedHostSuffix(strings.ToLower(parsed.Hostname())) {
-		return "", fmt.Errorf("endpoint %q is not an in-cluster host trustage trusts", raw)
+		return "", fmt.Errorf("endpoint %q is not a host trustage trusts", raw)
 	}
 
-	return parsed.Scheme + "://" + parsed.Host, nil
+	return parsed.Scheme + "://" + parsed.Host + prefix, nil
 }
 
 func (a *ConnectCallAdapter) Execute(

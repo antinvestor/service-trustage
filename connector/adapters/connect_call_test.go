@@ -367,7 +367,14 @@ func TestConnectCall_EndpointMustBeATrustedInClusterHost(t *testing.T) {
 		"https://attacker.example.com",
 		"http://169.254.169.254",
 		"http://user:pass@service-loans.fintech.svc",
-		"http://service-loans.fintech.svc/path",
+		"http://service-loans.fintech.svc/a/../b",
+		"http://service-loans.fintech.svc/a%2Fb",
+		"http://service-loans.fintech.svc/a%3Fx=1",
+		"http://service-loans.fintech.svc/a%23frag",
+		"http://service-loans.fintech.svc/a%20b",
+		"http://service-loans.fintech.svc/a/.",
+		"http://service-loans.fintech.svc/?",
+		"http://service-loans.fintech.svc/a//b",
 		"http://service-loans.fintech.svc?x=1",
 		"ftp://service-loans.fintech.svc",
 		"service-loans.fintech.svc",
@@ -379,4 +386,24 @@ func TestConnectCall_EndpointMustBeATrustedInClusterHost(t *testing.T) {
 	}
 
 	require.NoError(t, adapter.Validate(endpointInput("https://service-loans.fintech.svc.cluster.local:8443")))
+}
+
+// A service behind a gateway is named by its path prefix there.
+func TestConnectCall_EndpointMayCarryAGatewayPathPrefix(t *testing.T) {
+	srv, rec := connectServer(t, http.StatusOK, "application/json", `{}`)
+	adapter := inClusterAdapter(t, srv, "")
+
+	_, execErr := adapter.Execute(context.Background(), endpointInput("http://gateway.edge.svc/loans/"))
+	require.Nil(t, execErr)
+	require.Equal(t, "/loans/loans.v1.LoanManagementService/LoanJobRun", rec.path)
+}
+
+// An operator extends the trusted hosts to name services on its own gateway.
+func TestConnectCall_EndpointOnAnOperatorTrustedHost(t *testing.T) {
+	t.Setenv("TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES", ".svc,.svc.cluster.local,api.example.org")
+	adapter := connectAdapter(t, "")
+
+	require.NoError(t, adapter.Validate(endpointInput("https://api.example.org/loans")))
+	require.Error(t, adapter.Validate(endpointInput("https://evil-api.example.org.attacker.com/loans")))
+	require.Error(t, adapter.Validate(endpointInput("https://other.example.com/loans")))
 }
