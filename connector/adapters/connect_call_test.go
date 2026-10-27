@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -308,4 +309,74 @@ func TestParseConnectRoutes(t *testing.T) {
 		_, err = adapters.ParseConnectRoutes(bad)
 		require.Error(t, err, bad)
 	}
+}
+
+// inClusterAdapter sends every connection to srv, so a workflow can name an
+// in-cluster host and the test still reaches the local server.
+func inClusterAdapter(t *testing.T, srv *httptest.Server, routes string) *adapters.ConnectCallAdapter {
+	t.Helper()
+
+	parsed, err := adapters.ParseConnectRoutes(routes)
+	require.NoError(t, err)
+
+	addr := srv.Listener.Addr().String()
+	client := &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}}
+
+	return adapters.NewConnectCallAdapter(client, parsed)
+}
+
+func endpointInput(endpoint string) *connector.ExecuteRequest {
+	req := connectInput("loans.v1.LoanManagementService", "LoanJobRun", map[string]any{"job": "X"})
+	req.Input["endpoint"] = endpoint
+
+	return req
+}
+
+// A workflow names its own service's in-cluster endpoint; trustage needs no
+// route for it.
+func TestConnectCall_WorkflowEndpointReachesItsService(t *testing.T) {
+	srv, rec := connectServer(t, http.StatusOK, "application/json", `{"processed":1}`)
+	adapter := inClusterAdapter(t, srv, "")
+
+	resp, execErr := adapter.Execute(context.Background(), endpointInput("http://service-loans.fintech.svc:80"))
+	require.Nil(t, execErr)
+	require.Equal(t, "/loans.v1.LoanManagementService/LoanJobRun", rec.path)
+	require.Equal(t, map[string]any{"processed": float64(1)}, resp.Output)
+}
+
+// An operator route for the service still wins over the workflow's endpoint.
+func TestConnectCall_OperatorRouteOverridesTheEndpoint(t *testing.T) {
+	srv, rec := connectServer(t, http.StatusOK, "application/json", `{}`)
+	adapter := inClusterAdapter(t, srv, "loans.v1.=http://override.ops.svc/base")
+
+	_, execErr := adapter.Execute(context.Background(), endpointInput("http://service-loans.fintech.svc:80"))
+	require.Nil(t, execErr)
+	require.Equal(t, "/base/loans.v1.LoanManagementService/LoanJobRun", rec.path)
+}
+
+// The call carries trustage's own token, so a workflow can only name an
+// in-cluster host, never point the token anywhere else.
+func TestConnectCall_EndpointMustBeATrustedInClusterHost(t *testing.T) {
+	adapter := connectAdapter(t, "")
+
+	for _, endpoint := range []string{
+		"https://attacker.example.com",
+		"http://169.254.169.254",
+		"http://user:pass@service-loans.fintech.svc",
+		"http://service-loans.fintech.svc/path",
+		"http://service-loans.fintech.svc?x=1",
+		"ftp://service-loans.fintech.svc",
+		"service-loans.fintech.svc",
+	} {
+		require.Error(t, adapter.Validate(endpointInput(endpoint)), endpoint)
+		_, execErr := adapter.Execute(context.Background(), endpointInput(endpoint))
+		require.NotNil(t, execErr, endpoint)
+		require.Equal(t, "INVALID_INPUT", execErr.Code, endpoint)
+	}
+
+	require.NoError(t, adapter.Validate(endpointInput("https://service-loans.fintech.svc.cluster.local:8443")))
 }

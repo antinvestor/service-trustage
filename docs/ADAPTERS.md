@@ -85,7 +85,7 @@ Execution Flow:
 | Category | Adapters | HTTP Required | Side Effects |
 |----------|----------|---------------|--------------|
 | **HTTP** | `webhook.call`, `http.request` | Yes | External HTTP calls |
-| **Connect RPC** | `connect.call` | Yes | Calls platform services on configured routes |
+| **Connect RPC** | `connect.call` | Yes | Calls the platform service a workflow names (in-cluster), or an operator route |
 | **Notification** | `notification.send`, `notification.status` | Yes | Sends/checks notifications via API |
 | **Payment** | `payment.initiate`, `payment.verify` | Yes | Initiates/verifies payments via API |
 | **Computation** | `data.transform`, `log.entry`, `form.validate` | No | Pure in-memory, no I/O |
@@ -410,7 +410,7 @@ steps:
 | **Display Name** | Connect RPC Call |
 | **Source** | `connector/adapters/connect_call.go` |
 | **HTTP Client** | Frame HTTP client (carries Trustage's workload token) |
-| **Configuration** | `TRUSTAGE_CONNECT_ROUTES` (operator) |
+| **Configuration** | none required; `TRUSTAGE_CONNECT_ROUTES` (operator override) |
 
 Makes a Connect unary call with the JSON codec to a platform service.
 
@@ -421,8 +421,18 @@ Makes a Connect unary call with the JSON codec to a platform service.
 | `service` | string | Yes | Fully-qualified service, e.g. `finance.v1.FinanceService` |
 | `rpc` | string | Yes | Method name, e.g. `GetProposal` |
 | `request` | object | No | Request message in proto JSON (default `{}`) |
+| `endpoint` | string | No | Base URL of the service, e.g. `http://service-loans.fintech.svc:80` |
 
-#### Routing — `TRUSTAGE_CONNECT_ROUTES`
+#### Routing — the step's `endpoint`
+
+A workflow names its own service's base URL in `endpoint`; Trustage keeps no
+list of services. The call carries Trustage's workload token, so `endpoint`
+must be a bare `http(s)` base URL (no credentials, path, query or fragment)
+on a trusted in-cluster host: `TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES`, default
+`.svc` and `.svc.cluster.local`. Anything else fails the step as
+`INVALID_INPUT`.
+
+#### Operator override — `TRUSTAGE_CONNECT_ROUTES`
 
 Comma-separated `<service-or-package-prefix>=<base URL>` entries, e.g.
 
@@ -430,8 +440,9 @@ Comma-separated `<service-or-package-prefix>=<base URL>` entries, e.g.
 TRUSTAGE_CONNECT_ROUTES=finance.v1.=http://finance.finance.svc:80,settlement.v1.=http://settlement.settlement.svc:80
 ```
 
-The longest prefix of the fully-qualified service name wins. A service with
-no route fails the step without retry (`CONNECT_NO_ROUTE`). Base URLs must be
+The longest prefix of the fully-qualified service name wins, and a matching
+route takes precedence over the step's `endpoint`. A step with neither fails
+without retry (`CONNECT_NO_ROUTE`). Base URLs must be
 absolute `http(s)` without query or fragment; a malformed value stops the
 service at start-up. Because only these operator-configured bases are ever
 called, the SSRF private-network block does not apply to `connect.call`.
