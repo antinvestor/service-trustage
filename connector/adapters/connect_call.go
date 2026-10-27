@@ -137,7 +137,8 @@ func (a *ConnectCallAdapter) InputSchema() json.RawMessage {
 		"properties": {
 			"service": {"type": "string", "description": "Fully-qualified service, e.g. finance.v1.FinanceService"},
 			"rpc": {"type": "string", "description": "Method name, e.g. GetProposal"},
-			"request": {"type": "object", "description": "Request message in proto JSON"}
+			"request": {"type": "object", "description": "Request message in proto JSON"},
+			"endpoint": {"type": "string", "format": "uri", "description": "Base URL of the service, e.g. http://service-loans.fintech.svc:80; an in-cluster host only. An operator route for the service takes precedence."}
 		}
 	}`)
 }
@@ -151,50 +152,100 @@ func (a *ConnectCallAdapter) OutputSchema() json.RawMessage {
 }
 
 func (a *ConnectCallAdapter) Validate(req *connector.ExecuteRequest) error {
-	_, _, _, err := connectCallInput(req)
+	_, err := connectCallInput(req)
 	return err
 }
 
-func connectCallInput(req *connector.ExecuteRequest) (string, string, map[string]any, error) {
-	service, _ := req.Input["service"].(string)
-	rpc, _ := req.Input["rpc"].(string)
+// connectCall is a validated connect.call step input.
+type connectCall struct {
+	service  string
+	rpc      string
+	request  map[string]any
+	endpoint string
+}
 
-	if !connectServicePattern.MatchString(service) {
-		return "", "", nil, fmt.Errorf("service must be a fully-qualified service name, got %q", service)
+func connectCallInput(req *connector.ExecuteRequest) (*connectCall, error) {
+	call := &connectCall{request: map[string]any{}}
+	call.service, _ = req.Input["service"].(string)
+	call.rpc, _ = req.Input["rpc"].(string)
+
+	if !connectServicePattern.MatchString(call.service) {
+		return nil, fmt.Errorf("service must be a fully-qualified service name, got %q", call.service)
 	}
 
-	if !connectRPCPattern.MatchString(rpc) {
-		return "", "", nil, fmt.Errorf("rpc must be a method name, got %q", rpc)
+	if !connectRPCPattern.MatchString(call.rpc) {
+		return nil, fmt.Errorf("rpc must be a method name, got %q", call.rpc)
 	}
-
-	request := map[string]any{}
 
 	if raw, ok := req.Input["request"]; ok && raw != nil {
 		obj, isObj := raw.(map[string]any)
 		if !isObj {
-			return "", "", nil, errors.New("request must be an object")
+			return nil, errors.New("request must be an object")
 		}
-		request = obj
+		call.request = obj
 	}
 
-	return service, rpc, request, nil
+	if raw, ok := req.Input["endpoint"]; ok && raw != nil {
+		endpoint, isString := raw.(string)
+		if !isString {
+			return nil, errors.New("endpoint must be a string")
+		}
+		base, err := connectEndpoint(endpoint)
+		if err != nil {
+			return nil, err
+		}
+		call.endpoint = base
+	}
+
+	return call, nil
+}
+
+// connectEndpoint checks a workflow-supplied service base URL. The call
+// carries trustage's own service token, so only an in-cluster host it
+// already trusts is accepted: a workflow can name its service, never point
+// the token anywhere else.
+func connectEndpoint(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("endpoint: %w", err)
+	}
+
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("endpoint %q must be an absolute http(s) URL", raw)
+	}
+
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && parsed.Path != "/") {
+		return "", fmt.Errorf("endpoint %q must be a bare base URL", raw)
+	}
+
+	if !isTrustedHostSuffix(strings.ToLower(parsed.Hostname())) {
+		return "", fmt.Errorf("endpoint %q is not an in-cluster host trustage trusts", raw)
+	}
+
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func (a *ConnectCallAdapter) Execute(
 	ctx context.Context,
 	req *connector.ExecuteRequest,
 ) (*connector.ExecuteResponse, *connector.ExecutionError) {
-	service, rpc, request, err := connectCallInput(req)
+	call, err := connectCallInput(req)
 	if err != nil {
 		return nil, &connector.ExecutionError{Class: connector.ErrorFatal, Code: "INVALID_INPUT", Message: err.Error()}
 	}
+	service, rpc, request := call.service, call.rpc, call.request
 
+	// An operator route wins; otherwise the workflow names its service.
 	base, ok := a.routes.Resolve(service)
+	if !ok {
+		base, ok = call.endpoint, call.endpoint != ""
+	}
 	if !ok {
 		return nil, &connector.ExecutionError{
 			Class:   connector.ErrorFatal,
 			Code:    "CONNECT_NO_ROUTE",
-			Message: fmt.Sprintf("no TRUSTAGE_CONNECT_ROUTES entry serves %s", service),
+			Message: fmt.Sprintf("no endpoint or TRUSTAGE_CONNECT_ROUTES entry serves %s", service),
 		}
 	}
 

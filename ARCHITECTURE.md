@@ -1342,9 +1342,15 @@ Call-step inputs and `signal_send` resolve `{{ metadata.instance_id }}`,
 ### 19.2 Calling Platform Services: `connect.call`
 
 `connect.call` makes a Connect unary JSON call to `<base>/<service>/<rpc>`
-through frame's HTTP client (workload token). `TRUSTAGE_CONNECT_ROUTES`
-(`<service-or-package-prefix>=<base URL>,...`, longest prefix wins) is the
-only source of base URLs; a service without a route fails without retry.
+through frame's HTTP client (workload token). The base URL comes from the
+step's optional `endpoint` input, which a workflow uses to name its own
+service, e.g. `http://service-loans.fintech.svc:80`. Trustage keeps no list of
+services. Because the call carries trustage's token, `endpoint` must be a bare
+http(s) base URL on a trusted in-cluster host (`TRUSTAGE_URL_TRUSTED_HOST_SUFFIXES`,
+default `.svc` and `.svc.cluster.local`), with no credentials, path or query.
+`TRUSTAGE_CONNECT_ROUTES` (`<service-or-package-prefix>=<base URL>,...`,
+longest prefix wins) remains an operator override and wins over `endpoint`.
+A step with neither fails without retry.
 Connect codes `unavailable`, `deadline_exceeded`, `resource_exhausted`,
 `aborted`, `internal` and `unknown` retry; other codes fail the step. See
 `docs/ADAPTERS.md`.
